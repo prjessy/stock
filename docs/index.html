@@ -41,6 +41,10 @@
     }
     .badge .dot { width: 7px; height: 7px; border-radius: 50%; background: #f0b73d; }
 
+    .refresh-btn { margin-left: 10px; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 4px 11px; font-size: 12px; cursor: pointer; transition: all .12s; }
+    .refresh-btn:hover { border-color: var(--accent); }
+    .refresh-btn:disabled { opacity: .55; cursor: default; }
+
     .notice {
       background: rgba(76,141,255,0.08); border: 1px solid rgba(76,141,255,0.30);
       color: #cfe0ff; border-radius: 12px; padding: 12px 16px; font-size: 13px; line-height: 1.6;
@@ -176,7 +180,8 @@
         <span class="badge"><span class="dot"></span>데이터 약 15분 지연</span>
         <span class="badge" style="color:#6ea8fe;background:rgba(110,168,254,0.10);"><span class="dot" style="background:#6ea8fe;"></span>향후 KIS 실시간 연동 예정</span>
       </div>
-      <div class="meta">스냅샷 시점 <b id="updated">2026-06-19</b> · GitHub Pages 미리보기</div>
+      <div class="meta">마지막 갱신 <b id="updated">—</b> · 15분 자동 갱신 (다음 <b id="countdown">15:00</b>) · GitHub Pages 미리보기
+        <button id="refreshBtn" class="refresh-btn" onclick="forceRefresh()">🔄 새로고침</button></div>
     </header>
 
     <nav class="tabs" id="tabs" role="tablist">
@@ -272,7 +277,7 @@
     let period = "3mo";
     let quotesById = {};
     let lastRows = [];
-    const histCache = {};
+    let histCache = {};
     const PERIOD_DAYS = { "1mo": 22, "3mo": 66, "6mo": 9999 };
 
     // 심볼 → 스냅샷 파일명 매핑 (^ → CARET_, = → EQ_)
@@ -331,13 +336,21 @@
       loadHistory();
     }
 
+    function fmtUpdated(iso) {
+      if (!iso) return new Date().toLocaleTimeString("ko-KR");
+      const d = new Date(iso);
+      return isNaN(d) ? iso : d.toLocaleString("ko-KR");
+    }
+
     async function loadQuotes() {
       try {
-        const res = await fetch("data/quotes.json");
+        // Pages 캐시를 우회해 Action 이 갱신한 최신 스냅샷을 받는다.
+        const res = await fetch("data/quotes.json?t=" + Date.now(), { cache: "no-store" });
         const data = await res.json();
         renderCards(data.quotes);
         const q = quotesById[selected];
         document.getElementById("chartSub").textContent = q ? `${q.name} (${selected})` : (selected || "");
+        document.getElementById("updated").textContent = fmtUpdated(data.generated_at);
       } catch (e) {
         document.getElementById("cards").innerHTML =
           '<div style="color:#8b97a8">스냅샷 데이터를 불러오지 못했습니다.</div>';
@@ -350,7 +363,7 @@
       try {
         let data = histCache[selected];
         if (!data) {
-          const res = await fetch(histFile(selected));
+          const res = await fetch(histFile(selected) + "?t=" + Date.now(), { cache: "no-store" });
           data = await res.json();
           histCache[selected] = data;
         }
@@ -663,10 +676,50 @@
       if (btn) activateTab(btn.dataset.tab);
     });
 
+    // ===================== 자동 갱신 + 카운트다운 =====================
+    // Pages 스냅샷은 GitHub Actions 가 15분마다 새로 커밋한다. 그 주기에 맞춰
+    // 페이지도 15분마다 data/*.json 을 다시 받아 화면을 갱신한다.
+    const REFRESH_MS = 900000; // 15분
+    let nextRefreshAt = 0, refreshTimer = null;
+
+    function tickCountdown() {
+      const el = document.getElementById("countdown");
+      if (!el || !nextRefreshAt) return;
+      const ms = Math.max(0, nextRefreshAt - Date.now());
+      const m = Math.floor(ms / 60000), s = Math.floor((ms % 60000) / 1000);
+      el.textContent = m + ":" + String(s).padStart(2, "0");
+    }
+
+    function scheduleAutoRefresh() {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      nextRefreshAt = Date.now() + REFRESH_MS;
+      refreshTimer = setTimeout(async () => { await reload(); scheduleAutoRefresh(); }, REFRESH_MS);
+      tickCountdown();
+    }
+
+    async function reload() {
+      histCache = {};            // 스냅샷이 바뀌었을 수 있으니 차트 캐시 비우기
+      await loadQuotes();
+      await loadHistory();
+      if (briefingLoaded) loadBriefing();
+    }
+
+    async function forceRefresh() {
+      const btn = document.getElementById("refreshBtn");
+      if (btn) { btn.disabled = true; btn.textContent = "새로고침 중…"; }
+      try { await reload(); }
+      finally {
+        if (btn) { btn.disabled = false; btn.textContent = "🔄 새로고침"; }
+        scheduleAutoRefresh(); // 수동 갱신 후 카운트다운 재시작
+      }
+    }
+
     (async function init() {
       await loadQuotes();
       await loadHistory();
       requestAnimationFrame(resizeCharts);
+      scheduleAutoRefresh();            // 15분 자동 갱신 시작
+      setInterval(tickCountdown, 1000); // 매초 남은 시간 표시
     })();
   </script>
 </body>

@@ -1,0 +1,48 @@
+name: Refresh docs snapshot
+
+# GitHub Pages 미리보기(docs/)는 정적 호스팅이라 백엔드가 없다.
+# 이 워크플로가 15분마다 라이브 시세를 받아 docs/data/*.json 을 갱신·커밋해
+# Pages 의 가격이 (무료 소스 ~15분 지연 범위에서) 주기적으로 움직이게 한다.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # 15분마다 (UTC 기준; 실행은 다소 지연될 수 있음)
+  workflow_dispatch: {}        # 수동 실행 버튼
+
+permissions:
+  contents: write              # docs/data 커밋/푸시용
+
+concurrency:
+  group: refresh-snapshot
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build snapshot
+        env:
+          PYTHONPATH: .
+        run: python scripts/build_docs_snapshot.py
+
+      - name: Commit if changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- docs/data; then
+            echo "스냅샷 변동 없음 — 커밋 생략"
+          else
+            git add docs/data
+            git commit -m "chore: refresh docs snapshot [skip ci]"
+            git push
+          fi
