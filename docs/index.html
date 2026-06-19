@@ -74,6 +74,18 @@
     .empty-state { color: var(--muted); font-size: 13.5px; line-height: 1.7; padding: 26px 8px; text-align: center; }
     .note-line { color: var(--muted); font-size: 12.5px; line-height: 1.7; margin-top: 12px; }
 
+    /* 오늘 15분 흐름 표 */
+    .chart-basis { color: var(--muted); font-weight: 500; font-size: 12px; }
+    .intra-wrap { max-height: 280px; overflow-y: auto; }
+    .intra-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .intra-table th { position: sticky; top: 0; background: var(--panel); text-align: right; color: var(--muted); font-weight: 600; font-size: 11.5px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+    .intra-table th:first-child { text-align: left; }
+    .intra-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: right; font-variant-numeric: tabular-nums; }
+    .intra-table td:first-child { text-align: left; font-weight: 600; }
+    .intra-table tr:last-child td { border-bottom: none; }
+    .intra-table .up { color: var(--up); }
+    .intra-table .down { color: var(--down); }
+
     .dir-card { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
     .dir-card .nm { font-size: 15px; font-weight: 620; }
     .dir-card .tk { font-size: 12px; color: var(--muted); }
@@ -202,11 +214,9 @@
 
     <section class="chart-panel">
       <div class="chart-head">
-        <div class="title" id="chartTitle">차트 <span id="chartSub"></span><span id="chartChange" class="chg"></span></div>
+        <div class="title" id="chartTitle">차트 <span id="chartSub"></span><span class="chart-basis">· 일봉(종가) 1개월</span><span id="chartChange" class="chg"></span></div>
         <div class="periods" id="periods">
-          <button data-p="1mo">1개월</button>
-          <button data-p="3mo" class="active">3개월</button>
-          <button data-p="6mo">6개월</button>
+          <button data-p="1mo" class="active">1개월</button>
         </div>
       </div>
 
@@ -230,6 +240,12 @@
       </div>
       <div class="lower-box" id="lowerBox"></div>
       <div class="lower-cap" id="lowerCap"></div>
+    </section>
+
+    <section class="panel">
+      <h2>오늘 15분 흐름 <span id="intraSub" style="font-size:12px;color:var(--muted);font-weight:500;"></span></h2>
+      <div class="sub">15분마다 1개씩 기록한 당일 시각별 시세입니다(최신순). 무료 소스 ~15분 지연.</div>
+      <div id="intraBody" class="empty-state">불러오는 중…</div>
     </section>
 
     <section class="fin-panel">
@@ -274,11 +290,11 @@
     const USD = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
     let selected = null;
-    let period = "3mo";
+    let period = "1mo";
     let quotesById = {};
     let lastRows = [];
     let histCache = {};
-    const PERIOD_DAYS = { "1mo": 22, "3mo": 66, "6mo": 9999 };
+    const PERIOD_DAYS = { "1mo": 9999 };  // 한 달치 일봉(종가) 전체 표시
 
     // 심볼 → 스냅샷 파일명 매핑 (^ → CARET_, = → EQ_)
     function histFile(symbol) {
@@ -334,6 +350,51 @@
       document.getElementById("chartSub").textContent = q ? `${q.name} (${symbol})` : symbol;
       renderCards(Object.values(quotesById));
       loadHistory();
+      loadIntraday();
+    }
+
+    // ===================== 오늘 15분 흐름 (인트라데이) =====================
+    function intradayFile(symbol) {
+      return "data/intraday_" + symbol.replace("^", "CARET_").replace("=", "EQ_") + ".json";
+    }
+
+    function renderIntraday(data) {
+      const body = document.getElementById("intraBody");
+      const sub = document.getElementById("intraSub");
+      const pts = (data && data.points) || [];
+      const cur = (quotesById[selected] || {}).currency;
+      sub.textContent = data && data.date ? data.date + " (KST)" : "";
+      if (!pts.length) {
+        body.className = "empty-state";
+        body.textContent = "오늘 15분 데이터를 수집 중입니다. 15분마다 1개씩 누적됩니다.";
+        return;
+      }
+      // 최신순으로 표시(맨 위가 가장 최근 시각).
+      const rows = pts.slice().reverse().map((p) => {
+        const cls = changeClass(p.change_pct);
+        return `<tr>
+          <td>${p.t}</td>
+          <td>${fmtPrice({ price: p.price, currency: cur })}</td>
+          <td class="${cls}">${fmtChange(p.change_pct)}</td>
+        </tr>`;
+      }).join("");
+      body.className = "intra-wrap";
+      body.innerHTML = `<table class="intra-table">
+        <thead><tr><th>시각</th><th>가격</th><th>등락</th></tr></thead>
+        <tbody>${rows}</tbody></table>`;
+    }
+
+    async function loadIntraday() {
+      if (!selected) return;
+      const body = document.getElementById("intraBody");
+      try {
+        const res = await fetch(intradayFile(selected) + "?t=" + Date.now(), { cache: "no-store" });
+        if (!res.ok) throw new Error("no file");
+        renderIntraday(await res.json());
+      } catch (e) {
+        body.className = "empty-state";
+        body.textContent = "오늘 15분 데이터를 수집 중입니다. 15분마다 1개씩 누적됩니다.";
+      }
     }
 
     function fmtUpdated(iso) {
@@ -701,6 +762,7 @@
       histCache = {};            // 스냅샷이 바뀌었을 수 있으니 차트 캐시 비우기
       await loadQuotes();
       await loadHistory();
+      await loadIntraday();
       if (briefingLoaded) loadBriefing();
     }
 
@@ -717,6 +779,7 @@
     (async function init() {
       await loadQuotes();
       await loadHistory();
+      await loadIntraday();
       requestAnimationFrame(resizeCharts);
       scheduleAutoRefresh();            // 15분 자동 갱신 시작
       setInterval(tickCountdown, 1000); // 매초 남은 시간 표시
