@@ -189,6 +189,20 @@
     .hit-badge.up { color: #f0b73d; background: rgba(240,183,61,0.16); }
     .hit-badge.down { color: #ff5d6c; background: rgba(255,93,108,0.16); }
 
+    /* LIVE 표시 + 시세 변동 플래시 */
+    .live-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 650;
+      color: #2ec26b; background: rgba(46,194,107,0.10); border: 1px solid rgba(46,194,107,0.35);
+      border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+    .live-badge.stale { color: #f0b73d; background: rgba(240,183,61,0.10); border-color: rgba(240,183,61,0.35); }
+    .live-badge.down  { color: #ff5d6c; background: rgba(255,93,108,0.10); border-color: rgba(255,93,108,0.35); }
+    .live-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+    .live-dot.pulse { animation: livePulse .8s ease-out; }
+    @keyframes livePulse { 0% { box-shadow: 0 0 0 0 rgba(46,194,107,0.55); } 100% { box-shadow: 0 0 0 7px rgba(46,194,107,0); } }
+    @keyframes flashUp   { 0% { background: rgba(46,194,107,0.30); } 100% { background: transparent; } }
+    @keyframes flashDown { 0% { background: rgba(255,93,108,0.30); } 100% { background: transparent; } }
+    .card.flash-up  .price { animation: flashUp .7s ease-out; border-radius: 6px; }
+    .card.flash-down .price { animation: flashDown .7s ease-out; border-radius: 6px; }
+
     /* 설정 모달 (톱니바퀴) */
     .gear-btn { margin-left: 6px; }
     .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 50; align-items: center; justify-content: center; padding: 20px; }
@@ -211,10 +225,10 @@
     <header>
       <div class="lead">
         <h1>🐕 stock watchdog</h1>
-        <span class="badge" style="color:#2ec26b;background:rgba(46,194,107,0.10);border-color:rgba(46,194,107,0.35);"><span class="dot" style="background:#2ec26b;"></span>실시간 · KIS · 초단위</span>
+        <span class="live-badge" id="liveBadge"><span class="live-dot" id="liveDot"></span><span id="liveText">LIVE</span></span>
         <span class="badge" id="sessionBadge"><span class="dot"></span>세션 확인 중…</span>
       </div>
-      <div class="meta">마지막 갱신 <b id="updated">—</b> · <b>1초</b> 실시간 갱신 · 데이터: 한국투자증권(KIS) OpenAPI
+      <div class="meta">수신 <b id="recvTime">—</b> <span id="liveAge" style="color:var(--muted)"></span> · 1초 실시간(KIS) · 데이터: 한국투자증권 OpenAPI
         <button id="refreshBtn" class="refresh-btn" onclick="forceRefresh()">🔄 강제 동기화</button>
         <button id="gearBtn" class="refresh-btn gear-btn" title="설정" onclick="openSettings()">⚙️ 설정</button></div>
     </header>
@@ -348,6 +362,7 @@
     // ±% 표시 임계값(클라이언트 전용, localStorage). 서버 .env 알림 임계값과 별개.
     let ALERT_PCT = parseFloat(localStorage.getItem("alertPct"));
     if (!(ALERT_PCT > 0)) ALERT_PCT = 3;
+    const prevPrice = {};   // 시세 변동 플래시용: 심볼별 직전 가격
 
     // ---- 가격/등락 포맷 (카드용) ----
     function fmtPrice(q) {
@@ -373,8 +388,12 @@
         quotesById[q.symbol] = q;
         const hasPrice = q.price !== null && q.price !== undefined;
         const hit = q.change_pct != null && Math.abs(q.change_pct) >= ALERT_PCT;
+        const prev = prevPrice[q.symbol];
+        const flashCls = (prev != null && hasPrice && q.price !== prev)
+          ? (q.price > prev ? " flash-up" : " flash-down") : "";
+        if (hasPrice) prevPrice[q.symbol] = q.price;
         const el = document.createElement("div");
-        el.className = "card" + (q.symbol === selected ? " active" : "") + (hit ? " alert" : "");
+        el.className = "card" + (q.symbol === selected ? " active" : "") + (hit ? " alert" : "") + flashCls;
         el.onclick = () => selectSymbol(q.symbol);
         el.innerHTML = `
           <div class="top">
@@ -412,10 +431,35 @@
         renderCards(data.quotes);
         const q = quotesById[selected];
         document.getElementById("chartSub").textContent = q ? `${q.name} (${selected})` : (selected || "");
-        document.getElementById("updated").textContent = new Date().toLocaleTimeString("ko-KR");
+        updateLive(data.quotes || []);
       } catch (e) {
-        // 네트워크 오류여도 화면은 유지
+        setLiveDown();   // 폴링 실패 → LIVE 표시를 '끊김'으로
       }
+    }
+
+    // ---- LIVE 표시 (수신 시각 + 펄스 + 신선도) ----
+    function updateLive(quotes) {
+      const dot = document.getElementById("liveDot");
+      const badge = document.getElementById("liveBadge");
+      const text = document.getElementById("liveText");
+      const recv = document.getElementById("recvTime");
+      const ageEl = document.getElementById("liveAge");
+      // 펄스 1회 재생(애니메이션 리트리거).
+      dot.classList.remove("pulse"); void dot.offsetWidth; dot.classList.add("pulse");
+      const tss = (quotes || []).map((q) => q.ts).filter(Boolean);
+      const maxTs = tss.length ? Math.max(...tss) : 0;
+      if (!maxTs) { badge.className = "live-badge stale"; text.textContent = "대기"; return; }
+      const age = Math.floor(Date.now() / 1000) - maxTs;
+      recv.textContent = new Date(maxTs * 1000).toLocaleTimeString("ko-KR");
+      ageEl.textContent = age <= 2 ? "" : `(${age}s 전)`;
+      if (age > 30) { badge.className = "live-badge stale"; text.textContent = "지연"; }
+      else { badge.className = "live-badge"; text.textContent = "LIVE"; }
+    }
+    function setLiveDown() {
+      const badge = document.getElementById("liveBadge");
+      const text = document.getElementById("liveText");
+      if (badge) badge.className = "live-badge down";
+      if (text) text.textContent = "끊김";
     }
 
     async function loadHistory(fresh = false) {
