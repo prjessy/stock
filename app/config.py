@@ -38,9 +38,21 @@ class Settings:
 
     # 폴링 / 시장 시간 (KST)
     poll_interval_seconds: int = 60
-    market_open: str = "09:00"
-    market_close: str = "15:30"
+    market_open: str = "08:00"
+    market_close: str = "20:00"
     briefing_time: str = "07:00"
+
+    # 세션 경계 (KST) — 프리장 08:00~09:00 / 본장 09:00~15:40 / 에프터장 15:40~20:00
+    session_pre_open: str = "08:00"
+    session_regular_open: str = "09:00"
+    session_regular_close: str = "15:40"
+    session_after_close: str = "20:00"
+
+    # KIS(한국투자증권) OpenAPI — 실시간 시세. 값은 .env 에서만 읽는다(커밋 금지).
+    # 비어 있으면 registry 가 무료 소스(FinanceDataReader)로 폴백한다.
+    kis_app_key: str = ""
+    kis_app_secret: str = ""
+    kis_domain: str = "https://openapi.koreainvestment.com:9443"
 
     # 접근 제어: 허용된 Telegram chat id 목록
     allowed_chat_ids: list[str] = field(default_factory=list)
@@ -59,9 +71,16 @@ def load_settings() -> Settings:
         us_symbols=_split_csv(os.getenv("US_SYMBOLS", "NQ=F")),
         thresholds=_parse_floats(os.getenv("THRESHOLDS", "3.0,-3.0")),
         poll_interval_seconds=int(os.getenv("POLL_INTERVAL_SECONDS", "60")),
-        market_open=os.getenv("MARKET_OPEN", "09:00"),
-        market_close=os.getenv("MARKET_CLOSE", "15:30"),
+        market_open=os.getenv("MARKET_OPEN", "08:00"),
+        market_close=os.getenv("MARKET_CLOSE", "20:00"),
         briefing_time=os.getenv("BRIEFING_TIME", "07:00"),
+        session_pre_open=os.getenv("SESSION_PRE_OPEN", "08:00"),
+        session_regular_open=os.getenv("SESSION_REGULAR_OPEN", "09:00"),
+        session_regular_close=os.getenv("SESSION_REGULAR_CLOSE", "15:40"),
+        session_after_close=os.getenv("SESSION_AFTER_CLOSE", "20:00"),
+        kis_app_key=os.getenv("KIS_APP_KEY", ""),
+        kis_app_secret=os.getenv("KIS_APP_SECRET", ""),
+        kis_domain=os.getenv("KIS_DOMAIN", "https://openapi.koreainvestment.com:9443"),
         allowed_chat_ids=_split_csv(os.getenv("ALLOWED_CHAT_IDS", "")),
         hermes_base_url=os.getenv("HERMES_BASE_URL", "http://localhost:8080"),
         db_path=os.getenv("DB_PATH", "data/stock.db"),

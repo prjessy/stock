@@ -182,6 +182,28 @@
     .fin-note { font-size: 12.5px; color: var(--muted); }
 
     footer { margin-top: 22px; color: var(--muted); font-size: 12px; text-align: center; }
+
+    /* 임계값 도달 카드 강조 */
+    .card.alert { border-color: #f0b73d; box-shadow: 0 0 0 1px rgba(240,183,61,0.5), var(--shadow); }
+    .hit-badge { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 999px; margin-left: 6px; vertical-align: middle; }
+    .hit-badge.up { color: #f0b73d; background: rgba(240,183,61,0.16); }
+    .hit-badge.down { color: #ff5d6c; background: rgba(255,93,108,0.16); }
+
+    /* 설정 모달 (톱니바퀴) */
+    .gear-btn { margin-left: 6px; }
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 50; align-items: center; justify-content: center; padding: 20px; }
+    .modal-overlay.open { display: flex; }
+    .modal { width: 100%; max-width: 380px; background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--border); border-radius: 16px; padding: 18px 20px; box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
+    .modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .modal-head h2 { font-size: 16px; font-weight: 640; margin: 0; }
+    .modal-x { background: transparent; border: none; color: var(--muted); font-size: 16px; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
+    .modal-x:hover { color: var(--text); background: var(--panel); }
+    .modal-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; }
+    .modal-k { font-size: 13.5px; font-weight: 600; }
+    .modal-v { display: flex; align-items: center; gap: 4px; font-size: 14px; }
+    .modal-v input { width: 72px; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font-size: 14px; font-variant-numeric: tabular-nums; }
+    .modal-v input:focus { outline: none; border-color: var(--accent); }
+    .modal-note { color: var(--muted); font-size: 12px; line-height: 1.6; margin-top: 8px; border-top: 1px solid var(--border); padding-top: 12px; }
   </style>
 </head>
 <body>
@@ -189,11 +211,12 @@
     <header>
       <div class="lead">
         <h1>🐕 stock watchdog</h1>
-        <span class="badge"><span class="dot"></span>준실시간 · 약 15분 지연</span>
-        <span class="badge" style="color:#6ea8fe;background:rgba(110,168,254,0.10);"><span class="dot" style="background:#6ea8fe;"></span>향후 KIS 실시간 연동 예정</span>
+        <span class="badge" style="color:#2ec26b;background:rgba(46,194,107,0.10);border-color:rgba(46,194,107,0.35);"><span class="dot" style="background:#2ec26b;"></span>실시간 · KIS · 초단위</span>
+        <span class="badge" id="sessionBadge"><span class="dot"></span>세션 확인 중…</span>
       </div>
-      <div class="meta">마지막 갱신 <b id="updated">—</b> · 10분 자동 갱신 (다음 <b id="countdown">10:00</b>) · 데이터: 무료 소스(추후 한국투자증권 OpenAPI 실시간으로 교체 예정)
-        <button id="refreshBtn" class="refresh-btn" onclick="forceRefresh()">🔄 강제 동기화</button></div>
+      <div class="meta">마지막 갱신 <b id="updated">—</b> · <b>1초</b> 실시간 갱신 · 데이터: 한국투자증권(KIS) OpenAPI
+        <button id="refreshBtn" class="refresh-btn" onclick="forceRefresh()">🔄 강제 동기화</button>
+        <button id="gearBtn" class="refresh-btn gear-btn" title="설정" onclick="openSettings()">⚙️ 설정</button></div>
     </header>
 
     <nav class="tabs" id="tabs" role="tablist">
@@ -207,9 +230,25 @@
     <div class="tab-panel active" id="panel-dashboard" role="tabpanel">
     <section class="grid" id="cards"></section>
 
+    <section class="chart-panel" style="margin-bottom:16px;">
+      <div class="chart-head">
+        <div class="title">⚡ 실시간 <span id="rtSub" style="color:var(--muted);font-weight:500;font-size:13px;margin-left:6px;"></span><span id="rtLast" class="chg"></span></div>
+        <div class="periods" id="rtRange">
+          <button data-s="300">5분</button>
+          <button data-s="900" class="active">15분</button>
+          <button data-s="3600">1시간</button>
+          <button data-s="0">전체</button>
+        </div>
+      </div>
+      <div class="chart-box" id="rtBox" style="height:220px;">
+        <div class="chart-empty" id="rtEmpty">실시간 수신 대기 중…</div>
+      </div>
+      <div class="lower-cap">초단위 체결가 누적(페이지 연 시점부터) · 세션: <span id="rtSession">—</span></div>
+    </section>
+
     <section class="chart-panel">
       <div class="chart-head">
-        <div class="title" id="chartTitle">차트 <span id="chartSub"></span><span id="chartChange" class="chg"></span></div>
+        <div class="title" id="chartTitle">📈 히스토리 <span id="chartSub"></span><span id="chartChange" class="chg"></span></div>
         <div class="periods" id="periods">
           <button data-p="1mo">1개월</button>
           <button data-p="3mo" class="active">3개월</button>
@@ -279,6 +318,21 @@
       </section>
     </div>
 
+    <!-- ===== 설정 모달 (톱니바퀴) ===== -->
+    <div class="modal-overlay" id="settingsOverlay" onclick="if(event.target===this)closeSettings()">
+      <div class="modal" role="dialog" aria-modal="true" aria-label="설정">
+        <div class="modal-head">
+          <h2>⚙️ 설정</h2>
+          <button class="modal-x" onclick="closeSettings()" aria-label="닫기">✕</button>
+        </div>
+        <div class="modal-row">
+          <div class="modal-k">등락률 표시 임계값</div>
+          <div class="modal-v">±<input class="thr-input" type="number" min="0.5" max="50" step="0.5" value="3">%</div>
+        </div>
+        <div class="modal-note">설정한 ±% 도달 시 <b>종목 카드</b>에 🔔 로 강조됩니다. 값은 이 브라우저(localStorage)에 저장됩니다.<br>(실제 Telegram 알림 임계값은 서버 <code>.env</code> 로 관리됩니다.)</div>
+      </div>
+    </div>
+
     <footer>매매 판단 보조 도구 · 시세는 참고용이며, 최종 투자 판단과 책임은 본인에게 있습니다.</footer>
   </div>
 
@@ -290,6 +344,10 @@
     let period = "3mo";
     let quotesById = {};
     let lastRows = [];         // 현재 차트에 들어간 OHLC 행들
+
+    // ±% 표시 임계값(클라이언트 전용, localStorage). 서버 .env 알림 임계값과 별개.
+    let ALERT_PCT = parseFloat(localStorage.getItem("alertPct"));
+    if (!(ALERT_PCT > 0)) ALERT_PCT = 3;
 
     // ---- 가격/등락 포맷 (카드용) ----
     function fmtPrice(q) {
@@ -314,8 +372,9 @@
       quotes.forEach((q) => {
         quotesById[q.symbol] = q;
         const hasPrice = q.price !== null && q.price !== undefined;
+        const hit = q.change_pct != null && Math.abs(q.change_pct) >= ALERT_PCT;
         const el = document.createElement("div");
-        el.className = "card" + (q.symbol === selected ? " active" : "");
+        el.className = "card" + (q.symbol === selected ? " active" : "") + (hit ? " alert" : "");
         el.onclick = () => selectSymbol(q.symbol);
         el.innerHTML = `
           <div class="top">
@@ -326,7 +385,7 @@
             <div class="tag">${q.note || (q.currency === "KRW" ? "코스피" : "")}</div>
           </div>
           <div class="price ${hasPrice ? "" : "dim"}">${hasPrice ? fmtPrice(q) : "로딩 중…"}</div>
-          <div class="change ${changeClass(q.change_pct)}">${fmtChange(q.change_pct)}</div>
+          <div class="change ${changeClass(q.change_pct)}">${fmtChange(q.change_pct)}${hit ? `<span class="hit-badge ${q.change_pct >= 0 ? "up" : "down"}">🔔 ±${ALERT_PCT}%</span>` : ""}</div>
           ${q.error ? `<div class="err">데이터 없음</div>` : ""}
           ${(q.note || "").includes("레버리지") ? `<div class="warn-lev">⚠️ 매수 전 교육 필수(미이수 시 매수 불가) · 비용 약 8,000원 발생 · 음의 복리 유의</div>` : ""}
         `;
@@ -340,6 +399,7 @@
       const q = quotesById[symbol];
       document.getElementById("chartSub").textContent = q ? `${q.name} (${symbol})` : symbol;
       renderCards(Object.values(quotesById));
+      renderRt();
       loadHistory();
       loadFundamentals();
     }
@@ -348,6 +408,7 @@
       try {
         const res = await fetch(fresh ? "/api/quotes?fresh=1" : "/api/quotes");
         const data = await res.json();
+        pushRtTicks(data.quotes || []);
         renderCards(data.quotes);
         const q = quotesById[selected];
         document.getElementById("chartSub").textContent = q ? `${q.name} (${selected})` : (selected || "");
@@ -672,33 +733,137 @@
     async function forceRefresh() {
       const btn = document.getElementById("refreshBtn");
       if (btn) { btn.disabled = true; btn.textContent = "갱신 중…"; }
-      try { await loadQuotes(true); await loadHistory(true); await loadFundamentals(); }
+      try { await loadQuotes(true); renderRt(); await loadHistory(true); await loadFundamentals(); }
       finally {
         if (btn) { btn.disabled = false; btn.textContent = "🔄 강제 동기화"; }
-        scheduleAutoRefresh(); // 수동 갱신 후 10분 카운트다운 재시작
       }
     }
 
-    // ===================== 자동 갱신 + 카운트다운 =====================
-    const REFRESH_MS = 600000; // 10분
-    let nextRefreshAt = 0, refreshTimer = null;
+    // ===================== 설정 (톱니바퀴) · ±% 표시 임계값 =====================
+    function setAlertPct(v) {
+      if (!(v > 0)) return;
+      ALERT_PCT = v;
+      localStorage.setItem("alertPct", String(v));
+      renderCards(Object.values(quotesById));  // 카드 🔔 재계산
+      renderAlertThreshold();
+    }
+    function renderAlertThreshold() {
+      // 모달/알람탭 입력칸을 현재 값으로 동기화.
+      document.querySelectorAll(".thr-input").forEach((inp) => {
+        if (parseFloat(inp.value) !== ALERT_PCT) inp.value = ALERT_PCT;
+      });
+    }
+    function openSettings() {
+      renderAlertThreshold();
+      document.getElementById("settingsOverlay").classList.add("open");
+    }
+    function closeSettings() {
+      document.getElementById("settingsOverlay").classList.remove("open");
+    }
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSettings(); });
+    // thr-input 은 모달·알람탭 두 곳에 있고 알람탭은 동적 생성이라 위임 바인딩.
+    document.addEventListener("change", (e) => {
+      if (e.target.classList && e.target.classList.contains("thr-input")) {
+        setAlertPct(parseFloat(e.target.value));
+      }
+    });
 
-    function scheduleAutoRefresh() {
-      if (refreshTimer) clearTimeout(refreshTimer);
-      nextRefreshAt = Date.now() + REFRESH_MS;
-      refreshTimer = setTimeout(async () => {
-        await loadQuotes();
-        scheduleAutoRefresh();
-      }, REFRESH_MS);
-      tickCountdown();
+    // ===================== 실시간 (초단위) =====================
+    // 초단위 체결가를 클라이언트에 누적해 실시간 라인으로 그린다(페이지 연 시점부터).
+    const rtTicks = {};        // symbol -> [{time, value}]  (time = 로컬 보정 epoch초)
+    const RT_MAX = 7200;       // 종목당 최대 2시간치 보관
+    let rtChart = null, rtSeries = null, rtRangeSec = 900;
+
+    // LWC 시간축은 UTC 로 렌더되므로, 로컬(KST) 벽시계로 보이게 오프셋을 더한다.
+    function localSec() {
+      return Math.floor(Date.now() / 1000) - new Date().getTimezoneOffset() * 60;
     }
 
-    function tickCountdown() {
-      const el = document.getElementById("countdown");
-      if (!el || !nextRefreshAt) return;
-      const ms = Math.max(0, nextRefreshAt - Date.now());
-      const m = Math.floor(ms / 60000), s = Math.floor((ms % 60000) / 1000);
-      el.textContent = m + ":" + String(s).padStart(2, "0");
+    function pushRtTicks(quotes) {
+      const t = localSec();
+      (quotes || []).forEach((q) => {
+        if (q.price === null || q.price === undefined) return;
+        const arr = rtTicks[q.symbol] || (rtTicks[q.symbol] = []);
+        const last = arr[arr.length - 1];
+        if (last && last.time === t) last.value = q.price;     // 같은 초 → 덮어쓰기
+        else if (last && last.time > t) { /* 시계 역행 방지 */ }
+        else arr.push({ time: t, value: q.price });
+        if (arr.length > RT_MAX) arr.splice(0, arr.length - RT_MAX);
+      });
+    }
+
+    function ensureRtChart() {
+      if (rtChart) return;
+      const box = document.getElementById("rtBox");
+      rtChart = LWC.createChart(box, baseChartOptions({
+        width: box.clientWidth, height: box.clientHeight,
+        localization: { priceFormatter: priceFmt },
+        timeScale: { borderVisible: false, timeVisible: true, secondsVisible: true, fixRightEdge: true, rightOffset: 2 },
+      }));
+      rtSeries = rtChart.addAreaSeries({
+        lineColor: theme.up, topColor: "rgba(46,194,107,0.25)", bottomColor: "rgba(46,194,107,0.02)",
+        lineWidth: 2, priceLineVisible: true, lastValueVisible: true,
+      });
+      const ro = new ResizeObserver(() => rtChart.applyOptions({ width: box.clientWidth, height: box.clientHeight }));
+      ro.observe(box);
+    }
+
+    function renderRt() {
+      ensureRtChart();
+      const empty = document.getElementById("rtEmpty");
+      const arr = rtTicks[selected] || [];
+      let data = arr;
+      if (rtRangeSec > 0 && arr.length) {
+        const cut = localSec() - rtRangeSec;
+        data = arr.filter((p) => p.time >= cut);
+      }
+      if (data.length >= 2) {
+        const up = data[data.length - 1].value >= data[0].value;
+        rtSeries.applyOptions({
+          lineColor: up ? theme.up : theme.down,
+          topColor: up ? "rgba(46,194,107,0.25)" : "rgba(255,93,108,0.25)",
+          bottomColor: up ? "rgba(46,194,107,0.02)" : "rgba(255,93,108,0.02)",
+        });
+      }
+      rtSeries.setData(data.map((p) => ({ time: p.time, value: p.value })));
+      empty.style.display = data.length ? "none" : "flex";
+
+      const q = quotesById[selected] || {};
+      document.getElementById("rtSub").textContent = q.name ? `${q.name} (${selected})` : (selected || "");
+      const lastEl = document.getElementById("rtLast");
+      if (q.price !== null && q.price !== undefined) {
+        lastEl.textContent = "  " + fmtPrice(q) + " · " + fmtChange(q.change_pct);
+        lastEl.className = "chg " + changeClass(q.change_pct);
+      } else { lastEl.textContent = ""; lastEl.className = "chg"; }
+    }
+
+    document.getElementById("rtRange").addEventListener("click", (e) => {
+      const b = e.target.closest("button"); if (!b) return;
+      rtRangeSec = Number(b.dataset.s);
+      document.querySelectorAll("#rtRange button").forEach((x) => x.classList.remove("active"));
+      b.classList.add("active");
+      renderRt();
+    });
+
+    // ---- 세션 배지 (프리장/본장/에프터장/장마감) ----
+    const SESSION_COLOR = { pre: "#f0b73d", regular: "#2ec26b", after: "#6ea8fe", closed: "#8b97a8" };
+    async function loadSession() {
+      try {
+        const s = await (await fetch("/api/session")).json();
+        const col = SESSION_COLOR[s.session] || "#8b97a8";
+        const el = document.getElementById("sessionBadge");
+        el.innerHTML = `<span class="dot" style="background:${col}"></span>${s.label} · ${s.now}`;
+        el.style.color = col; el.style.background = col + "1a"; el.style.borderColor = col + "59";
+        const rs = document.getElementById("rtSession");
+        if (rs) rs.textContent = `${s.label} (${s.now} KST)`;
+      } catch (e) { /* 화면 유지 */ }
+    }
+
+    // ---- 1초 실시간 루프 (세션 무관하게 항상 폴링: 미국 선물은 주말에도 거래) ----
+    function startRealtime() {
+      setInterval(async () => { await loadQuotes(); renderRt(); }, 1000);
+      loadSession();
+      setInterval(loadSession, 15000); // 세션 배지는 15초마다 갱신
     }
 
     // ===================== 탭 전환 =====================
@@ -797,10 +962,12 @@
       el.innerHTML = `
         <div class="kv-grid">
           <div class="kv"><div class="k">워치리스트</div><div class="v"><span class="chip-list">${wl}</span></div></div>
-          <div class="kv"><div class="k">임계값</div><div class="v"><span class="chip-list">${th}</span></div></div>
+          <div class="kv"><div class="k">서버 알림 임계값(.env)</div><div class="v"><span class="chip-list">${th}</span></div></div>
+          <div class="kv"><div class="k">표시 임계값(이 브라우저)</div><div class="v">±<input class="thr-input" type="number" min="0.5" max="50" step="0.5" value="${ALERT_PCT}" style="width:62px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:4px 6px;font-size:14px;font-variant-numeric:tabular-nums;">%</div></div>
           <div class="kv"><div class="k">폴링 주기</div><div class="v">${s.poll_interval_seconds ?? "—"}초</div></div>
           <div class="kv"><div class="k">장 시간(KST)</div><div class="v">${s.market_open || "—"} ~ ${s.market_close || "—"}</div></div>
         </div>`;
+      renderAlertThreshold();
     }
 
     function renderAlarmHistory(alerts) {
@@ -838,11 +1005,11 @@
 
     (async function init() {
       await loadQuotes();
+      renderRt();
       await loadHistory();
       await loadFundamentals();
       requestAnimationFrame(resizeCharts); // 초기 렌더 직후 차트 크기 보정
-      scheduleAutoRefresh();          // 10분 간격 자동 갱신 시작
-      setInterval(tickCountdown, 1000); // 매초 남은 시간 표시
+      startRealtime();                // 1초 실시간 폴링 + 세션 배지 시작
     })();
   </script>
 </body>

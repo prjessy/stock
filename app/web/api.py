@@ -13,22 +13,42 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
+from app.core.market import current_session
 from app.datasources.financials import get_fundamentals
 from app.datasources.kr_price import KR_META
 from app.datasources.registry import SourceRegistry
 from app.datasources.us_market import US_META
 from app.storage.db import Repository
+from app.web.realtime import RealtimePoller
 
 STATIC_DIR = Path(__file__).parent / "static"
 
 app = FastAPI(title="주식 대시보드", docs_url=None, redoc_url=None)
 
+# GitHub Pages(정적 프론트)가 이 백엔드 /api 를 폴링할 수 있도록 CORS 허용.
+# 키는 서버에만 있으므로 프론트 출처를 열어도 시크릿은 노출되지 않는다.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET"],
+    allow_headers=["*"],
+)
+
 # 출처 디스패처 (각 소스의 TTL 캐시 내장) — 앱 수명 동안 재사용.
 _registry = SourceRegistry()
+
+# 실시간 백그라운드 폴러 — 시세를 메모리에 미리 받아두어 /api/quotes 가 즉시 응답.
+_poller = RealtimePoller(_registry)
+
+
+@app.on_event("startup")
+def _start_poller() -> None:
+    _poller.start()
 
 
 def _name_for(symbol: str) -> str:
@@ -39,13 +59,14 @@ def _name_for(symbol: str) -> str:
 
 @app.get("/api/quotes")
 def get_quotes(fresh: bool = False) -> JSONResponse:
-    """워치리스트 전체 시세. 개별 실패는 해당 항목 error 로만 표시.
+    """워치리스트 전체 시세 — 백그라운드 폴러의 메모리 스냅샷에서 즉시 반환.
 
-    fresh=1 이면 캐시를 비우고 출처에서 새로 받아온다(강제 동기화).
+    폴러가 아직 시드 전이거나 빈 경우에만 출처에서 직접 받아 폴백한다.
     """
-    if fresh:
-        _registry.clear_caches()
-    return JSONResponse({"quotes": _registry.all_quotes()})
+    quotes = _poller.quotes()
+    if not quotes:
+        quotes = _registry.all_quotes()
+    return JSONResponse({"quotes": quotes})
 
 
 @app.get("/api/history/{symbol}")
@@ -93,6 +114,18 @@ def get_alerts(limit: int = 50) -> JSONResponse:
         return JSONResponse({"alerts": []})
 
 
+@app.get("/api/session")
+def get_session() -> JSONResponse:
+    """현재 장 세션(프리장/본장/에프터장/장마감). 대시보드 배지용.
+
+    판정 실패 시에도 500 을 내지 않고 안전한 기본값을 반환한다.
+    """
+    try:
+        return JSONResponse(current_session())
+    except Exception:
+        return JSONResponse({"session": "closed", "label": "—", "open": False, "now": ""})
+
+
 @app.get("/api/settings")
 def get_settings() -> JSONResponse:
     """현재 감시 설정(워치리스트/임계값/폴링 주기/장 시간). 읽기 전용 표시용.
@@ -110,6 +143,8 @@ def get_settings() -> JSONResponse:
                 "poll_interval_seconds": settings.poll_interval_seconds,
                 "market_open": settings.market_open,
                 "market_close": settings.market_close,
+                "session": current_session(),
+                "realtime": bool(settings.kis_app_key and settings.kis_app_secret),
             }
         )
     except Exception:
@@ -118,8 +153,10 @@ def get_settings() -> JSONResponse:
                 "watchlist": [],
                 "thresholds": [3.0, -3.0],
                 "poll_interval_seconds": 60,
-                "market_open": "09:00",
-                "market_close": "15:30",
+                "market_open": "08:00",
+                "market_close": "20:00",
+                "session": {"session": "closed", "label": "—", "open": False, "now": ""},
+                "realtime": False,
             }
         )
 

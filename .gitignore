@@ -1,5 +1,7 @@
 # secrets / 환경
 .env
+# KIS 앱키/시크릿 원본 — 절대 커밋 금지 (값은 .env 로 옮겼음)
+key.txt
 
 # 상태 DB (루트 전용 — docs/data 미리보기 스냅샷은 추적함)
 /data/

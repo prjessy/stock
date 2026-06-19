@@ -11,11 +11,19 @@ from app.datasources.kr_price import KrPriceSource
 from app.datasources.us_market import UsMarketSource
 
 
+def _make_kr_source() -> PriceSource:
+    """국내 시세 출처 선택: KIS 키가 있으면 실시간(KIS), 없으면 무료 소스(FDR)로 폴백."""
+    if settings.kis_app_key and settings.kis_app_secret:
+        from app.datasources.kis_price import KisPriceSource
+        return KisPriceSource()
+    return KrPriceSource()
+
+
 class SourceRegistry:
     """심볼별 PriceSource 라우팅. 출처 인스턴스(=TTL 캐시)는 앱 수명 동안 재사용."""
 
     def __init__(self) -> None:
-        self._kr = KrPriceSource()
+        self._kr = _make_kr_source()
         self._us = UsMarketSource()
         self._kr_set = set(settings.kr_symbols)
         self._us_set = set(settings.us_symbols)

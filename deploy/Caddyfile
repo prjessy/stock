@@ -1,0 +1,20 @@
+# 도메인 + 무료 자동 HTTPS (2단계, 선택).
+# your-domain.com 을 실제 도메인으로 바꾸세요.
+#
+# Cloudflare 사용 시:
+#  1) Cloudflare DNS 에 A 레코드: your-domain.com -> <VPS IP>
+#  2) 처음엔 프록시를 'DNS only'(회색 구름)로 둬야 Caddy 가 Let's Encrypt 인증서를
+#     정상 발급합니다. 정상 동작 확인 후 프록시(주황 구름)를 켜도 됩니다.
+#  3) VPS 보안그룹/방화벽에서 80, 443 포트를 열어두세요.
+#
+# 설치(Ubuntu):
+#   sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
+#   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+#   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+#   sudo apt update && sudo apt install caddy
+#   sudo cp deploy/Caddyfile /etc/caddy/Caddyfile   # 도메인 수정 후
+#   sudo systemctl reload caddy
+
+your-domain.com {
+    reverse_proxy localhost:8000
+}
