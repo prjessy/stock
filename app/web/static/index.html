@@ -267,8 +267,16 @@
     </section>
 
     <section class="panel" style="margin-bottom:16px;">
-      <h2>🕔 오늘 5분 흐름 <span id="intraSub" style="color:var(--muted);font-weight:500;font-size:13px;margin-left:6px;"></span></h2>
-      <div class="sub">5분 단위 가격·전일대비. ±임계값 도달 시 🔔 (⚙️ 설정에서 조정) · 무료소스 ~15분 지연</div>
+      <div class="chart-head">
+        <div class="title" style="font-size:15px;">🕔 오늘 흐름 <span id="intraSub" style="color:var(--muted);font-weight:500;font-size:13px;margin-left:6px;"></span></div>
+        <div class="periods" id="intraRange">
+          <button data-iv="1m">1분</button>
+          <button data-iv="5m" class="active">5분</button>
+          <button data-iv="15m">15분</button>
+          <button data-iv="30m">30분</button>
+        </div>
+      </div>
+      <div class="sub">시각·가격·전일대비. ±임계값 도달 시 🔔 (⚙️ 설정) · 정규장(09:00~15:30) 기준 · 무료소스 ~15분 지연</div>
       <div id="intraBody" class="empty-state">불러오는 중…</div>
     </section>
 
@@ -374,6 +382,7 @@
 
     let selected = null;       // 선택된 심볼
     let period = "3mo";
+    let intraInterval = "5m";  // 오늘 흐름 표 간격(1m/5m/15m/30m), 기본 5분
     let quotesById = {};
     let lastRows = [];         // 현재 차트에 들어간 OHLC 행들
 
@@ -508,7 +517,7 @@
       const q = quotesById[selected] || {};
       document.getElementById("intraSub").textContent = q.name ? `${q.name} (${selected})` : selected;
       try {
-        const res = await fetch(`/api/intraday/${encodeURIComponent(selected)}?interval=5m`);
+        const res = await fetch(`/api/intraday/${encodeURIComponent(selected)}?interval=${intraInterval}`);
         const data = await res.json();
         renderIntraday((data.rows || []).filter((r) => r && r.close != null), q);
       } catch (e) {
@@ -849,6 +858,16 @@
       document.querySelectorAll("#periods button").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       loadHistory();
+    });
+
+    // 오늘 흐름 표 간격 토글 (1/5/15/30분)
+    document.getElementById("intraRange").addEventListener("click", (e) => {
+      const btn = e.target.closest("button");
+      if (!btn) return;
+      intraInterval = btn.dataset.iv;
+      document.querySelectorAll("#intraRange button").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      loadIntraday();
     });
 
     async function forceRefresh() {
