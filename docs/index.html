@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>주식 대시보드 (미리보기)</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0c1018;
+      --panel: #151b27;
+      --panel-2: #1b2331;
+      --border: #25303f;
+      --text: #e6ebf2;
+      --muted: #8b97a8;
+      --up: #2ec26b;
+      --down: #ff5d6c;
+      --accent: #4c8dff;
+      --shadow: 0 1px 0 rgba(255,255,255,0.03), 0 8px 24px rgba(0,0,0,0.35);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(1200px 600px at 80% -10%, #16203020, transparent), var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 28px 20px 56px; }
+    header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px 14px; margin-bottom: 22px; }
+    header .lead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    header h1 { font-size: 22px; font-weight: 650; margin: 0; letter-spacing: -0.2px; }
+    header .meta { color: var(--muted); font-size: 13px; }
+    header .meta b { color: var(--text); font-weight: 600; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 12px; color: #f0b73d; background: rgba(240,183,61,0.10);
+      border: 1px solid rgba(240,183,61,0.35); border-radius: 999px; padding: 3px 10px;
+      white-space: nowrap;
+    }
+    .badge .dot { width: 7px; height: 7px; border-radius: 50%; background: #f0b73d; }
+
+    .notice {
+      background: rgba(76,141,255,0.08); border: 1px solid rgba(76,141,255,0.30);
+      color: #cfe0ff; border-radius: 12px; padding: 12px 16px; font-size: 13px; line-height: 1.6;
+      margin-bottom: 20px;
+    }
+    .notice b { color: #fff; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+    .card {
+      background: linear-gradient(180deg, var(--panel-2), var(--panel));
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px 16px 14px;
+      cursor: pointer;
+      transition: border-color .15s ease, transform .1s ease;
+      box-shadow: var(--shadow);
+    }
+    .card:hover { border-color: #36506f; }
+    .card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--shadow); }
+    .card .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+    .card .name { font-size: 15px; font-weight: 600; }
+    .card .ticker { font-size: 12px; color: var(--muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
+    .card .tag {
+      font-size: 11px; color: var(--muted); border: 1px solid var(--border);
+      padding: 2px 7px; border-radius: 999px; white-space: nowrap;
+    }
+    .card .price { font-size: 26px; font-weight: 680; margin: 14px 0 2px; font-variant-numeric: tabular-nums; letter-spacing: -0.5px; }
+    .card .price.dim { color: var(--muted); font-weight: 500; }
+    .card .change { font-size: 13.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .change.up { color: var(--up); }
+    .change.down { color: var(--down); }
+    .change.flat { color: var(--muted); }
+    .card .err { font-size: 11px; color: var(--down); margin-top: 6px; opacity: .85; }
+
+    .chart-panel {
+      background: linear-gradient(180deg, var(--panel-2), var(--panel));
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 18px 18px 8px;
+      box-shadow: var(--shadow);
+    }
+    .chart-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 8px; }
+    .chart-head .title { font-size: 16px; font-weight: 620; }
+    .chart-head .title span { color: var(--muted); font-weight: 500; font-size: 13px; margin-left: 6px; }
+    .periods { display: flex; gap: 6px; }
+    .periods button {
+      background: var(--panel); color: var(--muted); border: 1px solid var(--border);
+      border-radius: 8px; padding: 5px 11px; font-size: 12.5px; cursor: pointer; transition: all .12s;
+    }
+    .periods button:hover { color: var(--text); }
+    .periods button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .chart-box { position: relative; height: 340px; }
+    .chart-empty { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; color: var(--muted); font-size: 14px; }
+    footer { margin-top: 22px; color: var(--muted); font-size: 12px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="lead">
+        <h1>주식 대시보드</h1>
+        <span class="badge"><span class="dot"></span>정적 미리보기 · 2026-06-19 스냅샷</span>
+        <span class="badge" style="color:#6ea8fe;background:rgba(110,168,254,0.10);"><span class="dot" style="background:#6ea8fe;"></span>향후 KIS 실시간 연동 예정</span>
+      </div>
+      <div class="meta">스냅샷 시점 <b id="updated">2026-06-19</b> · GitHub Pages 미리보기</div>
+    </header>
+
+    <div class="notice">
+      📸 <b>이 페이지는 디자인 미리보기입니다.</b> 시세는 <b>고정 스냅샷</b>(2026-06-19)이며 실시간 갱신되지 않습니다.
+      실시간 동작(자동 갱신·알림)은 서버 실행 시 가능합니다 → 로컬 <code>http://localhost:8000</code> 또는 VPS 배포.
+    </div>
+
+    <section class="grid" id="cards"></section>
+
+    <section class="chart-panel">
+      <div class="chart-head">
+        <div class="title" id="chartTitle">차트 <span id="chartSub"></span></div>
+        <div class="periods" id="periods">
+          <button data-p="1mo">1개월</button>
+          <button data-p="3mo" class="active">3개월</button>
+          <button data-p="6mo">6개월</button>
+        </div>
+      </div>
+      <div class="chart-box">
+        <canvas id="chart"></canvas>
+        <div class="chart-empty" id="chartEmpty">데이터 없음</div>
+      </div>
+    </section>
+
+    <footer>알림 전용 보조 시스템 · 시세는 참고용이며 투자 판단의 근거가 아닙니다.</footer>
+  </div>
+
+  <script>
+    const KRW = new Intl.NumberFormat("ko-KR");
+    const USD = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    let selected = null;
+    let period = "3mo";
+    let chart = null;
+    let quotesById = {};
+    const histCache = {};
+    const PERIOD_DAYS = { "1mo": 22, "3mo": 66, "6mo": 9999 };
+
+    // 심볼 → 스냅샷 파일명 매핑 (^ → CARET_, = → EQ_)
+    function histFile(symbol) {
+      return "data/history_" + symbol.replace("^", "CARET_").replace("=", "EQ_") + ".json";
+    }
+
+    function fmtPrice(q) {
+      if (q.price === null || q.price === undefined) return "—";
+      if (q.currency === "KRW") return KRW.format(Math.round(q.price)) + "원";
+      return "$" + USD.format(q.price);
+    }
+    function changeClass(pct) {
+      if (pct === null || pct === undefined) return "flat";
+      return pct >= 0 ? "up" : "down";
+    }
+    function fmtChange(pct) {
+      if (pct === null || pct === undefined) return "변동 없음";
+      const sign = pct >= 0 ? "▲ +" : "▼ ";
+      return sign + pct.toFixed(2) + "%";
+    }
+
+    function renderCards(quotes) {
+      const root = document.getElementById("cards");
+      root.innerHTML = "";
+      if (!selected && quotes.length) selected = quotes[0].symbol;
+      quotes.forEach((q) => {
+        quotesById[q.symbol] = q;
+        const hasPrice = q.price !== null && q.price !== undefined;
+        const el = document.createElement("div");
+        el.className = "card" + (q.symbol === selected ? " active" : "");
+        el.onclick = () => selectSymbol(q.symbol);
+        el.innerHTML = `
+          <div class="top">
+            <div>
+              <div class="name">${q.name}</div>
+              <div class="ticker">${q.symbol}</div>
+            </div>
+            <div class="tag">${q.note || (q.currency === "KRW" ? "코스피" : "")}</div>
+          </div>
+          <div class="price ${hasPrice ? "" : "dim"}">${hasPrice ? fmtPrice(q) : "—"}</div>
+          <div class="change ${changeClass(q.change_pct)}">${fmtChange(q.change_pct)}</div>
+          ${q.error ? `<div class="err">데이터 없음</div>` : ""}
+        `;
+        root.appendChild(el);
+      });
+    }
+
+    function selectSymbol(symbol) {
+      selected = symbol;
+      document.querySelectorAll(".card").forEach((c) => c.classList.remove("active"));
+      const q = quotesById[symbol];
+      document.getElementById("chartSub").textContent = q ? `${q.name} (${symbol})` : symbol;
+      renderCards(Object.values(quotesById));
+      loadHistory();
+    }
+
+    async function loadQuotes() {
+      try {
+        const res = await fetch("data/quotes.json");
+        const data = await res.json();
+        renderCards(data.quotes);
+        const q = quotesById[selected];
+        document.getElementById("chartSub").textContent = q ? `${q.name} (${selected})` : (selected || "");
+      } catch (e) {
+        document.getElementById("cards").innerHTML =
+          '<div style="color:#8b97a8">스냅샷 데이터를 불러오지 못했습니다.</div>';
+      }
+    }
+
+    async function loadHistory() {
+      if (!selected) return;
+      const empty = document.getElementById("chartEmpty");
+      try {
+        let data = histCache[selected];
+        if (!data) {
+          const res = await fetch(histFile(selected));
+          data = await res.json();
+          histCache[selected] = data;
+        }
+        let rows = data.history || [];
+        const n = PERIOD_DAYS[period] || 9999;
+        if (rows.length > n) rows = rows.slice(rows.length - n);
+        if (!rows.length) { drawChart([], []); empty.style.display = "flex"; return; }
+        empty.style.display = "none";
+        drawChart(rows.map((r) => r.date), rows.map((r) => r.close));
+      } catch (e) {
+        drawChart([], []);
+        empty.style.display = "flex";
+      }
+    }
+
+    function drawChart(labels, closes) {
+      const ctx = document.getElementById("chart");
+      const up = closes.length >= 2 && closes[closes.length - 1] >= closes[0];
+      const line = up ? "#2ec26b" : "#ff5d6c";
+      const fill = up ? "rgba(46,194,107,0.12)" : "rgba(255,93,108,0.12)";
+      const cfg = {
+        type: "line",
+        data: {
+          labels,
+          datasets: [{
+            data: closes, borderColor: line, backgroundColor: fill,
+            borderWidth: 2, pointRadius: 0, tension: 0.18, fill: true,
+          }],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: { legend: { display: false }, tooltip: {
+            backgroundColor: "#1b2331", borderColor: "#25303f", borderWidth: 1,
+            titleColor: "#e6ebf2", bodyColor: "#e6ebf2", padding: 10, displayColors: false,
+          }},
+          scales: {
+            x: { grid: { display: false }, ticks: { color: "#8b97a8", maxTicksLimit: 7, font: { size: 11 } } },
+            y: { grid: { color: "#1d2733" }, ticks: { color: "#8b97a8", font: { size: 11 } } },
+          },
+        },
+      };
+      if (chart) { chart.data = cfg.data; chart.options = cfg.options; chart.update(); }
+      else { chart = new Chart(ctx, cfg); }
+    }
+
+    document.getElementById("periods").addEventListener("click", (e) => {
+      const btn = e.target.closest("button");
+      if (!btn) return;
+      period = btn.dataset.p;
+      document.querySelectorAll("#periods button").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      loadHistory();
+    });
+
+    (async function init() {
+      await loadQuotes();
+      await loadHistory();
+    })();
+  </script>
+</body>
+</html>
