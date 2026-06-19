@@ -97,6 +97,12 @@
     .chip-list { display: flex; gap: 6px; flex-wrap: wrap; }
     .chip-static { font-size: 12px; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; }
 
+    /* 임계값 조절 컨트롤 */
+    .thr-ctrl { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text); margin-bottom: 12px; }
+    .thr-ctrl input { width: 64px; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px; font-size: 13px; font-variant-numeric: tabular-nums; }
+    .thr-ctrl input:focus { outline: none; border-color: var(--accent); }
+    .thr-ctrl .thr-hint { color: var(--muted); font-size: 12px; }
+
     .dir-card { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
     .dir-card .nm { font-size: 15px; font-weight: 620; }
     .dir-card .tk { font-size: 12px; color: var(--muted); }
@@ -256,6 +262,7 @@
     <section class="panel">
       <h2>오늘 15분 흐름 <span id="intraSub" style="font-size:12px;color:var(--muted);font-weight:500;"></span></h2>
       <div class="sub">15분마다 1개씩 기록한 당일 시각별 시세입니다(최신순). 무료 소스 ~15분 지연.</div>
+      <div class="thr-ctrl">알림 임계값 ±<input id="thrInput" type="number" min="0.5" max="50" step="0.5" value="3">% <span class="thr-hint">도달 시 🔔 표시 (이 브라우저에 저장)</span></div>
       <div id="intraBody" class="empty-state">불러오는 중…</div>
     </section>
 
@@ -291,7 +298,7 @@
         <h2>감시 설정</h2>
         <div class="sub">장중 등락률이 임계값에 도달하면 자동 감지합니다.</div>
         <div class="kv-grid">
-          <div class="kv"><div class="k">임계값(증감율)</div><div class="v"><span class="chip-list"><span class="chip-static" style="color:var(--up)">▲ +3%</span><span class="chip-static" style="color:var(--down)">▼ -3%</span></span></div></div>
+          <div class="kv"><div class="k">임계값(증감율)</div><div class="v"><span class="chip-list"><span class="chip-static" id="thrUpChip" style="color:var(--up)">▲ +3%</span><span class="chip-static" id="thrDownChip" style="color:var(--down)">▼ -3%</span></span></div></div>
           <div class="kv"><div class="k">폴링 주기</div><div class="v">15분</div></div>
           <div class="kv"><div class="k">발송 채널</div><div class="v">Telegram(워치독)</div></div>
         </div>
@@ -378,7 +385,27 @@
       return "data/intraday_" + symbol.replace("^", "CARET_").replace("=", "EQ_") + ".json";
     }
 
-    const ALERT_PCT = 3;  // ±3% 알림 임계값(서버 settings.thresholds [+3,-3] 과 동일)
+    // ±% 알림 임계값. Pages 는 백엔드가 없어 브라우저(localStorage)에 저장한다.
+    // (라이브 앱의 실제 알림 임계값은 서버 settings.thresholds / .env 로 관리)
+    let ALERT_PCT = parseFloat(localStorage.getItem("alertPct"));
+    if (!(ALERT_PCT > 0)) ALERT_PCT = 3;
+
+    function setAlertPct(v) {
+      if (!(v > 0)) return;
+      ALERT_PCT = v;
+      localStorage.setItem("alertPct", String(v));
+      loadIntraday();          // 15분 표 하이라이트 다시 계산
+      renderAlarmThreshold();  // 알람 탭 칩 동기화
+    }
+
+    function renderAlarmThreshold() {
+      const up = document.getElementById("thrUpChip");
+      const down = document.getElementById("thrDownChip");
+      if (up) up.textContent = "▲ +" + ALERT_PCT + "%";
+      if (down) down.textContent = "▼ -" + ALERT_PCT + "%";
+      const inp = document.getElementById("thrInput");
+      if (inp && parseFloat(inp.value) !== ALERT_PCT) inp.value = ALERT_PCT;
+    }
 
     function renderIntraday(data) {
       const body = document.getElementById("intraBody");
@@ -804,7 +831,12 @@
       }
     }
 
+    document.getElementById("thrInput").addEventListener("change", (e) => {
+      setAlertPct(parseFloat(e.target.value));
+    });
+
     (async function init() {
+      renderAlarmThreshold();           // 저장된 임계값을 입력칸/칩에 반영
       await loadQuotes();
       await loadHistory();
       await loadIntraday();
