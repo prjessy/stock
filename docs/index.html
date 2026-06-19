@@ -217,7 +217,7 @@
       <button class="tab-btn active" data-tab="dashboard" role="tab" aria-selected="true">📊 대시보드</button>
       <button class="tab-btn" data-tab="briefing" role="tab" aria-selected="false">🌅 브리핑</button>
       <button class="tab-btn" data-tab="marketing" role="tab" aria-selected="false">📰 마케팅</button>
-      <button class="tab-btn" data-tab="alarm" role="tab" aria-selected="false">🔔 알람</button>
+      <button class="tab-btn" data-tab="alarm" role="tab" aria-selected="false">🔔 알람 ⚙️</button>
     </nav>
 
     <!-- ===== 탭 1: 대시보드 ===== -->
@@ -262,7 +262,7 @@
     <section class="panel">
       <h2>오늘 15분 흐름 <span id="intraSub" style="font-size:12px;color:var(--muted);font-weight:500;"></span></h2>
       <div class="sub">15분마다 1개씩 기록한 당일 시각별 시세입니다(최신순). 무료 소스 ~15분 지연.</div>
-      <div class="thr-ctrl">알림 임계값 ±<input id="thrInput" type="number" min="0.5" max="50" step="0.5" value="3">% <span class="thr-hint">도달 시 🔔 표시 (이 브라우저에 저장)</span></div>
+      <div class="thr-ctrl">알림 임계값 ±<input class="thr-input" type="number" min="0.5" max="50" step="0.5" value="3">% <span class="thr-hint">도달 시 🔔 표시 · ⚙️ 알람 탭에서도 조정</span></div>
       <div id="intraBody" class="empty-state">불러오는 중…</div>
     </section>
 
@@ -295,14 +295,15 @@
     <!-- ===== 탭 4: 알람 ===== -->
     <div class="tab-panel" id="panel-alarm" role="tabpanel">
       <section class="panel">
-        <h2>감시 설정</h2>
-        <div class="sub">장중 등락률이 임계값에 도달하면 자동 감지합니다.</div>
+        <h2>⚙️ 감시 설정</h2>
+        <div class="sub">장중 등락률이 임계값에 도달하면 자동 감지합니다. 임계값은 여기서 조정하세요.</div>
         <div class="kv-grid">
-          <div class="kv"><div class="k">임계값(증감율)</div><div class="v"><span class="chip-list"><span class="chip-static" id="thrUpChip" style="color:var(--up)">▲ +3%</span><span class="chip-static" id="thrDownChip" style="color:var(--down)">▼ -3%</span></span></div></div>
+          <div class="kv"><div class="k">등락률 임계값 (조정 가능)</div><div class="v"><span class="thr-ctrl" style="margin:0">±<input class="thr-input" type="number" min="0.5" max="50" step="0.5" value="3">%</span></div></div>
+          <div class="kv"><div class="k">도달 표시</div><div class="v"><span class="chip-list"><span class="chip-static" id="thrUpChip" style="color:var(--up)">▲ +3%</span><span class="chip-static" id="thrDownChip" style="color:var(--down)">▼ -3%</span></span></div></div>
           <div class="kv"><div class="k">폴링 주기</div><div class="v">15분</div></div>
           <div class="kv"><div class="k">발송 채널</div><div class="v">Telegram(워치독)</div></div>
         </div>
-        <div class="note-line">📈 오늘 ±3% 도달 시점은 <b>대시보드 탭 → 오늘 15분 흐름</b> 표에서 🔔 로 표시됩니다.</div>
+        <div class="note-line">📈 도달 시점은 <b>대시보드 탭 → 오늘 15분 흐름</b> 표에서 🔔 로 표시됩니다. (이 브라우저에 저장)</div>
       </section>
       <section class="panel">
         <div class="note-line">실제 감지 내역(시각·종목별 발생 기록)과 Telegram 발송은 <b>라이브 앱</b>에서 제공됩니다. (정적 미리보기에는 미포함)</div>
@@ -403,8 +404,10 @@
       const down = document.getElementById("thrDownChip");
       if (up) up.textContent = "▲ +" + ALERT_PCT + "%";
       if (down) down.textContent = "▼ -" + ALERT_PCT + "%";
-      const inp = document.getElementById("thrInput");
-      if (inp && parseFloat(inp.value) !== ALERT_PCT) inp.value = ALERT_PCT;
+      // 임계값 입력칸은 여러 곳(알람 탭·15분 표)에 있을 수 있어 모두 동기화.
+      document.querySelectorAll(".thr-input").forEach((inp) => {
+        if (parseFloat(inp.value) !== ALERT_PCT) inp.value = ALERT_PCT;
+      });
     }
 
     function renderIntraday(data) {
@@ -831,8 +834,8 @@
       }
     }
 
-    document.getElementById("thrInput").addEventListener("change", (e) => {
-      setAlertPct(parseFloat(e.target.value));
+    document.querySelectorAll(".thr-input").forEach((inp) => {
+      inp.addEventListener("change", (e) => setAlertPct(parseFloat(e.target.value)));
     });
 
     (async function init() {
