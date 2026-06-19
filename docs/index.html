@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>워치독 (미리보기)</title>
+  <title>stock watchdog (미리보기)</title>
   <!-- TradingView Lightweight Charts (standalone production build, 버전 고정) -->
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <style>
@@ -47,6 +47,40 @@
       margin-bottom: 20px;
     }
     .notice b { color: #fff; }
+
+    /* 탭 바 */
+    .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 22px; border-bottom: 1px solid var(--border); }
+    .tab-btn {
+      background: transparent; color: var(--muted); border: 1px solid transparent; border-bottom: none;
+      border-radius: 10px 10px 0 0; padding: 9px 16px; font-size: 13.5px; font-weight: 600; cursor: pointer;
+      transition: all .12s; margin-bottom: -1px;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--text); background: var(--panel-2); border-color: var(--border); border-bottom-color: var(--panel-2); }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .panel {
+      background: linear-gradient(180deg, var(--panel-2), var(--panel));
+      border: 1px solid var(--border); border-radius: 16px; padding: 18px 20px; box-shadow: var(--shadow);
+      margin-bottom: 16px;
+    }
+    .panel h2 { font-size: 15px; font-weight: 640; margin: 0 0 12px; }
+    .panel .sub { color: var(--muted); font-size: 12.5px; margin-bottom: 14px; }
+    .empty-state { color: var(--muted); font-size: 13.5px; line-height: 1.7; padding: 26px 8px; text-align: center; }
+    .note-line { color: var(--muted); font-size: 12.5px; line-height: 1.7; margin-top: 12px; }
+
+    .dir-card { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+    .dir-card .nm { font-size: 15px; font-weight: 620; }
+    .dir-card .tk { font-size: 12px; color: var(--muted); }
+    .dir-card .pct { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.5px; }
+    .dir-card .pct.up { color: var(--up); }
+    .dir-card .pct.down { color: var(--down); }
+    .dir-card .pct.flat { color: var(--muted); }
+    .dir-badge { font-size: 13px; font-weight: 650; padding: 4px 12px; border-radius: 999px; }
+    .dir-badge.up { color: var(--up); background: rgba(46,194,107,0.12); }
+    .dir-badge.down { color: var(--down); background: rgba(255,93,108,0.12); }
+    .dir-badge.flat { color: var(--muted); background: rgba(139,151,168,0.12); }
 
     .grid {
       display: grid;
@@ -137,7 +171,7 @@
   <div class="wrap">
     <header>
       <div class="lead">
-        <h1>🐕 워치독 <span style="font-size:13px;color:var(--muted);font-weight:500;">Watchdog</span></h1>
+        <h1>🐕 stock watchdog</h1>
         <span class="badge"><span class="dot"></span>정적 미리보기 · 2026-06-19 스냅샷</span>
         <span class="badge"><span class="dot"></span>데이터 약 15분 지연</span>
         <span class="badge" style="color:#6ea8fe;background:rgba(110,168,254,0.10);"><span class="dot" style="background:#6ea8fe;"></span>향후 KIS 실시간 연동 예정</span>
@@ -145,6 +179,15 @@
       <div class="meta">스냅샷 시점 <b id="updated">2026-06-19</b> · GitHub Pages 미리보기</div>
     </header>
 
+    <nav class="tabs" id="tabs" role="tablist">
+      <button class="tab-btn active" data-tab="dashboard" role="tab" aria-selected="true">📊 대시보드</button>
+      <button class="tab-btn" data-tab="briefing" role="tab" aria-selected="false">🌅 브리핑</button>
+      <button class="tab-btn" data-tab="marketing" role="tab" aria-selected="false">📰 마케팅</button>
+      <button class="tab-btn" data-tab="alarm" role="tab" aria-selected="false">🔔 알람</button>
+    </nav>
+
+    <!-- ===== 탭 1: 대시보드 ===== -->
+    <div class="tab-panel active" id="panel-dashboard" role="tabpanel">
     <div class="notice">
       📸 <b>이 페이지는 디자인 미리보기입니다.</b> 시세는 <b>고정 스냅샷</b>(2026-06-19)이며 실시간 갱신되지 않습니다.
       실제 서비스의 시세는 무료 소스 기준 <b>약 15분 지연</b>됩니다(향후 KIS 실시간 연동 예정).
@@ -188,6 +231,35 @@
       <div class="fin-head">재무 요약</div>
       <div class="fin-note">재무 요약(PER/PBR/시총/배당 등)은 라이브에서 제공됩니다.</div>
     </section>
+    </div><!-- /panel-dashboard -->
+
+    <!-- ===== 탭 2: 브리핑 ===== -->
+    <div class="tab-panel" id="panel-briefing" role="tabpanel">
+      <section class="panel">
+        <h2>장 전 방향성</h2>
+        <div class="sub">나스닥 선물(NQ=F) 흐름으로 미국 시장 분위기를 가늠합니다. (스냅샷 기준)</div>
+        <div id="briefDir" class="empty-state">불러오는 중…</div>
+      </section>
+      <section class="panel">
+        <div class="note-line">📨 매일 07:00 자동 브리핑이 Telegram(워치독)으로 발송됩니다. (상세 브리핑은 준비중)</div>
+      </section>
+    </div>
+
+    <!-- ===== 탭 3: 마케팅 ===== -->
+    <div class="tab-panel" id="panel-marketing" role="tabpanel">
+      <section class="panel">
+        <h2>마케팅 자료</h2>
+        <div class="empty-state">준비중 — 뉴스·공시·애널·커뮤니티 취합 (builder-5)</div>
+      </section>
+    </div>
+
+    <!-- ===== 탭 4: 알람 ===== -->
+    <div class="tab-panel" id="panel-alarm" role="tabpanel">
+      <section class="panel">
+        <h2>알람</h2>
+        <div class="empty-state">감지 내역과 감시 설정은 라이브에서 제공됩니다.</div>
+      </section>
+    </div>
 
     <footer>매매 판단 보조 도구 · 시세는 참고용이며, 최종 투자 판단과 책임은 본인에게 있습니다.</footer>
   </div>
@@ -540,9 +612,61 @@
       loadHistory();
     });
 
+    // ===================== 탭 전환 =====================
+    let briefingLoaded = false;
+
+    function resizeCharts() {
+      if (!priceChart) return;
+      const box = document.getElementById("chartBox");
+      const lbox = document.getElementById("lowerBox");
+      priceChart.applyOptions({ width: box.clientWidth, height: box.clientHeight });
+      lowerChart.applyOptions({ width: lbox.clientWidth, height: lbox.clientHeight });
+      priceChart.timeScale().fitContent();
+      if (lowerMode !== "none") lowerChart.timeScale().fitContent();
+    }
+
+    function dirWords(pct) {
+      if (pct === null || pct === undefined) return { cls: "flat", label: "보합", arrow: "" };
+      if (pct > 0.05) return { cls: "up", label: "강세", arrow: "▲ +" };
+      if (pct < -0.05) return { cls: "down", label: "약세", arrow: "▼ " };
+      return { cls: "flat", label: "보합", arrow: "" };
+    }
+
+    function loadBriefing() {
+      const el = document.getElementById("briefDir");
+      const q = quotesById["NQ=F"];
+      if (!q) { el.className = "empty-state"; el.textContent = "나스닥 선물 스냅샷이 없습니다."; return; }
+      const d = dirWords(q.change_pct);
+      const pctTxt = (q.change_pct == null) ? "—" : d.arrow + Math.abs(q.change_pct).toFixed(2) + "%";
+      el.className = "dir-card";
+      el.innerHTML = `
+        <div><div class="nm">${q.name || "나스닥 선물"}</div><div class="tk">${q.symbol}</div></div>
+        <div class="pct ${d.cls}">${pctTxt}</div>
+        <div class="dir-badge ${d.cls}">${d.label}</div>`;
+    }
+
+    function activateTab(name) {
+      document.querySelectorAll(".tab-btn").forEach((b) => {
+        const on = b.dataset.tab === name;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-selected", on ? "true" : "false");
+      });
+      document.querySelectorAll(".tab-panel").forEach((p) => {
+        p.classList.toggle("active", p.id === "panel-" + name);
+      });
+      if (name === "dashboard") requestAnimationFrame(resizeCharts);
+      else if (name === "briefing" && !briefingLoaded) { briefingLoaded = true; loadBriefing(); }
+    }
+
+    document.getElementById("tabs").addEventListener("click", (e) => {
+      const btn = e.target.closest(".tab-btn");
+      if (btn) activateTab(btn.dataset.tab);
+    });
+
     (async function init() {
       await loadQuotes();
       await loadHistory();
+      requestAnimationFrame(resizeCharts);
     })();
   </script>
 </body>

@@ -67,6 +67,22 @@ class Repository:
         except sqlite3.IntegrityError:
             return False
 
+    def recent_alerts(self, limit: int = 50) -> list[dict]:
+        """최근 감지된 알림을 최신순으로 돌려준다(알람 탭 표시용).
+
+        alerts 테이블 컬럼(id, trade_date, symbol, threshold, fired_at)을
+        dict 리스트로 반환한다. 조회 실패 시 빈 리스트(전체 500 금지).
+        """
+        try:
+            rows = self.conn.execute(
+                "SELECT trade_date, symbol, threshold, fired_at "
+                "FROM alerts ORDER BY fired_at DESC, id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        except Exception:
+            return []
+
     def close(self) -> None:
         self.conn.close()
 

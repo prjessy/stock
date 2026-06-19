@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>워치독</title>
+  <title>stock watchdog</title>
   <!-- TradingView Lightweight Charts (standalone production build, 버전 고정) -->
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <style>
@@ -43,6 +43,55 @@
       white-space: nowrap;
     }
     .badge .dot { width: 7px; height: 7px; border-radius: 50%; background: #f0b73d; }
+
+    /* 탭 바 */
+    .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 22px; border-bottom: 1px solid var(--border); padding-bottom: 0; }
+    .tab-btn {
+      background: transparent; color: var(--muted); border: 1px solid transparent; border-bottom: none;
+      border-radius: 10px 10px 0 0; padding: 9px 16px; font-size: 13.5px; font-weight: 600; cursor: pointer;
+      transition: all .12s; margin-bottom: -1px;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--text); background: var(--panel-2); border-color: var(--border); border-bottom-color: var(--panel-2); }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* 일반 패널 / 빈 상태 (브리핑·마케팅·알람) */
+    .panel {
+      background: linear-gradient(180deg, var(--panel-2), var(--panel));
+      border: 1px solid var(--border); border-radius: 16px; padding: 18px 20px; box-shadow: var(--shadow);
+      margin-bottom: 16px;
+    }
+    .panel h2 { font-size: 15px; font-weight: 640; margin: 0 0 12px; }
+    .panel .sub { color: var(--muted); font-size: 12.5px; margin-bottom: 14px; }
+    .empty-state { color: var(--muted); font-size: 13.5px; line-height: 1.7; padding: 26px 8px; text-align: center; }
+    .note-line { color: var(--muted); font-size: 12.5px; line-height: 1.7; margin-top: 12px; }
+
+    /* 브리핑: 방향성 카드 */
+    .dir-card { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+    .dir-card .nm { font-size: 15px; font-weight: 620; }
+    .dir-card .tk { font-size: 12px; color: var(--muted); }
+    .dir-card .pct { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.5px; }
+    .dir-card .pct.up { color: var(--up); }
+    .dir-card .pct.down { color: var(--down); }
+    .dir-card .pct.flat { color: var(--muted); }
+    .dir-badge { font-size: 13px; font-weight: 650; padding: 4px 12px; border-radius: 999px; }
+    .dir-badge.up { color: var(--up); background: rgba(46,194,107,0.12); }
+    .dir-badge.down { color: var(--down); background: rgba(255,93,108,0.12); }
+    .dir-badge.flat { color: var(--muted); background: rgba(139,151,168,0.12); }
+
+    /* 알람: 설정 항목 + 감지 내역 테이블 */
+    .kv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px 18px; }
+    .kv .k { font-size: 11px; color: var(--muted); }
+    .kv .v { font-size: 15px; font-weight: 620; margin-top: 2px; }
+    .chip-list { display: flex; gap: 6px; flex-wrap: wrap; }
+    .chip-static { font-size: 12px; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; }
+    .alert-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .alert-table th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11.5px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+    .alert-table td { padding: 9px 10px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+    .alert-table tr:last-child td { border-bottom: none; }
+    .alert-table .th-up { color: var(--up); font-weight: 600; }
+    .alert-table .th-down { color: var(--down); font-weight: 600; }
 
     .grid {
       display: grid;
@@ -139,14 +188,23 @@
   <div class="wrap">
     <header>
       <div class="lead">
-        <h1>🐕 워치독 <span style="font-size:13px;color:var(--muted);font-weight:500;">Watchdog</span></h1>
+        <h1>🐕 stock watchdog</h1>
         <span class="badge"><span class="dot"></span>준실시간 · 약 15분 지연</span>
         <span class="badge" style="color:#6ea8fe;background:rgba(110,168,254,0.10);"><span class="dot" style="background:#6ea8fe;"></span>향후 KIS 실시간 연동 예정</span>
       </div>
-      <div class="meta">마지막 갱신 <b id="updated">—</b> · 30초 자동 갱신 · 데이터: 무료 소스(추후 한국투자증권 OpenAPI 실시간으로 교체 예정)
+      <div class="meta">마지막 갱신 <b id="updated">—</b> · 10분 자동 갱신 (다음 <b id="countdown">10:00</b>) · 데이터: 무료 소스(추후 한국투자증권 OpenAPI 실시간으로 교체 예정)
         <button id="refreshBtn" class="refresh-btn" onclick="forceRefresh()">🔄 강제 동기화</button></div>
     </header>
 
+    <nav class="tabs" id="tabs" role="tablist">
+      <button class="tab-btn active" data-tab="dashboard" role="tab" aria-selected="true">📊 대시보드</button>
+      <button class="tab-btn" data-tab="briefing" role="tab" aria-selected="false">🌅 브리핑</button>
+      <button class="tab-btn" data-tab="marketing" role="tab" aria-selected="false">📰 마케팅</button>
+      <button class="tab-btn" data-tab="alarm" role="tab" aria-selected="false">🔔 알람</button>
+    </nav>
+
+    <!-- ===== 탭 1: 대시보드 (기존 기능 그대로) ===== -->
+    <div class="tab-panel active" id="panel-dashboard" role="tabpanel">
     <section class="grid" id="cards"></section>
 
     <section class="chart-panel">
@@ -186,6 +244,40 @@
       <div class="fin-head">재무 요약 <span class="asof" id="finAsof"></span></div>
       <div id="finBody"><div class="fin-note">불러오는 중…</div></div>
     </section>
+    </div><!-- /panel-dashboard -->
+
+    <!-- ===== 탭 2: 브리핑 ===== -->
+    <div class="tab-panel" id="panel-briefing" role="tabpanel">
+      <section class="panel">
+        <h2>장 전 방향성</h2>
+        <div class="sub">나스닥 선물(NQ=F) 흐름으로 미국 시장 분위기를 가늠합니다.</div>
+        <div id="briefDir" class="empty-state">불러오는 중…</div>
+      </section>
+      <section class="panel">
+        <div class="note-line">📨 매일 07:00 자동 브리핑이 Telegram(워치독)으로 발송됩니다. (상세 브리핑은 준비중)</div>
+      </section>
+    </div>
+
+    <!-- ===== 탭 3: 마케팅 ===== -->
+    <div class="tab-panel" id="panel-marketing" role="tabpanel">
+      <section class="panel">
+        <h2>마케팅 자료</h2>
+        <div class="empty-state">준비중 — 뉴스·공시·애널·커뮤니티 취합 (builder-5)</div>
+      </section>
+    </div>
+
+    <!-- ===== 탭 4: 알람 ===== -->
+    <div class="tab-panel" id="panel-alarm" role="tabpanel">
+      <section class="panel">
+        <h2>현재 감시 설정</h2>
+        <div class="sub">설정은 서버 구성(.env)에서 관리되며 여기서는 읽기 전용으로 표시됩니다.</div>
+        <div id="alarmSettings" class="empty-state">불러오는 중…</div>
+      </section>
+      <section class="panel">
+        <h2>감지 내역</h2>
+        <div id="alarmHistory" class="empty-state">불러오는 중…</div>
+      </section>
+    </div>
 
     <footer>매매 판단 보조 도구 · 시세는 참고용이며, 최종 투자 판단과 책임은 본인에게 있습니다.</footer>
   </div>
@@ -581,14 +673,176 @@
       const btn = document.getElementById("refreshBtn");
       if (btn) { btn.disabled = true; btn.textContent = "갱신 중…"; }
       try { await loadQuotes(true); await loadHistory(true); await loadFundamentals(); }
-      finally { if (btn) { btn.disabled = false; btn.textContent = "🔄 강제 동기화"; } }
+      finally {
+        if (btn) { btn.disabled = false; btn.textContent = "🔄 강제 동기화"; }
+        scheduleAutoRefresh(); // 수동 갱신 후 10분 카운트다운 재시작
+      }
+    }
+
+    // ===================== 자동 갱신 + 카운트다운 =====================
+    const REFRESH_MS = 600000; // 10분
+    let nextRefreshAt = 0, refreshTimer = null;
+
+    function scheduleAutoRefresh() {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      nextRefreshAt = Date.now() + REFRESH_MS;
+      refreshTimer = setTimeout(async () => {
+        await loadQuotes();
+        scheduleAutoRefresh();
+      }, REFRESH_MS);
+      tickCountdown();
+    }
+
+    function tickCountdown() {
+      const el = document.getElementById("countdown");
+      if (!el || !nextRefreshAt) return;
+      const ms = Math.max(0, nextRefreshAt - Date.now());
+      const m = Math.floor(ms / 60000), s = Math.floor((ms % 60000) / 1000);
+      el.textContent = m + ":" + String(s).padStart(2, "0");
+    }
+
+    // ===================== 탭 전환 =====================
+    let briefingLoaded = false, alarmLoaded = false;
+
+    function resizeCharts() {
+      // 숨겨졌던 대시보드 탭이 보일 때 차트 0-height 방지: 컨테이너 폭/높이로 재적용 후 fit.
+      if (!priceChart) return;
+      const box = document.getElementById("chartBox");
+      const lbox = document.getElementById("lowerBox");
+      priceChart.applyOptions({ width: box.clientWidth, height: box.clientHeight });
+      lowerChart.applyOptions({ width: lbox.clientWidth, height: lbox.clientHeight });
+      priceChart.timeScale().fitContent();
+      if (lowerMode !== "none") lowerChart.timeScale().fitContent();
+    }
+
+    function activateTab(name) {
+      document.querySelectorAll(".tab-btn").forEach((b) => {
+        const on = b.dataset.tab === name;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-selected", on ? "true" : "false");
+      });
+      document.querySelectorAll(".tab-panel").forEach((p) => {
+        p.classList.toggle("active", p.id === "panel-" + name);
+      });
+      if (name === "dashboard") {
+        // 차트는 숨김 상태에서 0px 로 그려질 수 있어 보일 때 리사이즈한다.
+        requestAnimationFrame(resizeCharts);
+      } else if (name === "briefing" && !briefingLoaded) {
+        briefingLoaded = true; loadBriefing();
+      } else if (name === "alarm" && !alarmLoaded) {
+        alarmLoaded = true; loadAlarm();
+      }
+    }
+
+    document.getElementById("tabs").addEventListener("click", (e) => {
+      const btn = e.target.closest(".tab-btn");
+      if (btn) activateTab(btn.dataset.tab);
+    });
+
+    // ===================== 브리핑 탭 =====================
+    function dirWords(pct) {
+      if (pct === null || pct === undefined) return { cls: "flat", label: "보합", arrow: "" };
+      if (pct > 0.05) return { cls: "up", label: "강세", arrow: "▲ +" };
+      if (pct < -0.05) return { cls: "down", label: "약세", arrow: "▼ " };
+      return { cls: "flat", label: "보합", arrow: "" };
+    }
+
+    function renderBriefDir(q) {
+      const el = document.getElementById("briefDir");
+      if (!q) {
+        el.className = "empty-state";
+        el.textContent = "나스닥 선물 시세를 불러오지 못했습니다.";
+        return;
+      }
+      const d = dirWords(q.change_pct);
+      const pctTxt = (q.change_pct == null) ? "—" : d.arrow + Math.abs(q.change_pct).toFixed(2) + "%";
+      el.className = "dir-card";
+      el.innerHTML = `
+        <div><div class="nm">${q.name || "나스닥 선물"}</div><div class="tk">${q.symbol}</div></div>
+        <div class="pct ${d.cls}">${pctTxt}</div>
+        <div class="dir-badge ${d.cls}">${d.label}</div>`;
+    }
+
+    async function loadBriefing() {
+      // quotesById 에 이미 NQ=F 가 있으면 재사용, 없으면 quotes 호출.
+      let nq = quotesById["NQ=F"];
+      if (!nq) {
+        try {
+          const res = await fetch("/api/quotes");
+          const data = await res.json();
+          (data.quotes || []).forEach((q) => { quotesById[q.symbol] = q; });
+          nq = quotesById["NQ=F"];
+        } catch (e) { /* 화면 유지 */ }
+      }
+      renderBriefDir(nq);
+    }
+
+    // ===================== 알람 탭 =====================
+    function fmtThreshold(t) {
+      const sign = t >= 0 ? "+" : "";
+      return sign + t + "%";
+    }
+    function fmtFired(iso) {
+      if (!iso) return "—";
+      const d = new Date(iso);
+      if (isNaN(d)) return iso;
+      return d.toLocaleString("ko-KR");
+    }
+
+    function renderAlarmSettings(s) {
+      const el = document.getElementById("alarmSettings");
+      const wl = (s.watchlist || []).map((w) => `<span class="chip-static">${w.name}</span>`).join("") || "—";
+      const th = (s.thresholds || []).map((t) => `<span class="chip-static">${fmtThreshold(t)}</span>`).join("") || "—";
+      el.className = "";
+      el.innerHTML = `
+        <div class="kv-grid">
+          <div class="kv"><div class="k">워치리스트</div><div class="v"><span class="chip-list">${wl}</span></div></div>
+          <div class="kv"><div class="k">임계값</div><div class="v"><span class="chip-list">${th}</span></div></div>
+          <div class="kv"><div class="k">폴링 주기</div><div class="v">${s.poll_interval_seconds ?? "—"}초</div></div>
+          <div class="kv"><div class="k">장 시간(KST)</div><div class="v">${s.market_open || "—"} ~ ${s.market_close || "—"}</div></div>
+        </div>`;
+    }
+
+    function renderAlarmHistory(alerts) {
+      const el = document.getElementById("alarmHistory");
+      if (!alerts || !alerts.length) {
+        el.className = "empty-state";
+        el.textContent = "아직 감지된 알림이 없습니다. 장중 ±임계값 도달 시 여기와 Telegram에 표시됩니다.";
+        return;
+      }
+      const rows = alerts.map((a) => {
+        const cls = (a.threshold != null && a.threshold < 0) ? "th-down" : "th-up";
+        return `<tr>
+          <td>${a.trade_date || "—"}</td>
+          <td>${a.name || a.symbol || "—"}</td>
+          <td class="${cls}">${a.threshold == null ? "—" : fmtThreshold(a.threshold)}</td>
+          <td>${fmtFired(a.fired_at)}</td>
+        </tr>`;
+      }).join("");
+      el.className = "";
+      el.innerHTML = `<table class="alert-table">
+        <thead><tr><th>거래일</th><th>종목명</th><th>임계값</th><th>발생시각</th></tr></thead>
+        <tbody>${rows}</tbody></table>`;
+    }
+
+    async function loadAlarm() {
+      try {
+        const [sRes, aRes] = await Promise.all([fetch("/api/settings"), fetch("/api/alerts")]);
+        renderAlarmSettings(await sRes.json());
+        renderAlarmHistory((await aRes.json()).alerts);
+      } catch (e) {
+        document.getElementById("alarmSettings").textContent = "설정을 불러오지 못했습니다.";
+        document.getElementById("alarmHistory").textContent = "감지 내역을 불러오지 못했습니다.";
+      }
     }
 
     (async function init() {
       await loadQuotes();
       await loadHistory();
       await loadFundamentals();
-      setInterval(loadQuotes, 30000); // 시세 30초 자동 갱신
+      requestAnimationFrame(resizeCharts); // 초기 렌더 직후 차트 크기 보정
+      scheduleAutoRefresh();          // 10분 간격 자동 갱신 시작
+      setInterval(tickCountdown, 1000); // 매초 남은 시간 표시
     })();
   </script>
 </body>
