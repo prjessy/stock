@@ -3,7 +3,7 @@ python-dotenv      # .env 로딩
 requests           # Hermes localhost HTTP 클라이언트
 fastapi            # 대시보드 JSON API + Hermes 인바운드
 uvicorn            # FastAPI ASGI 서버
-apscheduler        # 폴링/브리핑 스케줄러 (후속 슬라이스)
+apscheduler        # 폴링 스케줄러 (알림 데몬)
 
 # --- 데이터소스 (대시보드 시세/차트) ---
 finance-datareader # 국내 시세 (005930, 000660)
