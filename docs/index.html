@@ -85,6 +85,17 @@
     .intra-table tr:last-child td { border-bottom: none; }
     .intra-table .up { color: var(--up); }
     .intra-table .down { color: var(--down); }
+    .intra-table tr.hit td { background: rgba(240,183,61,0.09); }
+    .hit-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+    .hit-badge.up { color: var(--up); background: rgba(46,194,107,0.14); }
+    .hit-badge.down { color: var(--down); background: rgba(255,93,108,0.14); }
+
+    /* 알람 탭: 설정 항목 */
+    .kv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px 18px; }
+    .kv .k { font-size: 11px; color: var(--muted); }
+    .kv .v { font-size: 15px; font-weight: 620; margin-top: 2px; }
+    .chip-list { display: flex; gap: 6px; flex-wrap: wrap; }
+    .chip-static { font-size: 12px; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; }
 
     .dir-card { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
     .dir-card .nm { font-size: 15px; font-weight: 620; }
@@ -277,8 +288,17 @@
     <!-- ===== 탭 4: 알람 ===== -->
     <div class="tab-panel" id="panel-alarm" role="tabpanel">
       <section class="panel">
-        <h2>알람</h2>
-        <div class="empty-state">감지 내역과 감시 설정은 라이브에서 제공됩니다.</div>
+        <h2>감시 설정</h2>
+        <div class="sub">장중 등락률이 임계값에 도달하면 자동 감지합니다.</div>
+        <div class="kv-grid">
+          <div class="kv"><div class="k">임계값(증감율)</div><div class="v"><span class="chip-list"><span class="chip-static" style="color:var(--up)">▲ +3%</span><span class="chip-static" style="color:var(--down)">▼ -3%</span></span></div></div>
+          <div class="kv"><div class="k">폴링 주기</div><div class="v">15분</div></div>
+          <div class="kv"><div class="k">발송 채널</div><div class="v">Telegram(워치독)</div></div>
+        </div>
+        <div class="note-line">📈 오늘 ±3% 도달 시점은 <b>대시보드 탭 → 오늘 15분 흐름</b> 표에서 🔔 로 표시됩니다.</div>
+      </section>
+      <section class="panel">
+        <div class="note-line">실제 감지 내역(시각·종목별 발생 기록)과 Telegram 발송은 <b>라이브 앱</b>에서 제공됩니다. (정적 미리보기에는 미포함)</div>
       </section>
     </div>
 
@@ -358,12 +378,15 @@
       return "data/intraday_" + symbol.replace("^", "CARET_").replace("=", "EQ_") + ".json";
     }
 
+    const ALERT_PCT = 3;  // ±3% 알림 임계값(서버 settings.thresholds [+3,-3] 과 동일)
+
     function renderIntraday(data) {
       const body = document.getElementById("intraBody");
       const sub = document.getElementById("intraSub");
       const pts = (data && data.points) || [];
       const cur = (quotesById[selected] || {}).currency;
-      sub.textContent = data && data.date ? data.date + " (KST)" : "";
+      const hits = pts.filter((p) => p.change_pct != null && Math.abs(p.change_pct) >= ALERT_PCT).length;
+      sub.textContent = (data && data.date ? data.date + " (KST)" : "") + (hits ? ` · ±${ALERT_PCT}% 도달 ${hits}회` : "");
       if (!pts.length) {
         body.className = "empty-state";
         body.textContent = "오늘 15분 데이터를 수집 중입니다. 15분마다 1개씩 누적됩니다.";
@@ -372,15 +395,20 @@
       // 최신순으로 표시(맨 위가 가장 최근 시각).
       const rows = pts.slice().reverse().map((p) => {
         const cls = changeClass(p.change_pct);
-        return `<tr>
+        const hit = p.change_pct != null && Math.abs(p.change_pct) >= ALERT_PCT;
+        const badge = hit
+          ? `<span class="hit-badge ${p.change_pct >= 0 ? "up" : "down"}">🔔 ±${ALERT_PCT}%</span>`
+          : "";
+        return `<tr class="${hit ? "hit" : ""}">
           <td>${p.t}</td>
           <td>${fmtPrice({ price: p.price, currency: cur })}</td>
           <td class="${cls}">${fmtChange(p.change_pct)}</td>
+          <td>${badge}</td>
         </tr>`;
       }).join("");
       body.className = "intra-wrap";
       body.innerHTML = `<table class="intra-table">
-        <thead><tr><th>시각</th><th>가격</th><th>등락</th></tr></thead>
+        <thead><tr><th>시각</th><th>가격</th><th>등락</th><th>알림</th></tr></thead>
         <tbody>${rows}</tbody></table>`;
     }
 
