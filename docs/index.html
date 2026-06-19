@@ -103,6 +103,22 @@
     .thr-ctrl input:focus { outline: none; border-color: var(--accent); }
     .thr-ctrl .thr-hint { color: var(--muted); font-size: 12px; }
 
+    /* 설정 모달 (톱니바퀴) */
+    .gear-btn { margin-left: 6px; }
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 50; align-items: center; justify-content: center; padding: 20px; }
+    .modal-overlay.open { display: flex; }
+    .modal { width: 100%; max-width: 380px; background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--border); border-radius: 16px; padding: 18px 20px; box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
+    .modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .modal-head h2 { font-size: 16px; font-weight: 640; margin: 0; }
+    .modal-x { background: transparent; border: none; color: var(--muted); font-size: 16px; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
+    .modal-x:hover { color: var(--text); background: var(--panel); }
+    .modal-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; }
+    .modal-k { font-size: 13.5px; font-weight: 600; }
+    .modal-v { display: flex; align-items: center; gap: 4px; font-size: 14px; }
+    .modal-v input { width: 72px; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font-size: 14px; font-variant-numeric: tabular-nums; }
+    .modal-v input:focus { outline: none; border-color: var(--accent); }
+    .modal-note { color: var(--muted); font-size: 12px; line-height: 1.6; margin-top: 8px; border-top: 1px solid var(--border); padding-top: 12px; }
+
     .dir-card { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
     .dir-card .nm { font-size: 15px; font-weight: 620; }
     .dir-card .tk { font-size: 12px; color: var(--muted); }
@@ -210,14 +226,15 @@
         <span class="badge" style="color:#6ea8fe;background:rgba(110,168,254,0.10);"><span class="dot" style="background:#6ea8fe;"></span>향후 KIS 실시간 연동 예정</span>
       </div>
       <div class="meta">마지막 갱신 <b id="updated">—</b> · 15분 자동 갱신 (다음 <b id="countdown">15:00</b>) · GitHub Pages 미리보기
-        <button id="refreshBtn" class="refresh-btn" onclick="forceRefresh()">🔄 새로고침</button></div>
+        <button id="refreshBtn" class="refresh-btn" onclick="forceRefresh()">🔄 새로고침</button>
+        <button id="gearBtn" class="refresh-btn gear-btn" title="설정" onclick="openSettings()">⚙️ 설정</button></div>
     </header>
 
     <nav class="tabs" id="tabs" role="tablist">
       <button class="tab-btn active" data-tab="dashboard" role="tab" aria-selected="true">📊 대시보드</button>
       <button class="tab-btn" data-tab="briefing" role="tab" aria-selected="false">🌅 브리핑</button>
       <button class="tab-btn" data-tab="marketing" role="tab" aria-selected="false">📰 마케팅</button>
-      <button class="tab-btn" data-tab="alarm" role="tab" aria-selected="false">🔔 알람 ⚙️</button>
+      <button class="tab-btn" data-tab="alarm" role="tab" aria-selected="false">🔔 알람</button>
     </nav>
 
     <!-- ===== 탭 1: 대시보드 ===== -->
@@ -262,7 +279,7 @@
     <section class="panel">
       <h2>오늘 15분 흐름 <span id="intraSub" style="font-size:12px;color:var(--muted);font-weight:500;"></span></h2>
       <div class="sub">15분마다 1개씩 기록한 당일 시각별 시세입니다(최신순). 무료 소스 ~15분 지연.</div>
-      <div class="thr-ctrl">알림 임계값 ±<input class="thr-input" type="number" min="0.5" max="50" step="0.5" value="3">% <span class="thr-hint">도달 시 🔔 표시 · ⚙️ 알람 탭에서도 조정</span></div>
+      <div class="thr-ctrl">알림 임계값 <b id="thrHint">±3%</b> 도달 시 🔔 표시 <span class="thr-hint">· 우측 상단 <b>⚙️ 설정</b>에서 조정</span></div>
       <div id="intraBody" class="empty-state">불러오는 중…</div>
     </section>
 
@@ -298,16 +315,30 @@
         <h2>⚙️ 감시 설정</h2>
         <div class="sub">장중 등락률이 임계값에 도달하면 자동 감지합니다. 임계값은 여기서 조정하세요.</div>
         <div class="kv-grid">
-          <div class="kv"><div class="k">등락률 임계값 (조정 가능)</div><div class="v"><span class="thr-ctrl" style="margin:0">±<input class="thr-input" type="number" min="0.5" max="50" step="0.5" value="3">%</span></div></div>
-          <div class="kv"><div class="k">도달 표시</div><div class="v"><span class="chip-list"><span class="chip-static" id="thrUpChip" style="color:var(--up)">▲ +3%</span><span class="chip-static" id="thrDownChip" style="color:var(--down)">▼ -3%</span></span></div></div>
+          <div class="kv"><div class="k">등락률 임계값</div><div class="v"><span class="chip-list"><span class="chip-static" id="thrUpChip" style="color:var(--up)">▲ +3%</span><span class="chip-static" id="thrDownChip" style="color:var(--down)">▼ -3%</span></span></div></div>
           <div class="kv"><div class="k">폴링 주기</div><div class="v">15분</div></div>
           <div class="kv"><div class="k">발송 채널</div><div class="v">Telegram(워치독)</div></div>
         </div>
-        <div class="note-line">📈 도달 시점은 <b>대시보드 탭 → 오늘 15분 흐름</b> 표에서 🔔 로 표시됩니다. (이 브라우저에 저장)</div>
+        <div class="note-line">📈 도달 시점은 <b>대시보드 탭 → 오늘 15분 흐름</b> 표에서 🔔 로 표시됩니다. 임계값은 <button class="refresh-btn" onclick="openSettings()" style="margin-left:4px">⚙️ 설정</button>에서 조정하세요.</div>
       </section>
       <section class="panel">
         <div class="note-line">실제 감지 내역(시각·종목별 발생 기록)과 Telegram 발송은 <b>라이브 앱</b>에서 제공됩니다. (정적 미리보기에는 미포함)</div>
       </section>
+    </div>
+
+    <!-- ===== 설정 모달 (톱니바퀴) ===== -->
+    <div class="modal-overlay" id="settingsOverlay" onclick="if(event.target===this)closeSettings()">
+      <div class="modal" role="dialog" aria-modal="true" aria-label="설정">
+        <div class="modal-head">
+          <h2>⚙️ 설정</h2>
+          <button class="modal-x" onclick="closeSettings()" aria-label="닫기">✕</button>
+        </div>
+        <div class="modal-row">
+          <div class="modal-k">등락률 알림 임계값</div>
+          <div class="modal-v">±<input class="thr-input" type="number" min="0.5" max="50" step="0.5" value="3">%</div>
+        </div>
+        <div class="modal-note">설정한 ±% 도달 시 <b>오늘 15분 흐름</b> 표에 🔔 로 표시됩니다. 값은 이 브라우저에 저장됩니다.<br>(라이브 앱의 실제 알림 임계값은 서버 설정으로 관리됩니다.)</div>
+      </div>
     </div>
 
     <footer>매매 판단 보조 도구 · 시세는 참고용이며, 최종 투자 판단과 책임은 본인에게 있습니다.</footer>
@@ -404,11 +435,22 @@
       const down = document.getElementById("thrDownChip");
       if (up) up.textContent = "▲ +" + ALERT_PCT + "%";
       if (down) down.textContent = "▼ -" + ALERT_PCT + "%";
-      // 임계값 입력칸은 여러 곳(알람 탭·15분 표)에 있을 수 있어 모두 동기화.
+      const hint = document.getElementById("thrHint");
+      if (hint) hint.textContent = "±" + ALERT_PCT + "%";
+      // 임계값 입력칸(설정 모달)을 현재 값으로 동기화.
       document.querySelectorAll(".thr-input").forEach((inp) => {
         if (parseFloat(inp.value) !== ALERT_PCT) inp.value = ALERT_PCT;
       });
     }
+
+    function openSettings() {
+      renderAlarmThreshold();
+      document.getElementById("settingsOverlay").classList.add("open");
+    }
+    function closeSettings() {
+      document.getElementById("settingsOverlay").classList.remove("open");
+    }
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSettings(); });
 
     function renderIntraday(data) {
       const body = document.getElementById("intraBody");
