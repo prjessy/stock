@@ -57,7 +57,9 @@ def _append_intraday(quote: dict, now_kst: datetime) -> None:
     symbol = quote.get("symbol", "")
     path = DATA_DIR / f"intraday_{_hist_key(symbol)}.json"
     today = now_kst.strftime("%Y-%m-%d")
-    hm = now_kst.strftime("%H:%M")
+    # 시각을 15분 격자(:00/:15/:30/:45)로 내림 → 시간당 정확히 4개.
+    slot = (now_kst.minute // 15) * 15
+    hm = f"{now_kst.hour:02d}:{slot:02d}"
 
     data = {"symbol": symbol, "date": today, "points": []}
     if path.exists():
