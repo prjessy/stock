@@ -4,7 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>차트 탐지견 (미리보기)</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <!-- TradingView Lightweight Charts (standalone production build, 버전 고정) -->
+  <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <style>
     :root {
       --bg: #0c1018;
@@ -84,10 +85,10 @@
       background: linear-gradient(180deg, var(--panel-2), var(--panel));
       border: 1px solid var(--border);
       border-radius: 16px;
-      padding: 18px 18px 8px;
+      padding: 18px 18px 14px;
       box-shadow: var(--shadow);
     }
-    .chart-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 8px; }
+    .chart-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
     .chart-head .title { font-size: 16px; font-weight: 620; }
     .chart-head .title span { color: var(--muted); font-weight: 500; font-size: 13px; margin-left: 6px; }
     .periods { display: flex; gap: 6px; }
@@ -97,11 +98,38 @@
     }
     .periods button:hover { color: var(--text); }
     .periods button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-    .chart-box { position: relative; height: 380px; }
     .chart-head .chg { font-size: 13px; font-weight: 700; margin-left: 8px; font-variant-numeric: tabular-nums; }
     .chart-head .chg.up { color: var(--up); }
     .chart-head .chg.down { color: var(--down); }
-    .chart-empty { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; color: var(--muted); font-size: 14px; }
+
+    .chart-tools { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+    .chip-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .chip-row .lbl { font-size: 11.5px; color: var(--muted); margin-right: 2px; }
+    .chip {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 999px;
+      padding: 4px 10px; font-size: 11.5px; cursor: pointer; transition: all .12s;
+      color: var(--muted); font-variant-numeric: tabular-nums; user-select: none;
+    }
+    .chip:hover { color: var(--text); }
+    .chip.on { color: #fff; border-color: transparent; }
+    .chip.ma5.on  { background: #f0b73d; }
+    .chip.ma20.on { background: #4c8dff; }
+    .chip.ma60.on { background: #c678dd; }
+    .chip.lower.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+    .chart-box { position: relative; width: 100%; height: 420px; }
+    .chart-empty { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; color: var(--muted); font-size: 14px; pointer-events: none; }
+    .lower-box { position: relative; width: 100%; height: 140px; margin-top: 4px; }
+    .lower-box.hidden { display: none; }
+    .lower-cap { font-size: 11px; color: var(--muted); margin: 6px 2px 0; }
+
+    .fin-panel {
+      margin-top: 18px; background: linear-gradient(180deg, var(--panel-2), var(--panel));
+      border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px; box-shadow: var(--shadow);
+    }
+    .fin-head { font-size: 14px; font-weight: 620; margin-bottom: 8px; }
+    .fin-note { font-size: 12.5px; color: var(--muted); }
+
     footer { margin-top: 22px; color: var(--muted); font-size: 12px; text-align: center; }
   </style>
 </head>
@@ -133,10 +161,32 @@
           <button data-p="6mo">6개월</button>
         </div>
       </div>
-      <div class="chart-box">
-        <canvas id="chart"></canvas>
+
+      <div class="chart-tools">
+        <div class="chip-row">
+          <span class="lbl">이동평균</span>
+          <span class="chip ma5 on"  data-ma="5">MA5</span>
+          <span class="chip ma20 on" data-ma="20">MA20</span>
+          <span class="chip ma60"    data-ma="60">MA60</span>
+        </div>
+        <div class="chip-row" id="lowerToggle">
+          <span class="lbl">보조지표</span>
+          <span class="chip lower on" data-lower="rsi">RSI</span>
+          <span class="chip lower"    data-lower="macd">MACD</span>
+          <span class="chip lower"    data-lower="none">없음</span>
+        </div>
+      </div>
+
+      <div class="chart-box" id="chartBox">
         <div class="chart-empty" id="chartEmpty">데이터 없음</div>
       </div>
+      <div class="lower-box" id="lowerBox"></div>
+      <div class="lower-cap" id="lowerCap"></div>
+    </section>
+
+    <section class="fin-panel">
+      <div class="fin-head">재무 요약</div>
+      <div class="fin-note">재무 요약(PER/PBR/시총/배당 등)은 라이브에서 제공됩니다.</div>
     </section>
 
     <footer>매매 판단 보조 도구 · 시세는 참고용이며, 최종 투자 판단과 책임은 본인에게 있습니다.</footer>
@@ -148,8 +198,8 @@
 
     let selected = null;
     let period = "3mo";
-    let chart = null;
     let quotesById = {};
+    let lastRows = [];
     const histCache = {};
     const PERIOD_DAYS = { "1mo": 22, "3mo": 66, "6mo": 9999 };
 
@@ -232,103 +282,254 @@
           data = await res.json();
           histCache[selected] = data;
         }
-        let rows = data.history || [];
+        let rows = (data.history || []).filter((r) => r && r.close != null);
         const n = PERIOD_DAYS[period] || 9999;
         if (rows.length > n) rows = rows.slice(rows.length - n);
-        if (!rows.length) { drawChart([], []); empty.style.display = "flex"; return; }
+        if (!rows.length) { lastRows = []; renderChart([]); empty.style.display = "flex"; return; }
         empty.style.display = "none";
-        drawChart(rows.map((r) => r.date), rows.map((r) => r.close));
+        lastRows = rows;
+        renderChart(rows);
       } catch (e) {
-        drawChart([], []);
+        lastRows = [];
+        renderChart([]);
         empty.style.display = "flex";
       }
     }
 
-    const crosshairPlugin = {
-      id: "crosshair",
-      afterDraw(c) {
-        const act = c.tooltip && c.tooltip._active;
-        if (!act || !act.length) return;
-        const x = act[0].element.x;
-        const a = c.chartArea, g = c.ctx;
-        g.save();
-        g.beginPath(); g.moveTo(x, a.top); g.lineTo(x, a.bottom);
-        g.lineWidth = 1; g.setLineDash([4, 4]); g.strokeStyle = "rgba(255,255,255,0.18)";
-        g.stroke(); g.restore();
-      },
-    };
-    function fmtAxisKRW(v) {
-      if (v >= 100000000) return (v / 100000000).toFixed(1).replace(/\.0$/, "") + "억";
-      if (v >= 10000) return (v / 10000).toFixed(v >= 1000000 ? 0 : 1).replace(/\.0$/, "") + "만";
-      return Math.round(v).toLocaleString();
-    }
-    function fmtAxis(v, cur) {
-      return cur === "KRW" ? fmtAxisKRW(v) : "$" + Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 });
-    }
-    function fmtMD(s) { const p = (s || "").split("-"); return p.length === 3 ? Number(p[1]) + "/" + Number(p[2]) : s; }
+    // ===================== Lightweight Charts =====================
+    const LWC = window.LightweightCharts;
+    let priceChart = null, lowerChart = null;
+    let candleSeries = null, volSeries = null;
+    const maSeries = {};
+    const maOn = { 5: true, 20: true, 60: false };
+    let lowerMode = "rsi";
 
-    function drawChart(labels, closes) {
-      const ctx = document.getElementById("chart");
-      const cur = (quotesById[selected] || {}).currency;
-      const up = closes.length >= 2 && closes[closes.length - 1] >= closes[0];
-      const line = up ? "#2ec26b" : "#ff5d6c";
+    const theme = {
+      bg: "#0c1018", text: "#8b97a8", grid: "rgba(255,255,255,0.05)",
+      up: "#2ec26b", down: "#ff5d6c",
+      ma: { 5: "#f0b73d", 20: "#4c8dff", 60: "#c678dd" },
+      rsi: "#4c8dff", macd: "#4c8dff", signal: "#f0b73d",
+    };
+
+    function curOf() { return (quotesById[selected] || {}).currency; }
+
+    function priceFmt(v) {
+      const cur = curOf();
+      if (cur === "KRW") {
+        if (v >= 100000000) return (v / 100000000).toFixed(v >= 1e9 ? 0 : 1).replace(/\.0$/, "") + "억";
+        if (v >= 10000) return (v / 10000).toFixed(v >= 1000000 ? 0 : 1).replace(/\.0$/, "") + "만";
+        return Math.round(v).toLocaleString();
+      }
+      return "$" + Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    }
+
+    function baseChartOptions(extra) {
+      return Object.assign({
+        layout: { background: { color: "transparent" }, textColor: theme.text, fontSize: 11,
+                  fontFamily: '-apple-system, "Segoe UI", "Malgun Gothic", sans-serif' },
+        grid: { vertLines: { visible: false }, horzLines: { color: theme.grid } },
+        rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.08 } },
+        timeScale: { borderVisible: false, timeVisible: false, secondsVisible: false, fixLeftEdge: true, fixRightEdge: true },
+        crosshair: {
+          mode: LWC.CrosshairMode.Magnet,
+          vertLine: { color: "rgba(255,255,255,0.22)", width: 1, style: 3, labelBackgroundColor: "#2b3a4d" },
+          horzLine: { color: "rgba(255,255,255,0.22)", width: 1, style: 3, labelBackgroundColor: "#2b3a4d" },
+        },
+        handleScale: false, handleScroll: false,
+      }, extra || {});
+    }
+
+    function ensureCharts() {
+      if (priceChart) return;
+      const box = document.getElementById("chartBox");
+      priceChart = LWC.createChart(box, baseChartOptions({
+        width: box.clientWidth, height: box.clientHeight,
+        localization: { priceFormatter: priceFmt },
+      }));
+      candleSeries = priceChart.addCandlestickSeries({
+        upColor: theme.up, downColor: theme.down,
+        wickUpColor: theme.up, wickDownColor: theme.down,
+        borderVisible: false, priceLineVisible: false, lastValueVisible: true,
+      });
+      volSeries = priceChart.addHistogramSeries({
+        priceScaleId: "vol", priceFormat: { type: "volume" }, priceLineVisible: false, lastValueVisible: false,
+      });
+      priceChart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 }, borderVisible: false });
+
+      [5, 20, 60].forEach((p) => {
+        maSeries[p] = priceChart.addLineSeries({
+          color: theme.ma[p], lineWidth: 1.6, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+        });
+      });
+
+      const lbox = document.getElementById("lowerBox");
+      lowerChart = LWC.createChart(lbox, baseChartOptions({ width: lbox.clientWidth, height: lbox.clientHeight }));
+
+      syncTimeScales(priceChart, lowerChart);
+
+      const ro = new ResizeObserver(() => {
+        priceChart.applyOptions({ width: box.clientWidth, height: box.clientHeight });
+        lowerChart.applyOptions({ width: lbox.clientWidth, height: lbox.clientHeight });
+      });
+      ro.observe(box); ro.observe(lbox);
+    }
+
+    function syncTimeScales(a, b) {
+      let lock = false;
+      const link = (src, dst) => src.timeScale().subscribeVisibleLogicalRangeChange((r) => {
+        if (lock || !r) return; lock = true; dst.timeScale().setVisibleLogicalRange(r); lock = false;
+      });
+      link(a, b); link(b, a);
+    }
+
+    function sma(values, period) {
+      const out = new Array(values.length).fill(null);
+      let sum = 0;
+      for (let i = 0; i < values.length; i++) {
+        sum += values[i];
+        if (i >= period) sum -= values[i - period];
+        if (i >= period - 1) out[i] = sum / period;
+      }
+      return out;
+    }
+    function rsi(values, period) {
+      const out = new Array(values.length).fill(null);
+      if (values.length <= period) return out;
+      let gain = 0, loss = 0;
+      for (let i = 1; i <= period; i++) {
+        const d = values[i] - values[i - 1];
+        if (d >= 0) gain += d; else loss -= d;
+      }
+      let avgG = gain / period, avgL = loss / period;
+      out[period] = avgL === 0 ? 100 : 100 - 100 / (1 + avgG / avgL);
+      for (let i = period + 1; i < values.length; i++) {
+        const d = values[i] - values[i - 1];
+        const g = d >= 0 ? d : 0, l = d < 0 ? -d : 0;
+        avgG = (avgG * (period - 1) + g) / period;
+        avgL = (avgL * (period - 1) + l) / period;
+        out[i] = avgL === 0 ? 100 : 100 - 100 / (1 + avgG / avgL);
+      }
+      return out;
+    }
+    function ema(values, period) {
+      const out = new Array(values.length).fill(null);
+      const k = 2 / (period + 1);
+      let prev = null;
+      for (let i = 0; i < values.length; i++) {
+        const v = values[i];
+        prev = prev === null ? v : v * k + prev * (1 - k);
+        out[i] = prev;
+      }
+      return out;
+    }
+    function macd(values, fast, slow, signal) {
+      const ef = ema(values, fast), es = ema(values, slow);
+      const line = values.map((_, i) => (ef[i] != null && es[i] != null) ? ef[i] - es[i] : null);
+      const sig = new Array(values.length).fill(null);
+      const k = 2 / (signal + 1); let prev = null;
+      for (let i = 0; i < line.length; i++) {
+        if (line[i] == null) continue;
+        prev = prev === null ? line[i] : line[i] * k + prev * (1 - k);
+        sig[i] = prev;
+      }
+      const hist = line.map((v, i) => (v != null && sig[i] != null) ? v - sig[i] : null);
+      return { line, sig, hist };
+    }
+
+    function paired(times, arr) {
+      const out = [];
+      for (let i = 0; i < arr.length; i++) if (arr[i] != null) out.push({ time: times[i], value: arr[i] });
+      return out;
+    }
+
+    function renderChart(rows) {
+      ensureCharts();
+      const times = rows.map((r) => r.date);
+      const closes = rows.map((r) => r.close);
 
       const chg = document.getElementById("chartChange");
-      if (chg) {
-        if (closes.length >= 2 && closes[0]) {
-          const pct = (closes[closes.length - 1] - closes[0]) / closes[0] * 100;
-          chg.textContent = (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%";
-          chg.className = "chg " + (pct >= 0 ? "up" : "down");
-        } else { chg.textContent = ""; chg.className = "chg"; }
+      if (closes.length >= 2 && closes[0]) {
+        const pct = (closes[closes.length - 1] - closes[0]) / closes[0] * 100;
+        chg.textContent = (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%";
+        chg.className = "chg " + (pct >= 0 ? "up" : "down");
+      } else { chg.textContent = ""; chg.className = "chg"; }
+
+      if (!rows.length) {
+        candleSeries.setData([]); volSeries.setData([]);
+        [5, 20, 60].forEach((p) => maSeries[p].setData([]));
+        renderLower([], []);
+        return;
       }
 
-      const cfg = {
-        type: "line",
-        data: { labels, datasets: [{
-          data: closes, borderColor: line, borderWidth: 2.2,
-          pointRadius: 0, pointHoverRadius: 5, pointHoverBackgroundColor: line,
-          pointHoverBorderColor: "#0c1018", pointHoverBorderWidth: 2,
-          tension: 0.25, fill: true,
-          backgroundColor: (c) => {
-            const a = c.chart.chartArea; if (!a) return "transparent";
-            const grad = c.chart.ctx.createLinearGradient(0, a.top, 0, a.bottom);
-            grad.addColorStop(0, up ? "rgba(46,194,107,0.30)" : "rgba(255,93,108,0.30)");
-            grad.addColorStop(1, up ? "rgba(46,194,107,0)" : "rgba(255,93,108,0)");
-            return grad;
-          },
-        }] },
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          interaction: { mode: "index", intersect: false },
-          layout: { padding: { top: 8, right: 4, bottom: 0 } },
-          plugins: {
-            legend: { display: false },
-            tooltip: {
-              backgroundColor: "#0f1622", borderColor: "#2b3a4d", borderWidth: 1,
-              titleColor: "#8b97a8", bodyColor: "#e6ebf2", padding: 12, cornerRadius: 10,
-              displayColors: false, titleFont: { size: 11 }, bodyFont: { size: 14, weight: "600" },
-              callbacks: {
-                title: (items) => (labels[items[0].dataIndex] || "").replace(/-/g, "."),
-                label: (item) => cur === "KRW"
-                  ? Math.round(item.parsed.y).toLocaleString() + "원"
-                  : "$" + Number(item.parsed.y).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-              },
-            },
-          },
-          scales: {
-            x: { grid: { display: false }, border: { display: false },
-                 ticks: { color: "#6b7686", maxTicksLimit: 6, maxRotation: 0, autoSkip: true, font: { size: 11 },
-                          callback: (val) => fmtMD(labels[val]) } },
-            y: { position: "right", grid: { color: "rgba(255,255,255,0.05)", drawTicks: false }, border: { display: false },
-                 ticks: { color: "#6b7686", maxTicksLimit: 5, padding: 8, font: { size: 11 },
-                          callback: (v) => fmtAxis(v, cur) } },
-          },
-        },
-        plugins: [crosshairPlugin],
-      };
-      if (chart) chart.destroy();
-      chart = new Chart(ctx, cfg);
+      candleSeries.setData(rows.map((r) => ({ time: r.date, open: r.open, high: r.high, low: r.low, close: r.close })));
+      volSeries.setData(rows.map((r) => ({
+        time: r.date, value: r.volume || 0,
+        color: (r.close >= r.open) ? "rgba(46,194,107,0.35)" : "rgba(255,93,108,0.35)",
+      })));
+
+      [5, 20, 60].forEach((p) => {
+        if (maOn[p]) { maSeries[p].setData(paired(times, sma(closes, p))); maSeries[p].applyOptions({ visible: true }); }
+        else { maSeries[p].setData([]); maSeries[p].applyOptions({ visible: false }); }
+      });
+
+      renderLower(times, closes);
+      priceChart.timeScale().fitContent();
     }
+
+    let lowerSeries = [];
+    function clearLower() { lowerSeries.forEach((s) => lowerChart.removeSeries(s)); lowerSeries = []; }
+
+    function renderLower(times, closes) {
+      const box = document.getElementById("lowerBox");
+      const cap = document.getElementById("lowerCap");
+      if (!lowerChart) return;
+      clearLower();
+      if (lowerMode === "none" || !times.length) {
+        box.classList.add("hidden"); cap.textContent = ""; return;
+      }
+      box.classList.remove("hidden");
+
+      if (lowerMode === "rsi") {
+        const s = lowerChart.addLineSeries({ color: theme.rsi, lineWidth: 1.6, priceLineVisible: false, lastValueVisible: true });
+        s.setData(paired(times, rsi(closes, 14)));
+        s.createPriceLine({ price: 70, color: "rgba(255,93,108,0.5)", lineWidth: 1, lineStyle: 2, axisLabelVisible: true });
+        s.createPriceLine({ price: 30, color: "rgba(46,194,107,0.5)", lineWidth: 1, lineStyle: 2, axisLabelVisible: true });
+        s.applyOptions({ autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }) });
+        lowerSeries.push(s);
+        cap.textContent = "RSI(14) · 70 과매수 / 30 과매도";
+      } else if (lowerMode === "macd") {
+        const m = macd(closes, 12, 26, 9);
+        const hist = lowerChart.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false });
+        hist.setData(times.map((t, i) => m.hist[i] == null ? null : ({
+          time: t, value: m.hist[i], color: m.hist[i] >= 0 ? "rgba(46,194,107,0.5)" : "rgba(255,93,108,0.5)",
+        })).filter(Boolean));
+        const lineS = lowerChart.addLineSeries({ color: theme.macd, lineWidth: 1.6, priceLineVisible: false, lastValueVisible: false });
+        lineS.setData(paired(times, m.line));
+        const sigS = lowerChart.addLineSeries({ color: theme.signal, lineWidth: 1.4, priceLineVisible: false, lastValueVisible: false });
+        sigS.setData(paired(times, m.sig));
+        lowerSeries.push(hist, lineS, sigS);
+        cap.textContent = "MACD(12,26,9) · 파랑 MACD / 노랑 시그널 / 막대 히스토그램";
+      }
+      lowerChart.timeScale().fitContent();
+    }
+
+    document.querySelector(".chip-row").addEventListener("click", (e) => {
+      const chip = e.target.closest(".chip[data-ma]");
+      if (!chip) return;
+      const p = Number(chip.dataset.ma);
+      maOn[p] = !maOn[p];
+      chip.classList.toggle("on", maOn[p]);
+      if (lastRows.length) renderChart(lastRows);
+    });
+    document.getElementById("lowerToggle").addEventListener("click", (e) => {
+      const chip = e.target.closest(".chip[data-lower]");
+      if (!chip) return;
+      lowerMode = chip.dataset.lower;
+      document.querySelectorAll("#lowerToggle .chip").forEach((c) => c.classList.toggle("on", c === chip));
+      if (lastRows.length) {
+        renderLower(lastRows.map((r) => r.date), lastRows.map((r) => r.close));
+      } else { renderLower([], []); }
+    });
 
     document.getElementById("periods").addEventListener("click", (e) => {
       const btn = e.target.closest("button");

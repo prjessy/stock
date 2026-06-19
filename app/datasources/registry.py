@@ -39,3 +39,10 @@ class SourceRegistry:
 
     def history(self, symbol: str, period: str) -> list[dict]:
         return self.source_for(symbol).get_history(symbol, period)
+
+    def clear_caches(self) -> None:
+        """강제 동기화: 모든 소스의 TTL 캐시 비우기(다음 조회는 출처에서 새로 받음)."""
+        for src in (self._kr, self._us):
+            cache = getattr(src, "_cache", None)
+            if cache is not None:
+                cache.clear()

@@ -67,3 +67,7 @@ class TTLCache:
 
     def set(self, key: str, value: object) -> None:
         self._store[key] = (time.time() + self._ttl, value)
+
+    def clear(self) -> None:
+        """강제 동기화용: 캐시 비우기."""
+        self._store.clear()
