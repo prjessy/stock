@@ -1,2 +1,2 @@
-# web 패키지 (FastAPI api + static front)
-# TODO: 후속 슬라이스에서 구현. 현재는 빈 패키지.
+# web 패키지: FastAPI 대시보드 (api.py) + 정적 프론트 (static/)
+# 실행: python -m app.web  또는  uvicorn app.web.api:app
