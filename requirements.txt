@@ -1,0 +1,13 @@
+# --- 골격(현재 슬라이스)에 필요한 최소 의존성 ---
+python-dotenv      # .env 로딩
+requests           # Hermes localhost HTTP 클라이언트
+fastapi            # 대시보드 JSON API + Hermes 인바운드 (후속 슬라이스에서 기동)
+uvicorn            # FastAPI ASGI 서버 (후속)
+apscheduler        # 폴링/브리핑 스케줄러 (후속)
+
+# --- 후속 슬라이스에서 추가 예정 (데이터/분석) ---
+# FinanceDataReader   # 국내 시세
+# pykrx               # 국내 시세 보조
+# yfinance            # 미국 MU/SOX/NQ + 미국 재무
+# OpenDartReader      # 국내 공시/재무
+# pandas              # 분석/지표 계산

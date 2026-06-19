@@ -1,0 +1,25 @@
+# secrets / 환경
+.env
+
+# 상태 DB
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# 로그
+*.log
+logs/
+
+# 파이썬
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# 에디터/OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
