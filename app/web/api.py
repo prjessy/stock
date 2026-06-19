@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.core.market import current_session
 from app.datasources.financials import get_fundamentals
+from app.datasources.intraday import get_intraday
 from app.datasources.kr_price import KR_META
 from app.datasources.registry import SourceRegistry
 from app.datasources.us_market import US_META
@@ -76,6 +77,12 @@ def get_history(symbol: str, period: str = "3mo", fresh: bool = False) -> JSONRe
         _registry.clear_caches()
     history = _registry.history(symbol, period)
     return JSONResponse({"symbol": symbol, "period": period, "history": history})
+
+
+@app.get("/api/intraday/{symbol}")
+def get_intraday_api(symbol: str, interval: str = "5m") -> JSONResponse:
+    """오늘 분봉(기본 5분). 실패 시 빈 rows. 5분 흐름 표용."""
+    return JSONResponse({"symbol": symbol, "interval": interval, "rows": get_intraday(symbol, interval)})
 
 
 @app.get("/api/fundamentals/{symbol}")

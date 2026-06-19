@@ -203,6 +203,12 @@
     .card.flash-up  .price { animation: flashUp .7s ease-out; border-radius: 6px; }
     .card.flash-down .price { animation: flashDown .7s ease-out; border-radius: 6px; }
 
+    /* 5분 / 일별 표 */
+    .tbl-wrap { max-height: 320px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; }
+    .tbl-wrap .alert-table th { position: sticky; top: 0; background: var(--panel-2); z-index: 1; }
+    .tbl-wrap .alert-table td, .tbl-wrap .alert-table th { padding-left: 14px; padding-right: 14px; }
+    .hit-row td { background: rgba(240,183,61,0.08); }
+
     /* 설정 모달 (톱니바퀴) */
     .gear-btn { margin-left: 6px; }
     .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 50; align-items: center; justify-content: center; padding: 20px; }
@@ -260,6 +266,12 @@
       <div class="lower-cap">초단위 체결가 누적(페이지 연 시점부터) · 세션: <span id="rtSession">—</span></div>
     </section>
 
+    <section class="panel" style="margin-bottom:16px;">
+      <h2>🕔 오늘 5분 흐름 <span id="intraSub" style="color:var(--muted);font-weight:500;font-size:13px;margin-left:6px;"></span></h2>
+      <div class="sub">5분 단위 가격·전일대비. ±임계값 도달 시 🔔 (⚙️ 설정에서 조정) · 무료소스 ~15분 지연</div>
+      <div id="intraBody" class="empty-state">불러오는 중…</div>
+    </section>
+
     <section class="chart-panel">
       <div class="chart-head">
         <div class="title" id="chartTitle">📈 히스토리 <span id="chartSub"></span><span id="chartChange" class="chg"></span></div>
@@ -291,6 +303,12 @@
       </div>
       <div class="lower-box" id="lowerBox"></div>
       <div class="lower-cap" id="lowerCap"></div>
+    </section>
+
+    <section class="panel" style="margin-top:16px;">
+      <h2>📅 일별 종가 <span id="dailySub" style="color:var(--muted);font-weight:500;font-size:13px;margin-left:6px;"></span></h2>
+      <div class="sub">날짜별 종가·등락(전일 대비). 위 차트 기간과 동일.</div>
+      <div id="dailyBody" class="empty-state">불러오는 중…</div>
     </section>
 
     <section class="fin-panel" id="finPanel">
@@ -420,6 +438,7 @@
       renderCards(Object.values(quotesById));
       renderRt();
       loadHistory();
+      loadIntraday();
       loadFundamentals();
     }
 
@@ -473,11 +492,69 @@
         empty.style.display = "none";
         lastRows = rows;
         renderChart(rows);
+        renderHistoryTable(rows);
       } catch (e) {
         lastRows = [];
         renderChart([]);
+        renderHistoryTable([]);
         empty.style.display = "flex";
       }
+    }
+
+    // ===================== 표: 오늘 5분 흐름 / 일별 종가 =====================
+    async function loadIntraday() {
+      if (!selected) return;
+      const body = document.getElementById("intraBody");
+      const q = quotesById[selected] || {};
+      document.getElementById("intraSub").textContent = q.name ? `${q.name} (${selected})` : selected;
+      try {
+        const res = await fetch(`/api/intraday/${encodeURIComponent(selected)}?interval=5m`);
+        const data = await res.json();
+        renderIntraday((data.rows || []).filter((r) => r && r.close != null), q);
+      } catch (e) {
+        body.className = "empty-state";
+        body.textContent = "5분 데이터를 불러오지 못했습니다.";
+      }
+    }
+
+    function renderIntraday(rows, q) {
+      const body = document.getElementById("intraBody");
+      if (!rows.length) {
+        body.className = "empty-state";
+        body.textContent = "오늘 5분 데이터가 없습니다(장 시작 후 표시).";
+        return;
+      }
+      const cur = q.currency;
+      const prevClose = q.prev_close;
+      const fmtT = (t) => new Date(t * 1000).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+      const html = rows.slice().reverse().map((r) => {
+        const pct = prevClose ? (r.close - prevClose) / prevClose * 100 : null;
+        const hit = pct != null && Math.abs(pct) >= ALERT_PCT;
+        const badge = hit ? `<span class="hit-badge ${pct >= 0 ? "up" : "down"}">🔔 ±${ALERT_PCT}%</span>` : "";
+        return `<tr class="${hit ? "hit-row" : ""}"><td>${fmtT(r.t)}</td><td>${fmtPrice({ price: r.close, currency: cur })}</td><td class="${changeClass(pct)}">${fmtChange(pct)}</td><td>${badge}</td></tr>`;
+      }).join("");
+      body.className = "tbl-wrap";
+      body.innerHTML = `<table class="alert-table"><thead><tr><th>시각</th><th>가격</th><th>전일대비</th><th>알림</th></tr></thead><tbody>${html}</tbody></table>`;
+    }
+
+    function renderHistoryTable(rows) {
+      const body = document.getElementById("dailyBody");
+      const q = quotesById[selected] || {};
+      document.getElementById("dailySub").textContent = (q.name ? `${q.name} (${selected})` : selected || "") + ` · ${period}`;
+      if (!rows || !rows.length) {
+        body.className = "empty-state";
+        body.textContent = "일별 데이터 없음";
+        return;
+      }
+      const cur = q.currency;
+      const rev = rows.slice().reverse();   // 최신 날짜가 위로
+      const html = rev.map((r, i) => {
+        const prevC = rev[i + 1] ? rev[i + 1].close : null;   // 직전 거래일 종가
+        const pct = prevC ? (r.close - prevC) / prevC * 100 : null;
+        return `<tr><td>${r.date}</td><td>${fmtPrice({ price: r.close, currency: cur })}</td><td class="${changeClass(pct)}">${fmtChange(pct)}</td></tr>`;
+      }).join("");
+      body.className = "tbl-wrap";
+      body.innerHTML = `<table class="alert-table"><thead><tr><th>날짜</th><th>종가</th><th>전일대비</th></tr></thead><tbody>${html}</tbody></table>`;
     }
 
     // ===================== Lightweight Charts =====================
@@ -790,6 +867,7 @@
       localStorage.setItem("alertPct", String(v));
       renderCards(Object.values(quotesById));  // 카드 🔔 재계산
       renderAlertThreshold();
+      loadIntraday();                           // 5분 표 🔔 재계산
     }
     function renderAlertThreshold() {
       // 모달/알람탭 입력칸을 현재 값으로 동기화.
@@ -907,7 +985,8 @@
     function startRealtime() {
       setInterval(async () => { await loadQuotes(); renderRt(); }, 1000);
       loadSession();
-      setInterval(loadSession, 15000); // 세션 배지는 15초마다 갱신
+      setInterval(loadSession, 15000);  // 세션 배지는 15초마다 갱신
+      setInterval(loadIntraday, 60000); // 5분 흐름 표는 60초마다 갱신
     }
 
     // ===================== 탭 전환 =====================
@@ -1051,6 +1130,7 @@
       await loadQuotes();
       renderRt();
       await loadHistory();
+      loadIntraday();
       await loadFundamentals();
       requestAnimationFrame(resizeCharts); // 초기 렌더 직후 차트 크기 보정
       startRealtime();                // 1초 실시간 폴링 + 세션 배지 시작
