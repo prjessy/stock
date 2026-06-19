@@ -78,6 +78,7 @@
     .change.down { color: var(--down); }
     .change.flat { color: var(--muted); }
     .card .err { font-size: 11px; color: var(--down); margin-top: 6px; opacity: .85; }
+    .card .warn-lev { font-size: 10.5px; color: #f0b73d; margin-top: 9px; line-height: 1.45; border-top: 1px dashed var(--border); padding-top: 7px; }
 
     .chart-panel {
       background: linear-gradient(180deg, var(--panel-2), var(--panel));
@@ -96,7 +97,10 @@
     }
     .periods button:hover { color: var(--text); }
     .periods button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-    .chart-box { position: relative; height: 340px; }
+    .chart-box { position: relative; height: 380px; }
+    .chart-head .chg { font-size: 13px; font-weight: 700; margin-left: 8px; font-variant-numeric: tabular-nums; }
+    .chart-head .chg.up { color: var(--up); }
+    .chart-head .chg.down { color: var(--down); }
     .chart-empty { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; color: var(--muted); font-size: 14px; }
     footer { margin-top: 22px; color: var(--muted); font-size: 12px; text-align: center; }
   </style>
@@ -114,14 +118,13 @@
 
     <div class="notice">
       📸 <b>이 페이지는 디자인 미리보기입니다.</b> 시세는 <b>고정 스냅샷</b>(2026-06-19)이며 실시간 갱신되지 않습니다.
-      실시간 동작(자동 갱신·알림)은 서버 실행 시 가능합니다 → 로컬 <code>http://localhost:8000</code> 또는 VPS 배포.
     </div>
 
     <section class="grid" id="cards"></section>
 
     <section class="chart-panel">
       <div class="chart-head">
-        <div class="title" id="chartTitle">차트 <span id="chartSub"></span></div>
+        <div class="title" id="chartTitle">차트 <span id="chartSub"></span><span id="chartChange" class="chg"></span></div>
         <div class="periods" id="periods">
           <button data-p="1mo">1개월</button>
           <button data-p="3mo" class="active">3개월</button>
@@ -189,6 +192,7 @@
           <div class="price ${hasPrice ? "" : "dim"}">${hasPrice ? fmtPrice(q) : "—"}</div>
           <div class="change ${changeClass(q.change_pct)}">${fmtChange(q.change_pct)}</div>
           ${q.error ? `<div class="err">데이터 없음</div>` : ""}
+          ${(q.note || "").includes("레버리지") ? `<div class="warn-lev">⚠️ 매수 전 교육 필수(미이수 시 매수 불가) · 비용 약 8,000원 발생 · 음의 복리 유의</div>` : ""}
         `;
         root.appendChild(el);
       });
@@ -238,35 +242,90 @@
       }
     }
 
+    const crosshairPlugin = {
+      id: "crosshair",
+      afterDraw(c) {
+        const act = c.tooltip && c.tooltip._active;
+        if (!act || !act.length) return;
+        const x = act[0].element.x;
+        const a = c.chartArea, g = c.ctx;
+        g.save();
+        g.beginPath(); g.moveTo(x, a.top); g.lineTo(x, a.bottom);
+        g.lineWidth = 1; g.setLineDash([4, 4]); g.strokeStyle = "rgba(255,255,255,0.18)";
+        g.stroke(); g.restore();
+      },
+    };
+    function fmtAxisKRW(v) {
+      if (v >= 100000000) return (v / 100000000).toFixed(1).replace(/\.0$/, "") + "억";
+      if (v >= 10000) return (v / 10000).toFixed(v >= 1000000 ? 0 : 1).replace(/\.0$/, "") + "만";
+      return Math.round(v).toLocaleString();
+    }
+    function fmtAxis(v, cur) {
+      return cur === "KRW" ? fmtAxisKRW(v) : "$" + Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 });
+    }
+    function fmtMD(s) { const p = (s || "").split("-"); return p.length === 3 ? Number(p[1]) + "/" + Number(p[2]) : s; }
+
     function drawChart(labels, closes) {
       const ctx = document.getElementById("chart");
+      const cur = (quotesById[selected] || {}).currency;
       const up = closes.length >= 2 && closes[closes.length - 1] >= closes[0];
       const line = up ? "#2ec26b" : "#ff5d6c";
-      const fill = up ? "rgba(46,194,107,0.12)" : "rgba(255,93,108,0.12)";
+
+      const chg = document.getElementById("chartChange");
+      if (chg) {
+        if (closes.length >= 2 && closes[0]) {
+          const pct = (closes[closes.length - 1] - closes[0]) / closes[0] * 100;
+          chg.textContent = (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%";
+          chg.className = "chg " + (pct >= 0 ? "up" : "down");
+        } else { chg.textContent = ""; chg.className = "chg"; }
+      }
+
       const cfg = {
         type: "line",
-        data: {
-          labels,
-          datasets: [{
-            data: closes, borderColor: line, backgroundColor: fill,
-            borderWidth: 2, pointRadius: 0, tension: 0.18, fill: true,
-          }],
-        },
+        data: { labels, datasets: [{
+          data: closes, borderColor: line, borderWidth: 2.2,
+          pointRadius: 0, pointHoverRadius: 5, pointHoverBackgroundColor: line,
+          pointHoverBorderColor: "#0c1018", pointHoverBorderWidth: 2,
+          tension: 0.25, fill: true,
+          backgroundColor: (c) => {
+            const a = c.chart.chartArea; if (!a) return "transparent";
+            const grad = c.chart.ctx.createLinearGradient(0, a.top, 0, a.bottom);
+            grad.addColorStop(0, up ? "rgba(46,194,107,0.30)" : "rgba(255,93,108,0.30)");
+            grad.addColorStop(1, up ? "rgba(46,194,107,0)" : "rgba(255,93,108,0)");
+            return grad;
+          },
+        }] },
         options: {
           responsive: true, maintainAspectRatio: false,
           interaction: { mode: "index", intersect: false },
-          plugins: { legend: { display: false }, tooltip: {
-            backgroundColor: "#1b2331", borderColor: "#25303f", borderWidth: 1,
-            titleColor: "#e6ebf2", bodyColor: "#e6ebf2", padding: 10, displayColors: false,
-          }},
+          layout: { padding: { top: 8, right: 4, bottom: 0 } },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: "#0f1622", borderColor: "#2b3a4d", borderWidth: 1,
+              titleColor: "#8b97a8", bodyColor: "#e6ebf2", padding: 12, cornerRadius: 10,
+              displayColors: false, titleFont: { size: 11 }, bodyFont: { size: 14, weight: "600" },
+              callbacks: {
+                title: (items) => (labels[items[0].dataIndex] || "").replace(/-/g, "."),
+                label: (item) => cur === "KRW"
+                  ? Math.round(item.parsed.y).toLocaleString() + "원"
+                  : "$" + Number(item.parsed.y).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+              },
+            },
+          },
           scales: {
-            x: { grid: { display: false }, ticks: { color: "#8b97a8", maxTicksLimit: 7, font: { size: 11 } } },
-            y: { grid: { color: "#1d2733" }, ticks: { color: "#8b97a8", font: { size: 11 } } },
+            x: { grid: { display: false }, border: { display: false },
+                 ticks: { color: "#6b7686", maxTicksLimit: 6, maxRotation: 0, autoSkip: true, font: { size: 11 },
+                          callback: (val) => fmtMD(labels[val]) } },
+            y: { position: "right", grid: { color: "rgba(255,255,255,0.05)", drawTicks: false }, border: { display: false },
+                 ticks: { color: "#6b7686", maxTicksLimit: 5, padding: 8, font: { size: 11 },
+                          callback: (v) => fmtAxis(v, cur) } },
           },
         },
+        plugins: [crosshairPlugin],
       };
-      if (chart) { chart.data = cfg.data; chart.options = cfg.options; chart.update(); }
-      else { chart = new Chart(ctx, cfg); }
+      if (chart) chart.destroy();
+      chart = new Chart(ctx, cfg);
     }
 
     document.getElementById("periods").addEventListener("click", (e) => {

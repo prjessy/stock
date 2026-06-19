@@ -28,7 +28,9 @@ class Settings:
     """앱 전역 설정. 불변 객체로 두어 실수 변경 방지."""
 
     # 감시 대상
-    kr_symbols: list[str] = field(default_factory=lambda: ["005930", "000660"])
+    kr_symbols: list[str] = field(
+        default_factory=lambda: ["005930", "0193W0", "000660", "0193T0"]
+    )
     us_symbols: list[str] = field(default_factory=lambda: ["MU", "^SOX", "NQ=F"])
 
     # 임계값 (전일 종가 대비 %). 설정만 바꿔 확장 가능 (예: +6/-6).
@@ -53,7 +55,7 @@ class Settings:
 def load_settings() -> Settings:
     """환경변수에서 Settings 를 구성한다. 값이 없으면 기본값 사용."""
     return Settings(
-        kr_symbols=_split_csv(os.getenv("KR_SYMBOLS", "005930,000660")),
+        kr_symbols=_split_csv(os.getenv("KR_SYMBOLS", "005930,0193W0,000660,0193T0")),
         us_symbols=_split_csv(os.getenv("US_SYMBOLS", "MU,^SOX,NQ=F")),
         thresholds=_parse_floats(os.getenv("THRESHOLDS", "3.0,-3.0")),
         poll_interval_seconds=int(os.getenv("POLL_INTERVAL_SECONDS", "60")),

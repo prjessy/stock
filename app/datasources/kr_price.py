@@ -13,6 +13,8 @@ from app.datasources.base import PriceSource, TTLCache, empty_quote
 KR_META: dict[str, dict[str, str]] = {
     "005930": {"name": "삼성전자", "note": "코스피"},
     "000660": {"name": "SK하이닉스", "note": "코스피"},
+    "0193W0": {"name": "KODEX 삼성전자레버리지", "note": "레버리지 2X"},
+    "0193T0": {"name": "KODEX SK하이닉스레버리지", "note": "레버리지 2X"},
 }
 
 # period(대시보드 약식) -> 가져올 영업일 수 대략치
