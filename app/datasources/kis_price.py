@@ -26,6 +26,8 @@ from app.datasources.kr_price import KR_META, KrPriceSource
 _TOKEN_PATH = Path(settings.db_path).resolve().parent / "kis_token.json"
 # 만료 이만큼 전이면 미리 재발급(초).
 _TOKEN_REFRESH_BUFFER = 600
+# 토큰 발급 실패 후 이만큼은 재시도하지 않는다(KIS 발급 제한 = 1분당 1회).
+_TOKEN_FAIL_COOLDOWN = 60
 _TIMEOUT = 8.0
 
 
@@ -41,6 +43,7 @@ class KisPriceSource(PriceSource):
         self._cache = TTLCache(cache_ttl)
         self._token = ""
         self._token_expiry = 0.0
+        self._token_cooldown_until = 0.0  # 발급 실패 후 재시도 억제 시각
         self._lock = threading.Lock()
         self._history = KrPriceSource()  # 이력 위임용
         # 커넥션 재사용(keep-alive): 매 호출 TLS 핸드셰이크를 없애 ~2s → 수백ms.
@@ -67,29 +70,45 @@ class KisPriceSource(PriceSource):
             pass  # 캐시 실패는 치명적이지 않음(다음에 재발급)
 
     def _ensure_token(self) -> str:
-        """유효한 액세스 토큰 반환. 만료 임박/없음일 때만 재발급."""
+        """유효한 액세스 토큰 반환. 만료 임박/없음일 때만 재발급.
+
+        발급 실패 시 _TOKEN_FAIL_COOLDOWN 동안 재시도를 건너뛴다 — KIS 토큰 발급은
+        1분당 1회로 제한되므로, 폴러(1초 주기)가 매초 두드려 403이 고착되는 것을 막는다.
+        """
         now = time.time()
         if self._token and now < self._token_expiry - _TOKEN_REFRESH_BUFFER:
             return self._token
         with self._lock:
+            now = time.time()
             # 락 획득 사이 다른 스레드가 갱신했을 수 있음 — 재확인.
-            if self._token and time.time() < self._token_expiry - _TOKEN_REFRESH_BUFFER:
+            if self._token and now < self._token_expiry - _TOKEN_REFRESH_BUFFER:
                 return self._token
-            resp = self._session.post(
-                f"{settings.kis_domain}/oauth2/tokenP",
-                json={
-                    "grant_type": "client_credentials",
-                    "appkey": settings.kis_app_key,
-                    "appsecret": settings.kis_app_secret,
-                },
-                timeout=_TIMEOUT,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            self._token = data["access_token"]
-            self._token_expiry = time.time() + int(data.get("expires_in", 86400))
-            self._save_cached_token()
-            return self._token
+            # 직전 발급 실패 쿨다운 중이면 재시도하지 않는다(하머링 방지).
+            if now < self._token_cooldown_until:
+                if self._token:
+                    return self._token
+                raise RuntimeError("KIS 토큰 발급 쿨다운 중 — 잠시 후 재시도")
+            try:
+                resp = self._session.post(
+                    f"{settings.kis_domain}/oauth2/tokenP",
+                    json={
+                        "grant_type": "client_credentials",
+                        "appkey": settings.kis_app_key,
+                        "appsecret": settings.kis_app_secret,
+                    },
+                    timeout=_TIMEOUT,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                self._token = data["access_token"]
+                self._token_expiry = time.time() + int(data.get("expires_in", 86400))
+                self._token_cooldown_until = 0.0
+                self._save_cached_token()
+                return self._token
+            except Exception:
+                # 발급 실패 → 쿨다운 설정 후 재-raise(get_quote 가 empty_quote 로 처리).
+                self._token_cooldown_until = time.time() + _TOKEN_FAIL_COOLDOWN
+                raise
 
     # ---------------- 시세 ----------------
     def get_quote(self, symbol: str) -> dict:
