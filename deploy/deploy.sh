@@ -64,7 +64,9 @@ fi
 
 # 6) 서비스 시작/자동기동 등록
 sudo systemctl daemon-reload
-sudo systemctl enable --now stock-watchdog
+sudo systemctl enable stock-watchdog
+# restart(=enable --now 와 달리 이미 떠 있어도 프로세스 교체) — 파이썬 코드 변경 반영 보장.
+sudo systemctl restart stock-watchdog
 sleep 2
 sudo systemctl --no-pager status stock-watchdog || true
 
