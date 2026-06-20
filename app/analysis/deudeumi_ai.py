@@ -179,6 +179,9 @@ def analyze(symbol: str, feed: dict, recent: list[dict] | None = None, accuracy:
     data["name"] = feed.get("name")
     data["price"] = feed.get("price")
     data["asof"] = feed.get("asof")
-    _log_signal(symbol, data)
-    _write_obsidian(symbol, data)
+    # 중복 제거: 직전 신호와 같으면 기록·노트 생략(의미 있는 '변화'만 진화 로그에 남김)
+    prev = recent_signals(symbol, 1)
+    if not (prev and prev[-1].get("signal") == data.get("signal")):
+        _log_signal(symbol, data)
+        _write_obsidian(symbol, data)
     return data
