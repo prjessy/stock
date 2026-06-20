@@ -54,9 +54,9 @@ class SourceRegistry:
         src = self.source_for(symbol)
         fn = getattr(src, "get_fundamentals", None)
         if fn is not None:
-            res = fn(symbol)
-            if res.get("available"):
-                return res
+            # KIS: 성공/실패 모두 즉시 반환. pykrx 폴백은 이 VPS(해외 IP)에서 KRX 차단으로
+            # ~수십초 멈춤만 유발하므로 호출하지 않는다.
+            return fn(symbol)
         from app.datasources.financials import get_fundamentals as _fallback
         return _fallback(symbol)
 
