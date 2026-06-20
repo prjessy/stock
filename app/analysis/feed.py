@@ -74,7 +74,8 @@ def _r2(x):
     return round(x, 2) if x is not None else None
 
 
-def compute_feed(symbol: str, rows: list[dict], quote: dict | None, fund: dict | None) -> dict:
+def compute_feed(symbol: str, rows: list[dict], quote: dict | None, fund: dict | None,
+                 supply: dict | None = None) -> dict:
     rows = [r for r in (rows or []) if r and r.get("close") is not None]
     if len(rows) < 20:
         return {"symbol": symbol, "error": "데이터 부족(20영업일 이상 필요)", "bars": len(rows)}
@@ -143,5 +144,27 @@ def compute_feed(symbol: str, rows: list[dict], quote: dict | None, fund: dict |
             "w52_high": w52h, "w52_low": w52l, "w52_position_pct": pos52,
         },
         "valuation": {"per": per, "pbr": pbr},
-        "hint": "지지=MA·볼린저하단·피보·최근저점, 저항=MA·볼린저상단·피보·최근고점. 매수=지지 합류 구간, 매도=저항 합류 구간. 판단 보조용.",
+        "supply": _supply_section(supply),
+        "hint": "지지=MA·볼린저하단·피보·최근저점, 저항=MA·볼린저상단·피보·최근고점. 매수=지지 합류 구간, 매도=저항 합류 구간. 수급=외인·기관 순매수. 판단 보조용.",
+    }
+
+
+def _supply_section(supply):
+    if not supply:
+        return None
+    fs = supply.get("frgn_ntby_sum") or 0
+    os_ = supply.get("orgn_ntby_sum") or 0
+    if fs > 0 and os_ > 0:
+        note = "외인·기관 동반 순매수(수급 우호)"
+    elif fs < 0 and os_ < 0:
+        note = "외인·기관 동반 순매도(수급 약세)"
+    else:
+        note = "수급 혼조"
+    return {
+        "date": supply.get("date"),
+        "foreign_net_today": supply.get("frgn_ntby_qty"),
+        "inst_net_today": supply.get("orgn_ntby_qty"),
+        "foreign_net_5d": fs,
+        "inst_net_5d": os_,
+        "note": note,
     }

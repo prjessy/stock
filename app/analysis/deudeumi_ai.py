@@ -66,7 +66,74 @@ def _log_signal(symbol: str, data: dict) -> None:
         pass
 
 
-def analyze(symbol: str, feed: dict, recent: list[dict] | None = None) -> dict:
+def evaluate_signals(symbol: str, registry, window: int = 5, thresh: float = 2.0) -> dict:
+    """과거 신호의 결과(맞았나/틀렸나) 추적 → 정확도. (진화: 다음 판단의 캘리브레이션 근거)
+    buy=window일 뒤 +thresh%↑ 이면 hit, sell=-thresh%↓ 이면 hit, hold=|변동|<thresh 면 hit."""
+    sigs = recent_signals(symbol, limit=50)
+    try:
+        rows = [r for r in (registry.history(symbol, "1y") or []) if r and r.get("close") is not None]
+    except Exception:
+        rows = []
+    dates = [r["date"] for r in rows]
+    closes = [r["close"] for r in rows]
+    idx = {d: i for i, d in enumerate(dates)}
+    evaluated = hits = 0
+    out = []
+    for s in sigs:
+        ts = (s.get("ts") or "")[:10]
+        sig = s.get("signal")
+        p0 = s.get("price")
+        outcome = "pending"
+        if ts in idx and p0:
+            j = idx[ts] + window
+            if j < len(closes):
+                ret = (closes[j] - p0) / p0 * 100
+                if sig in ("buy", "strong_buy"):
+                    hit = ret >= thresh
+                elif sig in ("sell", "strong_sell"):
+                    hit = ret <= -thresh
+                else:
+                    hit = abs(ret) < thresh
+                outcome = "hit" if hit else "miss"
+                evaluated += 1
+                hits += 1 if hit else 0
+        out.append({**s, "outcome": outcome})
+    acc = round(hits / evaluated * 100, 1) if evaluated else None
+    return {"symbol": symbol, "evaluated": evaluated, "hits": hits,
+            "accuracy_pct": acc, "window_days": window, "recent": out[-10:]}
+
+
+def _write_obsidian(symbol: str, data: dict) -> None:
+    """신호를 옵시디언 볼트 노트에 추가 + git 자동 커밋(로컬, best-effort)."""
+    vault = os.environ.get("OBSIDIAN_VAULT_PATH")
+    if not vault:
+        return
+    try:
+        import subprocess
+        from pathlib import Path
+        d = Path(vault) / "더듬이신호"
+        d.mkdir(parents=True, exist_ok=True)
+        note = d / f"{symbol}.md"
+        header = f"# {data.get('name', symbol)} ({symbol}) 더듬이 신호\n\n" if not note.exists() else ""
+        kf = ", ".join(data.get("key_factors") or [])
+        entry = (
+            f"## {_dt.datetime.now().strftime('%Y-%m-%d %H:%M')} — {data.get('signal')} ({data.get('confidence')})\n"
+            f"- 현재가: {data.get('price')}\n- 요약: {data.get('summary')}\n"
+            f"- 매수: {data.get('buy_zone')} / 매도: {data.get('sell_zone')} / 손절: {data.get('stop')}\n"
+            f"- 근거: {kf}\n\n"
+        )
+        with note.open("a", encoding="utf-8") as f:
+            f.write(header + entry)
+        env = {**os.environ, "GIT_AUTHOR_NAME": "hermes", "GIT_AUTHOR_EMAIL": "hermes@local",
+               "GIT_COMMITTER_NAME": "hermes", "GIT_COMMITTER_EMAIL": "hermes@local"}
+        subprocess.run(["git", "-C", vault, "add", "."], capture_output=True, timeout=10)
+        subprocess.run(["git", "-C", vault, "commit", "-m", f"signal {symbol} {data.get('signal')}"],
+                       capture_output=True, timeout=10, env=env)
+    except Exception:
+        pass
+
+
+def analyze(symbol: str, feed: dict, recent: list[dict] | None = None, accuracy: dict | None = None) -> dict:
     if feed.get("error"):
         return {"symbol": symbol, "error": feed["error"]}
     key = settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")
@@ -81,6 +148,9 @@ def analyze(symbol: str, feed: dict, recent: list[dict] | None = None) -> dict:
     if recent:
         lines = [f"- {r.get('ts','')}: {r.get('signal')}({r.get('confidence')}) @ {r.get('price')}" for r in recent]
         hist_txt = "\n\n과거 내 신호 기록(참고, 일관성·과매매 점검용):\n" + "\n".join(lines)
+    if accuracy and accuracy.get("accuracy_pct") is not None:
+        hist_txt += (f"\n과거 이 종목 신호 적중률: {accuracy['accuracy_pct']}% "
+                     f"({accuracy['evaluated']}건, {accuracy['window_days']}일 기준) — 과신 말고 보정에 참고.")
 
     prompt = (
         f"다음은 {feed.get('name')}({symbol}) 의 기술/밸류 지표 묶음(JSON)입니다.\n"
@@ -110,4 +180,5 @@ def analyze(symbol: str, feed: dict, recent: list[dict] | None = None) -> dict:
     data["price"] = feed.get("price")
     data["asof"] = feed.get("asof")
     _log_signal(symbol, data)
+    _write_obsidian(symbol, data)
     return data

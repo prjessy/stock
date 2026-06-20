@@ -225,6 +225,48 @@ class KisPriceSource(PriceSource):
         except Exception as exc:
             return {"available": False, "symbol": symbol, "reason": f"KIS 재무 조회 실패: {exc}"}
 
+    # ---------------- 수급(외국인/기관 매매동향) ----------------
+    def get_investor_flow(self, symbol: str, days: int = 5) -> dict | None:
+        """종목별 투자자 매매동향(FHKST01010900) — 외국인/기관 순매수(당일·N일합).
+        실패 시 None. 단위: 주식 수(순매수량)."""
+        if not settings.kis_app_key or not settings.kis_app_secret:
+            return None
+        try:
+            token = self._ensure_token()
+            resp = self._session.get(
+                f"{settings.kis_domain}/uapi/domestic-stock/v1/quotations/inquire-investor",
+                params={"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": symbol},
+                headers={
+                    "authorization": f"Bearer {token}",
+                    "appkey": settings.kis_app_key,
+                    "appsecret": settings.kis_app_secret,
+                    "tr_id": "FHKST01010900",
+                    "custtype": "P",
+                },
+                timeout=_TIMEOUT,
+            )
+            resp.raise_for_status()
+            body = resp.json()
+            if body.get("rt_cd") != "0":
+                return None
+            out = body.get("output") or []
+            if not out:
+                return None
+            recent = out[:days]
+            frgn_sum = sum(_f(r.get("frgn_ntby_qty")) or 0 for r in recent)
+            orgn_sum = sum(_f(r.get("orgn_ntby_qty")) or 0 for r in recent)
+            latest = out[0]
+            return {
+                "date": latest.get("stck_bsop_date"),
+                "frgn_ntby_qty": _f(latest.get("frgn_ntby_qty")),
+                "orgn_ntby_qty": _f(latest.get("orgn_ntby_qty")),
+                "frgn_ntby_sum": round(frgn_sum),
+                "orgn_ntby_sum": round(orgn_sum),
+                "days": days,
+            }
+        except Exception:
+            return None
+
 
 def _f(value) -> float | None:
     try:

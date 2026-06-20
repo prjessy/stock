@@ -112,15 +112,16 @@ def get_feed_api(symbol: str) -> JSONResponse:
         if quote is None:
             quote = _registry.source_for(symbol).get_quote(symbol)
         fund = _registry.fundamentals(symbol)
+        supply = _registry.investor_flow(symbol)
     except Exception as exc:
         return JSONResponse({"symbol": symbol, "error": f"데이터 조회 실패: {exc}"})
-    return JSONResponse(compute_feed(symbol, rows, quote, fund))
+    return JSONResponse(compute_feed(symbol, rows, quote, fund, supply))
 
 
 @app.get("/api/deudeumi-ai/{symbol}")
 def get_deudeumi_ai_api(symbol: str) -> JSONResponse:
     """더듬이 2·3 — Claude 기반 매수/매도 시점 판단(판단 보조). 절대 500 금지."""
-    from app.analysis.deudeumi_ai import analyze, recent_signals
+    from app.analysis.deudeumi_ai import analyze, evaluate_signals, recent_signals
     from app.analysis.feed import compute_feed
     try:
         rows = _registry.history(symbol, "1y")
@@ -128,10 +129,22 @@ def get_deudeumi_ai_api(symbol: str) -> JSONResponse:
         if quote is None:
             quote = _registry.source_for(symbol).get_quote(symbol)
         fund = _registry.fundamentals(symbol)
-        feed = compute_feed(symbol, rows, quote, fund)
+        supply = _registry.investor_flow(symbol)
+        feed = compute_feed(symbol, rows, quote, fund, supply)
+        accuracy = evaluate_signals(symbol, _registry)
     except Exception as exc:
         return JSONResponse({"symbol": symbol, "error": f"데이터 조회 실패: {exc}"})
-    return JSONResponse(analyze(symbol, feed, recent_signals(symbol)))
+    return JSONResponse(analyze(symbol, feed, recent_signals(symbol), accuracy))
+
+
+@app.get("/api/deudeumi-signals/{symbol}")
+def get_deudeumi_signals_api(symbol: str) -> JSONResponse:
+    """더듬이 신호 기록 + 정확도(진화 로그). 절대 500 금지."""
+    from app.analysis.deudeumi_ai import evaluate_signals
+    try:
+        return JSONResponse(evaluate_signals(symbol, _registry))
+    except Exception as exc:
+        return JSONResponse({"symbol": symbol, "error": str(exc)})
 
 
 @app.get("/api/alerts")

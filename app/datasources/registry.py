@@ -60,6 +60,11 @@ class SourceRegistry:
         from app.datasources.financials import get_fundamentals as _fallback
         return _fallback(symbol)
 
+    def investor_flow(self, symbol: str) -> dict | None:
+        """수급(외국인/기관 순매수). KIS 소스만 지원, 그 외 None."""
+        fn = getattr(self.source_for(symbol), "get_investor_flow", None)
+        return fn(symbol) if fn is not None else None
+
     def clear_caches(self) -> None:
         """강제 동기화: 모든 소스의 TTL 캐시 비우기(다음 조회는 출처에서 새로 받음)."""
         for src in (self._kr, self._us):

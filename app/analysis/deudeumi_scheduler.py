@@ -13,7 +13,7 @@ import subprocess
 import threading
 from zoneinfo import ZoneInfo
 
-from app.analysis.deudeumi_ai import analyze, recent_signals
+from app.analysis.deudeumi_ai import analyze, evaluate_signals, recent_signals
 from app.analysis.feed import compute_feed
 
 _KST = ZoneInfo("Asia/Seoul")
@@ -83,10 +83,11 @@ class DeudeumiScheduler:
         if quote is None:
             quote = self._registry.source_for(sym).get_quote(sym)
         fund = self._registry.fundamentals(sym)
-        feed = compute_feed(sym, rows, quote, fund)
+        supply = self._registry.investor_flow(sym)
+        feed = compute_feed(sym, rows, quote, fund, supply)
         if feed.get("error") or not self._trigger(feed):
             return  # 트리거 없으면 Claude 호출 안 함(비용 절감)
-        res = analyze(sym, feed, recent_signals(sym))
+        res = analyze(sym, feed, recent_signals(sym), evaluate_signals(sym, self._registry))
         sig = res.get("signal")
         conf = res.get("confidence")
         if sig in ("buy", "strong_buy", "sell", "strong_sell") and conf in ("medium", "high"):
