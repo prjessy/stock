@@ -74,7 +74,7 @@ def _claude(quotes: list[dict], headlines: list[dict]) -> dict | None:
         client = anthropic.Anthropic(api_key=key)
         resp = client.messages.create(
             model=settings.deudeumi_model,
-            max_tokens=800,
+            max_tokens=2000,
             system=_SYSTEM,
             output_config={"format": {"type": "json_schema", "schema": _SCHEMA}},
             messages=[{"role": "user", "content": prompt}],
