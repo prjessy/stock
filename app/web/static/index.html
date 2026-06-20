@@ -142,6 +142,7 @@
     .news-head { font-weight: 800; font-size: 15px; margin-bottom: 10px; overflow: hidden; }
     .news-summary { font-size: 14.5px; line-height: 1.75; }
     .news-summary .hl { color: var(--accent); font-weight: 700; }
+    #brfBody .hl { color: var(--accent); font-weight: 700; }
     .news-lead { font-size: 15px; font-weight: 700; color: var(--accent); line-height: 1.6; margin-bottom: 10px; }
     .news-points { margin: 0; padding-left: 18px; font-size: 13.5px; line-height: 1.85; }
     .news-points li { margin-bottom: 2px; }
@@ -1728,13 +1729,14 @@
           <section class="panel" style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:13px;">
             ${mktDot}
             <span style="color:var(--muted);">${asof}</span>
+            ${STATUS_BADGE[d.status] || ""}
           </section>
           <section class="panel" style="margin-bottom:16px;">
             <div style="font-weight:700;margin-bottom:8px;">🧭 종합 ${d.bias ? `<span style="float:right;font-size:13px;font-weight:500;color:var(--muted)">${BIAS_ICON[d.bias] || d.bias}</span>` : ""}</div>
-            ${d.one_liner ? `<div style="font-size:15px;color:var(--accent);margin-bottom:12px;">“${d.one_liner}”</div>` : ""}
-            ${d.overview ? `<div style="margin-bottom:12px;"><b>📊 미국장 요약</b><br>${d.overview}</div>` : ""}
-            ${d.semiconductor ? `<div style="margin-bottom:12px;"><b>💾 반도체·한국 영향</b><br>${d.semiconductor}</div>` : ""}
-            ${d.kr_implication ? `<div><b>🇰🇷 오늘 한국장 시사점</b><br>${d.kr_implication}</div>` : ""}
+            ${d.one_liner ? `<div style="font-size:15px;color:var(--accent);margin-bottom:12px;">“${hlText(d.one_liner, d.keywords)}”</div>` : ""}
+            ${d.overview ? `<div style="margin-bottom:12px;"><b>📊 미국장 요약</b><br>${hlText(d.overview, d.keywords)}</div>` : ""}
+            ${d.semiconductor ? `<div style="margin-bottom:12px;"><b>💾 반도체·한국 영향</b><br>${hlText(d.semiconductor, d.keywords)}</div>` : ""}
+            ${d.kr_implication ? `<div><b>🇰🇷 오늘 한국장 시사점</b><br>${hlText(d.kr_implication, d.keywords)}</div>` : ""}
           </section>
           <section class="panel" style="margin-bottom:16px;">
             <div style="font-size:13px;color:var(--muted);margin-bottom:6px;">📈 미국 지수·선물 <span style="font-size:11px;">(직전 정규장 종가)</span></div>
@@ -1788,10 +1790,12 @@
     // 요약문에서 핵심어/수치를 색으로 강조.
     function hlText(text, keywords) {
       let out = String(text);
-      (keywords || []).forEach((k) => {
-        if (!k) return;
+      // 긴 키워드부터 치환 — 짧은 키워드가 긴 키워드 안쪽을 먼저 깨는 중복 래핑 방지.
+      const ks = (keywords || []).filter(Boolean).slice().sort((a, b) => String(b).length - String(a).length);
+      ks.forEach((k) => {
         const esc = String(k).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        out = out.replace(new RegExp(esc, "g"), `<b class="hl">${k}</b>`);
+        // 이미 강조된 토큰(<b class="hl">…</b>) 내부는 다시 건드리지 않도록 음의 룩어헤드.
+        out = out.replace(new RegExp(esc + "(?![^<]*</b>)", "g"), `<b class="hl">${k}</b>`);
       });
       return out;
     }

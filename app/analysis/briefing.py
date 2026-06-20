@@ -27,8 +27,10 @@ _SCHEMA = {
         "kr_implication": {"type": "string", "description": "오늘 한국장 개장 전 참고할 시사점"},
         "one_liner": {"type": "string", "description": "핵심 한 줄"},
         "bias": {"type": "string", "enum": ["우호적", "중립", "주의"]},
+        "keywords": {"type": "array", "items": {"type": "string"},
+                     "description": "본문(overview/semiconductor/kr_implication)에서 강조할 핵심어·수치 5~10개. 예: '+6.42%','필라델피아 반도체지수','마이크론'. 본문에 실제로 등장한 표현 그대로 넣을 것."},
     },
-    "required": ["overview", "semiconductor", "kr_implication", "one_liner", "bias"],
+    "required": ["overview", "semiconductor", "kr_implication", "one_liner", "bias", "keywords"],
     "additionalProperties": False,
 }
 
@@ -95,8 +97,18 @@ def _claude(quotes: list[dict], headlines: list[dict], ctx: dict) -> dict | None
         return None
 
 
+def _sig(data: dict) -> str:
+    """내용 비교용 서명 = 직전 정규장 날짜 + 뉴스 헤드라인 집합. Claude 표현이 매번 달라도
+    기준일·뉴스가 같으면 '동일'로 본다(marketing._sig 와 동일 철학)."""
+    titles = sorted((h.get("title") or "") for h in (data.get("headlines") or []))
+    return (data.get("last_session_date") or "") + "|" + "||".join(titles)
+
+
 def generate(registry) -> dict:
-    """미국 지수/뉴스 수집 + Claude 브리핑 생성 후 저장. 반환=저장 dict."""
+    """미국 지수/뉴스 수집 + Claude 브리핑 생성 후 저장. 반환=저장 dict.
+
+    직전 브리핑과 비교해 status(new/updated/same) 부여(찰떡 써머리와 동일 UX)."""
+    prev = load()
     quotes = _us_quotes(registry)
     news: list[dict] = []
     for q in ["미국 증시", "필라델피아 반도체지수", "엔비디아"]:
@@ -116,6 +128,13 @@ def generate(registry) -> dict:
            "last_session_date": ctx.get("last_session_date"),
            "last_session_label": ctx.get("last_session_label"),
            "quotes": quotes, "headlines": uniq, **body}
+    # 직전과 비교해 신규/변경/동일 — 기준일·뉴스 헤드라인 집합으로 판정.
+    if not prev.get("available"):
+        out["status"] = "new"
+    elif _sig(out) == _sig(prev):
+        out["status"] = "same"
+    else:
+        out["status"] = "updated"
     try:
         _FILE.parent.mkdir(parents=True, exist_ok=True)
         _FILE.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
