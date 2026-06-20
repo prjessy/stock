@@ -45,10 +45,15 @@ _registry = SourceRegistry()
 # 실시간 백그라운드 폴러 — 시세를 메모리에 미리 받아두어 /api/quotes 가 즉시 응답.
 _poller = RealtimePoller(_registry)
 
+# 더듬이 2·3 자동 감시(본장 중, 트리거 시 Claude 판단→사이렌). interval=0 이면 비활성.
+from app.analysis.deudeumi_scheduler import DeudeumiScheduler
+_deudeumi = DeudeumiScheduler(_registry, _poller, settings.deudeumi_interval_min)
+
 
 @app.on_event("startup")
 def _start_poller() -> None:
     _poller.start()
+    _deudeumi.start()
 
 
 def _name_for(symbol: str) -> str:

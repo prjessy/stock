@@ -57,6 +57,8 @@ class Settings:
     # Anthropic Claude API (더듬이 2·3 AI 분석). 값은 .env 에서만.
     anthropic_api_key: str = ""
     deudeumi_model: str = "claude-sonnet-4-6"
+    # 더듬이2·3 자동 감시 주기(분). 0=비활성(기본). 본장(09:00~15:30)에만 동작.
+    deudeumi_interval_min: int = 0
 
     # 접근 제어: 허용된 Telegram chat id 목록
     allowed_chat_ids: list[str] = field(default_factory=list)
@@ -87,6 +89,7 @@ def load_settings() -> Settings:
         kis_domain=os.getenv("KIS_DOMAIN", "https://openapi.koreainvestment.com:9443"),
         anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
         deudeumi_model=os.getenv("DEUDEUMI_MODEL", "claude-sonnet-4-6"),
+        deudeumi_interval_min=int(os.getenv("DEUDEUMI_INTERVAL_MIN", "0")),
         allowed_chat_ids=_split_csv(os.getenv("ALLOWED_CHAT_IDS", "")),
         hermes_base_url=os.getenv("HERMES_BASE_URL", "http://localhost:8080"),
         db_path=os.getenv("DB_PATH", "data/stock.db"),
