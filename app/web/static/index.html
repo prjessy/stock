@@ -133,6 +133,11 @@
     .change.flat { color: var(--muted); }
     .card .err { font-size: 11px; color: var(--down); margin-top: 6px; opacity: .85; }
     .card .stale-note { font-size: 11px; color: var(--muted); margin-top: 6px; }
+    .card .venue-note { font-size: 11.5px; color: var(--muted); margin-top: 7px; line-height: 1.6; }
+    .card .venue-note .vtag { display: inline-block; font-weight: 700; color: var(--text); background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; font-size: 10px; margin-right: 3px; }
+    .card .venue-note .up { color: var(--up); }
+    .card .venue-note .down { color: var(--down); }
+    .card .venue-note .flat { color: var(--muted); }
     .news-card { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
     .news-head { font-weight: 800; font-size: 15px; margin-bottom: 10px; overflow: hidden; }
     .news-summary { font-size: 14.5px; line-height: 1.75; }
@@ -570,6 +575,7 @@
           <div class="price ${hasPrice ? "" : "dim"}">${hasPrice ? fmtPrice(q) : (q.error ? "—" : "로딩 중…")}</div>
           <div class="change ${changeClass(q.change_pct)}">${fmtChange(q.change_pct)}${hit ? `<span class="hit-badge ${q.change_pct >= 0 ? "up" : "down"}">🔔 ±${ALERT_PCT}%</span>` : ""}${tgt ? `<span class="tgt-badge${tgtReached ? " on" : ""}">🎯 ${tgt.dir === "up" ? "≥" : "≤"} ${fmtPriceNum(q.currency, tgt.price)}</span>` : ""}</div>
           ${q.stale ? `<div class="stale-note">🕘 휴장 · 종가${q.asof ? " " + q.asof : ""}</div>` : ""}
+          ${hasPrice && q.currency === "KRW" ? `<div class="venue-note"><span class="vtag">KRX 정규장</span> ${fmtPriceNum(q.currency, q.price)} <span class="${changeClass(q.change_pct)}">${fmtChange(q.change_pct)}</span>${q.nxt && q.nxt.price != null ? `<br><span class="vtag">NXT 애프터</span> ${fmtPriceNum(q.currency, q.nxt.price)} <span class="${changeClass(q.nxt.change_pct)}">${fmtChange(q.nxt.change_pct)}</span>` : ""}</div>` : ""}
           ${q.error ? `<div class="err">데이터 없음</div>` : ""}
           ${(q.note || "").includes("레버리지") ? `<div class="warn-lev">⚠️ 매수 전 교육 필수(미이수 시 매수 불가) · 비용 약 8,000원 발생 · 음의 복리 유의</div>` : ""}
         `;

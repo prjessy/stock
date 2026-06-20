@@ -111,6 +111,40 @@ class KisPriceSource(PriceSource):
                 raise
 
     # ---------------- 시세 ----------------
+    def _inquire(self, symbol: str, market_code: str) -> dict:
+        """KIS 현재가 조회(시장코드별). 성공 시 {price, prev_close, change_pct}, 실패 시 예외.
+
+        market_code: "J"=KRX 정규장, "NX"=넥스트레이드(NXT, 증권사 '시간외/애프터마켓'), "UN"=통합.
+        """
+        token = self._ensure_token()
+        resp = self._session.get(
+            f"{settings.kis_domain}/uapi/domestic-stock/v1/quotations/inquire-price",
+            params={"FID_COND_MRKT_DIV_CODE": market_code, "FID_INPUT_ISCD": symbol},
+            headers={
+                "authorization": f"Bearer {token}",
+                "appkey": settings.kis_app_key,
+                "appsecret": settings.kis_app_secret,
+                "tr_id": "FHKST01010100",
+                "custtype": "P",
+            },
+            timeout=_TIMEOUT,
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        if body.get("rt_cd") != "0":
+            raise ValueError(body.get("msg1", "KIS 오류"))
+        out = body.get("output", {}) or {}
+        price = _f(out.get("stck_prpr"))
+        if price is None:
+            raise ValueError("현재가 없음")
+        prev_close = _f(out.get("stck_sdpr"))  # 기준가 = 전일 종가
+        change_pct = round((price - prev_close) / prev_close * 100.0, 2) if prev_close else 0.0
+        return {
+            "price": round(price, 2),
+            "prev_close": round(prev_close, 2) if prev_close is not None else None,
+            "change_pct": change_pct,
+        }
+
     def get_quote(self, symbol: str) -> dict:
         meta = _meta(symbol)
         cache_key = f"quote:{symbol}"
@@ -122,44 +156,27 @@ class KisPriceSource(PriceSource):
             return empty_quote(symbol, meta["name"], "KRW", meta["note"], "KIS 키 미설정")
 
         try:
-            token = self._ensure_token()
-            resp = self._session.get(
-                f"{settings.kis_domain}/uapi/domestic-stock/v1/quotations/inquire-price",
-                params={"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": symbol},
-                headers={
-                    "authorization": f"Bearer {token}",
-                    "appkey": settings.kis_app_key,
-                    "appsecret": settings.kis_app_secret,
-                    "tr_id": "FHKST01010100",
-                    "custtype": "P",
-                },
-                timeout=_TIMEOUT,
-            )
-            resp.raise_for_status()
-            body = resp.json()
-            if body.get("rt_cd") != "0":
-                raise ValueError(body.get("msg1", "KIS 오류"))
-            out = body.get("output", {}) or {}
-            price = _f(out.get("stck_prpr"))
-            prev_close = _f(out.get("stck_sdpr"))  # 기준가 = 전일 종가
-            if price is None:
-                raise ValueError("현재가 없음")
-            change_pct = (
-                round((price - prev_close) / prev_close * 100.0, 2)
-                if prev_close else 0.0
-            )
+            base = self._inquire(symbol, "J")  # KRX 정규장(대표 가격)
             quote = {
                 "symbol": symbol,
                 "name": meta["name"],
-                "price": round(price, 2),
-                "prev_close": round(prev_close, 2) if prev_close is not None else None,
-                "change_pct": change_pct,
+                "price": base["price"],
+                "prev_close": base["prev_close"],
+                "change_pct": base["change_pct"],
                 "currency": "KRW",
                 "note": meta["note"],
                 "ts": int(time.time()),
                 "source": "KIS",
                 "error": "",
             }
+            # NXT(넥스트레이드) — 증권사·네이버가 보여주는 '시간외/애프터마켓' 체결가.
+            # 미지원 종목(일부 ETF 등)이나 실패 시 생략(graceful). 정규장과 같으면 프론트가 알아서 처리.
+            try:
+                nx = self._inquire(symbol, "NX")
+                if nx["price"] is not None:
+                    quote["nxt"] = nx
+            except Exception:
+                pass
             self._cache.set(cache_key, quote)
             return quote
         except Exception as exc:
