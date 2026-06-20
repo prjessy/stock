@@ -140,6 +140,7 @@
     .news-lead { font-size: 15px; font-weight: 700; color: var(--accent); line-height: 1.6; margin-bottom: 10px; }
     .news-points { margin: 0; padding-left: 18px; font-size: 13.5px; line-height: 1.85; }
     .news-points li { margin-bottom: 2px; }
+    .news-stat { font-size: 11px; font-weight: 700; margin-left: 8px; }
     .news-more { margin-top: 10px; }
     .news-more > summary { cursor: pointer; color: var(--muted); font-size: 12px; list-style: revert; }
     .news-more ul { margin: 8px 0 0; padding-left: 18px; font-size: 12.5px; line-height: 1.7; color: var(--muted); }
@@ -1735,6 +1736,11 @@
       finally { btn.disabled = false; btn.textContent = old; }
     }
     const SENT_ICON = { "긍정": "😊 긍정", "중립": "😐 중립", "부정": "😟 부정" };
+    const STATUS_BADGE = {
+      "new": '<span class="news-stat" style="color:var(--up)">🆕 신규</span>',
+      "updated": '<span class="news-stat" style="color:var(--accent)">🔄 변경</span>',
+      "same": '<span class="news-stat" style="color:var(--muted)">· 동일</span>',
+    };
     async function loadMarketing() {
       const el = document.getElementById("mktLinks");
       if (!el) return;
@@ -1754,9 +1760,10 @@
             `<li><a href="${h.link}" target="_blank" rel="noopener">${h.title}</a></li>`).join("");
           const sentCls = s.sentiment === "긍정" ? "up" : (s.sentiment === "부정" ? "down" : "");
           const sent = s.sentiment ? `<span class="${sentCls}" style="float:right;font-size:12px;font-weight:600;">${SENT_ICON[s.sentiment] || s.sentiment}</span>` : "";
+          const stb = STATUS_BADGE[s.status] || "";
           const pts = (s.points || []).map((p) => `<li>${p}</li>`).join("");
           return `<div class="news-card">
-            <div class="news-head">${s.name}${sent}</div>
+            <div class="news-head">${s.name}${stb}${sent}</div>
             ${s.headline ? `<div class="news-lead">💡 ${s.headline}</div>` : `<div class="sub" style="margin-bottom:8px;">관련 뉴스 없음</div>`}
             ${pts ? `<ul class="news-points">${pts}</ul>` : ""}
             ${heads ? `<details class="news-more"><summary>📰 관련 기사 ${n}건</summary><ul>${heads}</ul></details>` : ""}

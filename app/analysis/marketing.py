@@ -103,21 +103,35 @@ def _claude_copy(name: str, headlines: list[dict]) -> dict | None:
         return None
 
 
+def _sig(st: dict) -> str:
+    """내용 비교용 서명(요약 헤드라인+포인트). 같으면 '동일' 판정."""
+    return (st.get("headline") or "") + "||" + "||".join(st.get("points") or [])
+
+
 def generate(items: list[tuple[str, str]] | None = None) -> dict:
-    """종목별 뉴스 수집 + Claude 카피 생성 후 저장. 반환=저장 dict."""
+    """종목별 뉴스 수집 + Claude 요약 생성 후 저장. 직전 내용과 비교해 status(신규/변경/동일) 부여."""
     items = items or default_items()
+    prev = {st.get("symbol"): _sig(st) for st in (load().get("stocks") or [])}
     stocks = []
     for symbol, name in items:
         news = _fetch_news(name)
         copy = _claude_copy(name, news) or {}
-        stocks.append({
+        st = {
             "symbol": symbol,
             "name": name,
             "headline": copy.get("headline"),
             "points": copy.get("points") or [],
             "sentiment": copy.get("sentiment"),
             "headlines": news[:5],
-        })
+        }
+        sig = _sig(st)
+        if symbol not in prev:
+            st["status"] = "new"       # 신규(처음 등장)
+        elif sig == prev[symbol]:
+            st["status"] = "same"      # 동일(직전과 같은 내용)
+        else:
+            st["status"] = "updated"   # 변경(내용 바뀜)
+        stocks.append(st)
     data = {"updated_at": _dt.datetime.now().isoformat(timespec="seconds"), "stocks": stocks}
     try:
         _FILE.parent.mkdir(parents=True, exist_ok=True)
