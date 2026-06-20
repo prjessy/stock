@@ -173,5 +173,11 @@ def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.get("/favicon.ico")
+def favicon() -> FileResponse:
+    # 브라우저가 루트 /favicon.ico 를 자동 요청 — 32px PNG 로 응답(캐시 강함).
+    return FileResponse(STATIC_DIR / "icon-32.png")
+
+
 # 정적 파일(css/js) 마운트. index 는 위 라우트가 우선.
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
