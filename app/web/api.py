@@ -111,6 +111,18 @@ def get_investor_api(symbol: str) -> JSONResponse:
     return JSONResponse({"symbol": symbol, "name": _name_for(symbol), "available": True, **flow})
 
 
+@app.get("/api/orderbook/{symbol}")
+def get_orderbook_api(symbol: str) -> JSONResponse:
+    """호가(매도/매수 10단계 + 잔량). 국내 종목만. 장중 실시간. 500 금지."""
+    try:
+        ob = _registry.orderbook(symbol)
+    except Exception:
+        ob = None
+    if not ob:
+        return JSONResponse({"symbol": symbol, "name": _name_for(symbol), "available": False})
+    return JSONResponse({"name": _name_for(symbol), "available": True, **ob})
+
+
 @app.get("/api/feed/{symbol}")
 def get_feed_api(symbol: str) -> JSONResponse:
     """분석 피드 — hermes(Claude)용 지표 묶음(MA/RSI/볼린저/MACD/스토캐스틱/ATR/거래량/피보/52주/밸류).

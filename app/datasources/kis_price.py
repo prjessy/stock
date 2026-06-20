@@ -270,6 +270,50 @@ class KisPriceSource(PriceSource):
         except Exception:
             return None
 
+    # ---------------- 호가 (매도/매수 10단계 + 잔량) ----------------
+    def get_orderbook(self, symbol: str, levels: int = 10) -> dict | None:
+        """주식 호가(FHKST01010200) — 매도/매수 N단계 가격·잔량. 실패 시 None.
+        호가는 장중 실시간만 의미. 휴장엔 0/빈 값일 수 있다."""
+        if not settings.kis_app_key or not settings.kis_app_secret:
+            return None
+        try:
+            token = self._ensure_token()
+            resp = self._session.get(
+                f"{settings.kis_domain}/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn",
+                params={"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": symbol},
+                headers={
+                    "authorization": f"Bearer {token}",
+                    "appkey": settings.kis_app_key,
+                    "appsecret": settings.kis_app_secret,
+                    "tr_id": "FHKST01010200",
+                    "custtype": "P",
+                },
+                timeout=_TIMEOUT,
+            )
+            resp.raise_for_status()
+            body = resp.json()
+            if body.get("rt_cd") != "0":
+                return None
+            o = body.get("output1") or {}
+            asks, bids = [], []
+            for i in range(1, levels + 1):
+                ap, aq = _f(o.get(f"askp{i}")), _f(o.get(f"askp_rsqn{i}"))
+                bp, bq = _f(o.get(f"bidp{i}")), _f(o.get(f"bidp_rsqn{i}"))
+                if ap:
+                    asks.append({"price": ap, "qty": aq or 0})
+                if bp:
+                    bids.append({"price": bp, "qty": bq or 0})
+            return {
+                "symbol": symbol,
+                "asks": asks,  # 1=최우선 매도호가(가장 낮음) → 위로 갈수록 높음
+                "bids": bids,  # 1=최우선 매수호가(가장 높음) → 아래로 갈수록 낮음
+                "total_ask_qty": _f(o.get("total_askp_rsqn")),
+                "total_bid_qty": _f(o.get("total_bidp_rsqn")),
+                "time": o.get("aspr_acpt_hour"),
+            }
+        except Exception:
+            return None
+
 
 def _f(value) -> float | None:
     try:
