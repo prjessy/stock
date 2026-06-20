@@ -45,6 +45,10 @@ _registry = SourceRegistry()
 # 실시간 백그라운드 폴러 — 시세를 메모리에 미리 받아두어 /api/quotes 가 즉시 응답.
 _poller = RealtimePoller(_registry)
 
+# 서버측 알림 감시 — 브라우저 없이도(폰 꺼도) 증감·목표금액 도달 시 텔레그램+카카오 발송.
+from app.core.alert_watch import AlertWatcher
+_alert_watch = AlertWatcher(_poller)
+
 # 더듬이 2·3 자동 감시(본장 중, 트리거 시 Claude 판단→사이렌). interval=0 이면 비활성.
 from app.analysis.deudeumi_scheduler import DeudeumiScheduler
 _deudeumi = DeudeumiScheduler(_registry, _poller, settings.deudeumi_interval_min)
@@ -61,6 +65,7 @@ _briefing = BriefingScheduler(_registry)
 @app.on_event("startup")
 def _start_poller() -> None:
     _poller.start()
+    _alert_watch.start()
     _deudeumi.start()
     _marketing.start()
     _briefing.start()
@@ -225,8 +230,7 @@ def get_deudeumi_signals_api(symbol: str) -> JSONResponse:
 @app.post("/api/notify")
 async def notify_api(request: Request) -> JSONResponse:
     """브라우저 알림 → 텔레그램(hermes) + 카카오 나에게(직접). 절대 500 금지."""
-    import os
-    import subprocess
+    from app.notify.dispatch import notify_all
     try:
         data = await request.json()
     except Exception:
@@ -235,25 +239,31 @@ async def notify_api(request: Request) -> JSONResponse:
     subject = data.get("subject") or "🔔 Stock Watchdog"
     if not msg:
         return JSONResponse({"ok": False, "error": "empty"})
-    out: dict = {"ok": True}
-    # 1) 텔레그램(hermes)
+    return JSONResponse({"ok": True, **notify_all(subject, msg)})
+
+
+@app.get("/api/alert-config")
+def get_alert_config_api() -> JSONResponse:
+    """서버 저장 알림 설정(종류·증감 임계값·목표금액). 500 금지."""
+    from app.core import alert_config
     try:
-        subprocess.run(
-            ["/usr/local/bin/hermes", "send", "--to", "telegram", "--subject", subject, msg],
-            env={**os.environ, "HERMES_HOME": os.environ.get("HERMES_HOME", "/root/.hermes")},
-            timeout=30, capture_output=True,
-        )
-        out["telegram"] = True
-    except Exception as exc:
-        out["telegram"] = False
-        out["telegram_error"] = str(exc)
-    # 2) 카카오 나에게 보내기(연동돼 있을 때만)
-    try:
-        from app.kakao_notify import linked, send as kakao_send
-        out["kakao"] = bool(linked() and kakao_send(f"{subject}\n{msg}"))
+        return JSONResponse(alert_config.load())
     except Exception:
-        out["kakao"] = False
-    return JSONResponse(out)
+        return JSONResponse({"types": [], "pct_thresholds": [], "targets": {}})
+
+
+@app.post("/api/alert-config")
+async def set_alert_config_api(request: Request) -> JSONResponse:
+    """알림 설정 저장(부분 갱신). 저장된 전체 설정 반환. 500 금지."""
+    from app.core import alert_config
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    try:
+        return JSONResponse(alert_config.save(data))
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)})
 
 
 @app.get("/api/kakao/status")

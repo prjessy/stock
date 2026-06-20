@@ -469,11 +469,19 @@
           <h2>⚙️ 설정</h2>
           <button class="modal-x" onclick="closeSettings()" aria-label="닫기">✕</button>
         </div>
+        <div class="modal-row" style="display:block;">
+          <div class="modal-k" style="margin-bottom:6px;">📡 서버 알림 종류 (복수 선택 · 폰 꺼도 수신)</div>
+          <label style="display:block;margin:4px 0;font-size:14px;"><input type="checkbox" class="at-input" value="pct"> 증감(±%) 도달</label>
+          <label style="display:block;margin:4px 0;font-size:14px;"><input type="checkbox" class="at-input" value="target"> 목표금액 도달</label>
+          <label style="display:block;margin:4px 0;font-size:14px;color:var(--muted);"><input type="checkbox" class="at-input" value="deudeumi1"> 더듬이1 (피보나치) · 준비 중</label>
+          <label style="display:block;margin:4px 0;font-size:14px;color:var(--muted);"><input type="checkbox" class="at-input" value="deudeumi4"> 더듬이4 (ETF 수급) · 준비 중</label>
+        </div>
+        <div class="modal-note">선택한 알림을 <b>서버가 장중(평일 08~20시) 자동 감시</b>해 <b>텔레그램+카카오</b>로 보냅니다 — <b>브라우저를 안 켜도 수신</b>됩니다. 더듬이1·4 발송은 곧 추가됩니다.</div>
         <div class="modal-row">
-          <div class="modal-k">등락률 표시 임계값</div>
+          <div class="modal-k">등락률(증감) 임계값</div>
           <div class="modal-v">±<input class="thr-input" type="number" min="0.5" max="50" step="0.5" value="3">%</div>
         </div>
-        <div class="modal-note">설정한 ±% 도달 시 <b>종목 카드</b>에 🔔 로 강조됩니다. 값은 이 브라우저(localStorage)에 저장됩니다.<br>(실제 Telegram 알림 임계값은 서버 <code>.env</code> 로 관리됩니다.)</div>
+        <div class="modal-note">설정한 ±% 도달 시 <b>종목 카드 🔔 강조</b> + (증감 알림 켜면) <b>서버가 텔레그램·카카오 발송</b>. 이 값이 서버 증감 알림 임계값으로 함께 저장됩니다(기본 ±3%).</div>
         <div class="modal-row">
           <div class="modal-k">오늘 흐름 간격</div>
           <div class="modal-v"><input class="iv-input" type="number" min="1" max="120" step="1" value="5" style="width:62px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:4px 6px;font-size:14px;font-variant-numeric:tabular-nums;">분</div>
@@ -1105,6 +1113,7 @@
       renderCards(Object.values(quotesById));  // 카드 🔔 재계산
       renderAlertThreshold();
       loadIntraday();                           // 5분 표 🔔 재계산
+      saveServerAlertConfig();                  // 서버 증감 임계값 동기화
     }
     function renderAlertThreshold() {
       // 모달/알람탭 입력칸을 현재 값으로 동기화.
@@ -1174,7 +1183,7 @@
       const ch = getAlertChannels();
       if (ch.includes("popup")) { try { if (window.Notification && Notification.permission === "granted") new Notification("🎯 목표가 도달", { body: msg, icon: "/static/icon-192.png?v=7" }); } catch (e) {} }
       if (ch.includes("siren")) beep();
-      if (ch.includes("telegram")) { fetch("/api/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subject: "🎯 목표가 도달", message: msg }) }).catch(() => {}); }
+      // 텔레그램·카카오는 서버(alert_watch)가 전담 — 클라는 팝업/소리만(중복 방지).
     }
     // ===== 등락(±%) 임계값 알림 — 카톡+텔레그램 발송 =====
     // 하루 1회/종목(중복 방지). localStorage 에 당일 발동 기록(날짜 바뀌면 리셋).
@@ -1205,8 +1214,7 @@
       const ch = getAlertChannels();
       if (ch.includes("popup")) { try { if (window.Notification && Notification.permission === "granted") new Notification("🔔 등락 알림", { body: msg, icon: "/static/icon-192.png?v=7" }); } catch (e) {} }
       if (ch.includes("siren")) beep();
-      // 카톡+텔레그램은 항상 발송(요청사항). /api/notify 가 둘 다 전송.
-      fetch("/api/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subject: "🔔 등락 알림", message: msg }) }).catch(() => {});
+      // 텔레그램·카카오는 서버(alert_watch)가 전담 발송 — 중복 방지 위해 클라는 팝업/소리만.
     }
     function populateTargets() {
       const box = document.getElementById("targetList");
@@ -1263,12 +1271,38 @@
       } catch (e) { btn.textContent = "❌ 실패"; }
       setTimeout(() => { btn.disabled = false; btn.textContent = old; }, 2500);
     }
+    // ===== 서버 알림 설정(폰 꺼도 수신) — /api/alert-config =====
+    async function loadServerAlertConfig() {
+      try {
+        const c = await (await fetch("/api/alert-config")).json();
+        const types = c.types || [];
+        document.querySelectorAll(".at-input").forEach((cb) => { cb.checked = types.includes(cb.value); });
+        const pos = (c.pct_thresholds || []).find((x) => x > 0);   // 서버 증감 임계값(양수)로 ±% 동기화
+        if (pos > 0) { ALERT_PCT = pos; localStorage.setItem("alertPct", String(pos)); renderAlertThreshold(); }
+        if (c.targets) {  // 서버 목표가를 클라에 병합(없던 종목만)
+          Object.entries(c.targets).forEach(([sym, t]) => {
+            if (!priceTargets[sym]) priceTargets[sym] = { price: t.price, dir: t.dir, fired: false };
+          });
+          saveTargets(); populateTargets();
+        }
+      } catch (e) {}
+    }
+    function saveServerAlertConfig() {
+      const types = [...document.querySelectorAll(".at-input:checked")].map((c) => c.value);
+      const targets = {};
+      Object.entries(priceTargets).forEach(([sym, t]) => { if (t && t.price > 0) targets[sym] = { price: t.price, dir: t.dir }; });
+      fetch("/api/alert-config", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ types, pct_thresholds: [ALERT_PCT, -ALERT_PCT], targets }),
+      }).catch(() => {});
+    }
     function openSettings() {
       renderAlertThreshold();
       syncIvInputs();
       syncRtbInputs();
       syncAlertChannels();
       populateTargets();
+      loadServerAlertConfig();
       loadBotLink();
       loadKakaoStatus();
       document.getElementById("settingsOverlay").classList.add("open");
@@ -1286,14 +1320,16 @@
       else if (t.classList.contains("rtb-input")) setRtBucket(parseFloat(t.value));
       else if (t.classList.contains("tgt-input")) {
         const row = t.closest(".tgt-row"); if (row) setTarget(row.dataset.sym, t.value);
+        saveServerAlertConfig();   // 목표가 서버 동기화
       }
       else if (t.classList.contains("ch-input")) saveAlertChannels();
+      else if (t.classList.contains("at-input")) saveServerAlertConfig();   // 알림 종류 서버 동기화
     });
     // 목표가 삭제(✕) — 모달은 동적 생성이라 위임.
     document.addEventListener("click", (e) => {
       const btn = e.target.closest && e.target.closest(".tgt-clear");
       if (!btn) return;
-      const row = btn.closest(".tgt-row"); if (row) clearTarget(row.dataset.sym);
+      const row = btn.closest(".tgt-row"); if (row) { clearTarget(row.dataset.sym); saveServerAlertConfig(); }
     });
 
     // ===================== 실시간 (초단위) =====================
