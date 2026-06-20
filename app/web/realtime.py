@@ -36,7 +36,8 @@ class RealtimePoller:
 
     def _fetch(self, symbol: str) -> tuple[str, dict | None]:
         try:
-            return symbol, self._registry.source_for(symbol).get_quote(symbol)
+            # registry.quote: 라이브 실패 시 일봉 마지막 종가로 폴백(휴장에도 종가 표시).
+            return symbol, self._registry.quote(symbol)
         except Exception:
             return symbol, None
 

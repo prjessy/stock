@@ -41,9 +41,33 @@ class SourceRegistry:
         """대시보드 표시 순서: 국내 종목 먼저, 그다음 미국."""
         return list(settings.kr_symbols) + list(settings.us_symbols)
 
+    def quote(self, symbol: str) -> dict:
+        """단일 시세. 라이브 실패(가격 null) 시 일봉 마지막 종가로 폴백한다.
+
+        휴장/주말/점검으로 실시간이 안 와도 '직전 종가'를 보여주기 위함.
+        폴백 시 stale=True, asof=종가일자 를 달아 프론트가 '휴장·종가'로 표기한다.
+        """
+        q = self.source_for(symbol).get_quote(symbol)
+        if q and q.get("price") is not None:
+            return q
+        try:
+            rows = [r for r in (self.history(symbol, "1mo") or []) if r.get("close") is not None]
+        except Exception:
+            rows = []
+        if rows:
+            last = rows[-1]
+            prev = rows[-2] if len(rows) >= 2 else last
+            price = last["close"]
+            prev_close = prev["close"]
+            chg = ((price - prev_close) / prev_close * 100.0) if prev_close else 0.0
+            return {**(q or {}), "symbol": symbol, "price": round(price, 2),
+                    "prev_close": round(prev_close, 2), "change_pct": round(chg, 2),
+                    "error": "", "stale": True, "asof": last.get("date")}
+        return q
+
     def all_quotes(self) -> list[dict]:
         """워치리스트 전체 시세. 개별 실패는 해당 항목 error 로만 표시(전체 중단 없음)."""
-        return [self.source_for(sym).get_quote(sym) for sym in self.watchlist()]
+        return [self.quote(sym) for sym in self.watchlist()]
 
     def history(self, symbol: str, period: str) -> list[dict]:
         return self.source_for(symbol).get_history(symbol, period)
