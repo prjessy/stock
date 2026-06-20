@@ -112,6 +112,23 @@ def get_feed_api(symbol: str) -> JSONResponse:
     return JSONResponse(compute_feed(symbol, rows, quote, fund))
 
 
+@app.get("/api/deudeumi-ai/{symbol}")
+def get_deudeumi_ai_api(symbol: str) -> JSONResponse:
+    """더듬이 2·3 — Claude 기반 매수/매도 시점 판단(판단 보조). 절대 500 금지."""
+    from app.analysis.deudeumi_ai import analyze, recent_signals
+    from app.analysis.feed import compute_feed
+    try:
+        rows = _registry.history(symbol, "1y")
+        quote = next((x for x in _poller.quotes() if x.get("symbol") == symbol), None)
+        if quote is None:
+            quote = _registry.source_for(symbol).get_quote(symbol)
+        fund = _registry.fundamentals(symbol)
+        feed = compute_feed(symbol, rows, quote, fund)
+    except Exception as exc:
+        return JSONResponse({"symbol": symbol, "error": f"데이터 조회 실패: {exc}"})
+    return JSONResponse(analyze(symbol, feed, recent_signals(symbol)))
+
+
 @app.get("/api/alerts")
 def get_alerts(limit: int = 50) -> JSONResponse:
     """최근 감지된 가격 알림(최신순). 종목명은 메타로 보강.

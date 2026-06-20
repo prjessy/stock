@@ -10,6 +10,9 @@ finance-datareader # 국내 시세 (005930, 000660)
 yfinance           # 미국 MU/^SOX/NQ=F 시세
 pandas             # 시세 데이터 처리
 
+# --- AI 분석 (더듬이 2·3) ---
+anthropic          # Claude API (매수/매도 시점 판단)
+
 # --- 후속 슬라이스에서 추가 예정 (분석/마케팅) ---
 # pykrx               # 국내 시세 보조
 # OpenDartReader      # 국내 공시/재무

@@ -54,6 +54,10 @@ class Settings:
     kis_app_secret: str = ""
     kis_domain: str = "https://openapi.koreainvestment.com:9443"
 
+    # Anthropic Claude API (더듬이 2·3 AI 분석). 값은 .env 에서만.
+    anthropic_api_key: str = ""
+    deudeumi_model: str = "claude-sonnet-4-6"
+
     # 접근 제어: 허용된 Telegram chat id 목록
     allowed_chat_ids: list[str] = field(default_factory=list)
 
@@ -81,6 +85,8 @@ def load_settings() -> Settings:
         kis_app_key=os.getenv("KIS_APP_KEY", ""),
         kis_app_secret=os.getenv("KIS_APP_SECRET", ""),
         kis_domain=os.getenv("KIS_DOMAIN", "https://openapi.koreainvestment.com:9443"),
+        anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
+        deudeumi_model=os.getenv("DEUDEUMI_MODEL", "claude-sonnet-4-6"),
         allowed_chat_ids=_split_csv(os.getenv("ALLOWED_CHAT_IDS", "")),
         hermes_base_url=os.getenv("HERMES_BASE_URL", "http://localhost:8080"),
         db_path=os.getenv("DB_PATH", "data/stock.db"),
