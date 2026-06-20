@@ -583,6 +583,7 @@
         root.appendChild(el);
       });
       checkTargets(quotes);
+      checkPctAlerts(quotes);
     }
 
     function selectSymbol(symbol) {
@@ -1174,6 +1175,38 @@
       if (ch.includes("popup")) { try { if (window.Notification && Notification.permission === "granted") new Notification("🎯 목표가 도달", { body: msg, icon: "/static/icon-192.png?v=7" }); } catch (e) {} }
       if (ch.includes("siren")) beep();
       if (ch.includes("telegram")) { fetch("/api/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subject: "🎯 목표가 도달", message: msg }) }).catch(() => {}); }
+    }
+    // ===== 등락(±%) 임계값 알림 — 카톡+텔레그램 발송 =====
+    // 하루 1회/종목(중복 방지). localStorage 에 당일 발동 기록(날짜 바뀌면 리셋).
+    let pctFired = (function () {
+      try {
+        const d = JSON.parse(localStorage.getItem("pctFired"));
+        const today = new Date().toISOString().slice(0, 10);
+        if (d && d.date === today) return d;
+      } catch (e) {}
+      return { date: new Date().toISOString().slice(0, 10), syms: {} };
+    })();
+    function checkPctAlerts(quotes) {
+      const today = new Date().toISOString().slice(0, 10);
+      if (pctFired.date !== today) pctFired = { date: today, syms: {} };  // 날짜 바뀌면 리셋
+      quotes.forEach((q) => {
+        if (q.change_pct == null || q.stale) return;  // 휴장·종가(멈춘 값)엔 알림 안 함
+        const hit = Math.abs(q.change_pct) >= ALERT_PCT;
+        if (hit && !pctFired.syms[q.symbol]) {
+          pctFired.syms[q.symbol] = true;
+          try { localStorage.setItem("pctFired", JSON.stringify(pctFired)); } catch (e) {}
+          firePctAlert(q);
+        }
+      });
+    }
+    function firePctAlert(q) {
+      const dir = q.change_pct >= 0 ? "▲ 상승" : "▼ 하락";
+      const msg = `${q.name} ${dir} ${fmtChange(q.change_pct)} · ±${ALERT_PCT}% 도달 — 현재 ${fmtPrice(q)}`;
+      const ch = getAlertChannels();
+      if (ch.includes("popup")) { try { if (window.Notification && Notification.permission === "granted") new Notification("🔔 등락 알림", { body: msg, icon: "/static/icon-192.png?v=7" }); } catch (e) {} }
+      if (ch.includes("siren")) beep();
+      // 카톡+텔레그램은 항상 발송(요청사항). /api/notify 가 둘 다 전송.
+      fetch("/api/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subject: "🔔 등락 알림", message: msg }) }).catch(() => {});
     }
     function populateTargets() {
       const box = document.getElementById("targetList");
