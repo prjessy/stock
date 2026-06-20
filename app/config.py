@@ -29,9 +29,9 @@ class Settings:
 
     # 감시 대상
     kr_symbols: list[str] = field(
-        default_factory=lambda: ["000660", "0193W0", "0193T0"]
+        default_factory=lambda: ["005930", "000660", "0193W0", "0193T0"]
     )
-    us_symbols: list[str] = field(default_factory=lambda: ["NQ=F", "^SOX", "MU", "^IXIC", "^DJI"])
+    us_symbols: list[str] = field(default_factory=lambda: ["NQ=F", "^SOX", "MU", "^DJI"])
 
     # 임계값 (전일 종가 대비 %). 설정만 바꿔 확장 가능 (예: +6/-6).
     thresholds: list[float] = field(default_factory=lambda: [3.0, -3.0])
@@ -73,8 +73,8 @@ class Settings:
 def load_settings() -> Settings:
     """환경변수에서 Settings 를 구성한다. 값이 없으면 기본값 사용."""
     return Settings(
-        kr_symbols=_split_csv(os.getenv("KR_SYMBOLS", "000660,0193W0,0193T0")),
-        us_symbols=_split_csv(os.getenv("US_SYMBOLS", "NQ=F,^SOX,MU,^IXIC,^DJI")),
+        kr_symbols=_split_csv(os.getenv("KR_SYMBOLS", "005930,000660,0193W0,0193T0")),
+        us_symbols=_split_csv(os.getenv("US_SYMBOLS", "NQ=F,^SOX,MU,^DJI")),
         thresholds=_parse_floats(os.getenv("THRESHOLDS", "3.0,-3.0")),
         poll_interval_seconds=int(os.getenv("POLL_INTERVAL_SECONDS", "60")),
         market_open=os.getenv("MARKET_OPEN", "08:00"),

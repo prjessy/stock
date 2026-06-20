@@ -151,6 +151,11 @@
     .ob-tbl .bid .obp { color: var(--up); }
     .ob-tbl .mid td { text-align: center; color: var(--muted); font-size: 11px; background: var(--panel-2); }
     .ob-bar { display: inline-block; height: 8px; border-radius: 3px; vertical-align: middle; margin-left: 6px; }
+    .ob-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    @media (max-width: 860px) { .ob-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 460px) { .ob-grid { grid-template-columns: 1fr; } }
+    .ob-card { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+    .ob-card .ob-name { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
     .card .warn-lev { font-size: 10.5px; color: #f0b73d; margin-top: 9px; line-height: 1.45; border-top: 1px dashed var(--border); padding-top: 7px; }
 
     .chart-panel {
@@ -294,15 +299,13 @@
       <div class="chart-head">
         <div class="title" style="font-size:15px;">💰 수급 · 호가 <span style="color:var(--muted);font-weight:500;font-size:12px;margin-left:6px;">외국인·기관·개인 순매수 / 매도·매수 호가</span></div>
       </div>
-      <div class="flow-grid">
-        <div>
-          <div class="flow-sub">📊 투자자별 순매수 (주 단위, ▲순매수 / ▼순매도)</div>
-          <div id="flowSupply" class="empty-state">불러오는 중…</div>
-        </div>
-        <div>
-          <div class="flow-sub">📐 호가 <span id="obSym" style="color:var(--muted);font-weight:500;"></span></div>
-          <div id="flowOrderbook" class="empty-state">종목 선택 시 표시</div>
-        </div>
+      <div style="margin-bottom:16px;">
+        <div class="flow-sub">📊 투자자별 순매수 (주 단위, ▲순매수 / ▼순매도) — 외국인 강조</div>
+        <div id="flowSupply" class="empty-state">불러오는 중…</div>
+      </div>
+      <div>
+        <div class="flow-sub">📐 호가 (삼성전자·하이닉스·삼성전자레버리지·하이닉스레버리지) — 장중 실시간</div>
+        <div id="flowOrderbook" class="empty-state">불러오는 중…</div>
       </div>
     </section>
 
@@ -599,7 +602,6 @@
       loadHistory();
       loadIntraday();
       loadFundamentals();
-      loadOrderbook();
     }
 
     async function loadQuotes(fresh = false) {
@@ -1377,27 +1379,26 @@
           <div class="flow-sub" style="margin-top:6px;">기준일 ${fmtD(ok[0].date)} · 단위 주(외국인 강조)</div>`;
       } catch (e) { box.className = "empty-state"; box.textContent = "수급 로딩 실패"; }
     }
+    const OB_SYMS = ["005930", "000660", "0193W0", "0193T0"];  // 삼성전자·하이닉스·삼전레버·하닉레버
+    function renderBook(d) {
+      const name = (d && d.name) || "";
+      if (!d || !d.available || (!(d.asks || []).length && !(d.bids || []).length))
+        return `<div class="ob-card"><div class="ob-name">${name}</div><div class="empty-state" style="padding:10px;font-size:11px;">장중 표시</div></div>`;
+      const asks = d.asks.slice(0, 5), bids = d.bids.slice(0, 5);
+      const maxq = Math.max(1, ...asks.map((a) => a.qty), ...bids.map((b) => b.qty));
+      const bar = (q, c) => `<span class="ob-bar" style="width:${Math.round(q / maxq * 28)}px;background:${c}"></span>`;
+      const ar = asks.slice().reverse().map((a) => `<tr class="ask"><td class="obp">${a.price.toLocaleString()}</td><td class="obq">${a.qty.toLocaleString()}${bar(a.qty, "var(--down)")}</td></tr>`).join("");
+      const br = bids.map((b) => `<tr class="bid"><td class="obp">${b.price.toLocaleString()}</td><td class="obq">${b.qty.toLocaleString()}${bar(b.qty, "var(--up)")}</td></tr>`).join("");
+      return `<div class="ob-card"><div class="ob-name">${name}</div><table class="ob-tbl">${ar}<tr class="mid"><td colspan="2">호가</td></tr>${br}</table></div>`;
+    }
     async function loadOrderbook() {
       const box = document.getElementById("flowOrderbook");
-      const symEl = document.getElementById("obSym");
-      const sym = selected || "";
-      const isKR = /^\d{6}$/.test(sym);
-      symEl.textContent = isKR ? ((quotesById[sym] && quotesById[sym].name) || sym) : "";
-      if (!isKR) { box.className = "empty-state"; box.textContent = "국내 종목만 호가 제공"; return; }
       if (!krOpen) { box.className = "empty-state"; box.textContent = "🕘 호가는 장중에 표시됩니다"; return; }
       try {
-        const d = await (await fetch(`/api/orderbook/${sym}`)).json();
-        if (!d.available || (!(d.asks || []).length && !(d.bids || []).length)) {
-          box.className = "empty-state"; box.textContent = "🕘 호가는 장중에 표시됩니다"; return;
-        }
+        const books = await Promise.all(OB_SYMS.map((s) =>
+          fetch(`/api/orderbook/${s}`).then((r) => r.json()).catch(() => null)));
         box.className = "";
-        const maxq = Math.max(1, ...d.asks.map((a) => a.qty), ...d.bids.map((b) => b.qty));
-        const bar = (q, c) => `<span class="ob-bar" style="width:${Math.round(q / maxq * 44)}px;background:${c}"></span>`;
-        const askRows = d.asks.slice().reverse().map((a) => `<tr class="ask"><td class="obp">${a.price.toLocaleString()}</td><td class="obq">${a.qty.toLocaleString()}${bar(a.qty, "var(--down)")}</td></tr>`).join("");
-        const bidRows = d.bids.map((b) => `<tr class="bid"><td class="obp">${b.price.toLocaleString()}</td><td class="obq">${b.qty.toLocaleString()}${bar(b.qty, "var(--up)")}</td></tr>`).join("");
-        box.innerHTML = `<table class="ob-tbl">${askRows}
-          <tr class="mid"><td colspan="2">── 총매도 ${fmtQty(d.total_ask_qty)} / 총매수 ${fmtQty(d.total_bid_qty)} ──</td></tr>
-          ${bidRows}</table>`;
+        box.innerHTML = `<div class="ob-grid">${books.map(renderBook).join("")}</div>`;
       } catch (e) { box.className = "empty-state"; box.textContent = "호가 로딩 실패"; }
     }
 
