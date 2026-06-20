@@ -48,6 +48,18 @@ class SourceRegistry:
     def history(self, symbol: str, period: str) -> list[dict]:
         return self.source_for(symbol).get_history(symbol, period)
 
+    def fundamentals(self, symbol: str) -> dict:
+        """재무 요약. 출처가 get_fundamentals 를 지원하면(=KIS) 그걸 우선 쓰고,
+        실패/미지원이면 무료 소스(pykrx/FDR) 폴백으로 넘긴다."""
+        src = self.source_for(symbol)
+        fn = getattr(src, "get_fundamentals", None)
+        if fn is not None:
+            res = fn(symbol)
+            if res.get("available"):
+                return res
+        from app.datasources.financials import get_fundamentals as _fallback
+        return _fallback(symbol)
+
     def clear_caches(self) -> None:
         """강제 동기화: 모든 소스의 TTL 캐시 비우기(다음 조회는 출처에서 새로 받음)."""
         for src in (self._kr, self._us):

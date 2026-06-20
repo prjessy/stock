@@ -848,19 +848,25 @@
         const res = await fetch(`/api/fundamentals/${encodeURIComponent(selected)}`);
         const d = await res.json();
         if (!d.available) {
-          body.innerHTML = `<div class="fin-note">재무 정보 없음 (ETF/선물)</div>`;
+          body.innerHTML = `<div class="fin-note">${d.reason || "재무 정보 없음"}</div>`;
           return;
         }
         const num = (x, suffix = "") => (x == null ? "—" : x.toLocaleString(undefined, { maximumFractionDigits: 2 }) + suffix);
-        body.innerHTML = `<div class="fin-grid">
-          ${finRow("PER", num(d.per, "배"))}
-          ${finRow("PBR", num(d.pbr, "배"))}
-          ${finRow("시가총액", fmtMarcap(d.market_cap))}
-          ${finRow("배당수익률", num(d.div, "%"))}
-          ${finRow("EPS", d.eps == null ? "—" : KRW.format(Math.round(d.eps)) + "원")}
-          ${finRow("BPS", d.bps == null ? "—" : KRW.format(Math.round(d.bps)) + "원")}
-        </div>`;
-        asof.textContent = d.asof ? `기준일 ${d.asof}` : "";
+        const won = (x) => (x == null ? "—" : KRW.format(Math.round(x)) + "원");
+        const rows = [
+          finRow("PER", num(d.per, "배")),
+          finRow("PBR", num(d.pbr, "배")),
+          finRow("시가총액", fmtMarcap(d.market_cap)),
+          finRow("EPS", won(d.eps)),
+          finRow("BPS", won(d.bps)),
+        ];
+        if (d.div != null) rows.push(finRow("배당수익률", num(d.div, "%")));
+        if (d.w52_high != null) rows.push(finRow("52주 최고", won(d.w52_high)));
+        if (d.w52_low != null) rows.push(finRow("52주 최저", won(d.w52_low)));
+        if (d.turnover != null) rows.push(finRow("거래량회전율", num(d.turnover, "%")));
+        body.innerHTML = `<div class="fin-grid">${rows.join("")}</div>`;
+        const src = d.source ? ` · ${d.source}` : "";
+        asof.textContent = d.asof ? `기준일 ${d.asof}${src}` : "";
       } catch (e) {
         body.innerHTML = `<div class="fin-note">재무 정보를 불러오지 못했습니다.</div>`;
       }

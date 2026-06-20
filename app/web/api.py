@@ -19,7 +19,6 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.core.market import current_session
-from app.datasources.financials import get_fundamentals
 from app.datasources.intraday import get_intraday
 from app.datasources.kr_price import KR_META
 from app.datasources.registry import SourceRegistry
@@ -90,8 +89,9 @@ def get_fundamentals_api(symbol: str) -> JSONResponse:
     """단일 심볼 재무 요약(PER/PBR/시총/배당 등). 국내 보통주만 지원.
 
     ETF/선물 등 미지원 심볼은 {available: false} 로 응답하며 절대 500 을 내지 않는다.
+    국내 보통주는 KIS(실시간) 우선, 실패 시 무료 소스로 폴백한다.
     """
-    return JSONResponse(get_fundamentals(symbol))
+    return JSONResponse(_registry.fundamentals(symbol))
 
 
 @app.get("/api/alerts")

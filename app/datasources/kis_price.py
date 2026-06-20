@@ -169,6 +169,62 @@ class KisPriceSource(PriceSource):
         # 일봉 이력은 무료 소스(FDR)로 충분 — KIS 호출을 아낀다.
         return self._history.get_history(symbol, period)
 
+    # ---------------- 재무 요약 ----------------
+    def get_fundamentals(self, symbol: str) -> dict:
+        """현재가 시세(FHKST01010100) 응답에 포함된 재무지표로 요약을 만든다.
+
+        같은 엔드포인트가 PER/PBR/EPS/BPS/시총/상장주식수/52주고저/거래량회전율을
+        함께 내려주므로 별도 소스(pykrx 등) 없이 거의 실시간 재무 요약이 된다.
+        실패 시 {available: False, reason}. 절대 예외를 올리지 않는다.
+        """
+        meta = _meta(symbol)
+        if not settings.kis_app_key or not settings.kis_app_secret:
+            return {"available": False, "symbol": symbol, "reason": "KIS 키 미설정"}
+        try:
+            token = self._ensure_token()
+            resp = self._session.get(
+                f"{settings.kis_domain}/uapi/domestic-stock/v1/quotations/inquire-price",
+                params={"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": symbol},
+                headers={
+                    "authorization": f"Bearer {token}",
+                    "appkey": settings.kis_app_key,
+                    "appsecret": settings.kis_app_secret,
+                    "tr_id": "FHKST01010100",
+                    "custtype": "P",
+                },
+                timeout=_TIMEOUT,
+            )
+            resp.raise_for_status()
+            body = resp.json()
+            if body.get("rt_cd") != "0":
+                raise ValueError(body.get("msg1", "KIS 오류"))
+            out = body.get("output", {}) or {}
+            marcap_eok = _f(out.get("hts_avls"))  # 억원 단위
+            result = {
+                "available": True,
+                "symbol": symbol,
+                "name": meta["name"],
+                "per": _f(out.get("per")),
+                "pbr": _f(out.get("pbr")),
+                "eps": _f(out.get("eps")),
+                "bps": _f(out.get("bps")),
+                "market_cap": marcap_eok * 1e8 if marcap_eok is not None else None,  # 억원→원
+                "shares": _f(out.get("lstn_stcn")),
+                "w52_high": _f(out.get("w52_hgpr")),
+                "w52_low": _f(out.get("w52_lwpr")),
+                "turnover": _f(out.get("vol_tnrt")),
+                "settle_month": out.get("stac_month") or None,
+                "currency": "KRW",
+                "source": "KIS",
+                "asof": time.strftime("%Y-%m-%d"),
+            }
+            # 핵심 지표가 하나도 없으면 미지원 처리.
+            if not any(result[k] is not None for k in ("per", "pbr", "eps", "bps", "market_cap")):
+                return {"available": False, "symbol": symbol, "reason": "재무 데이터 없음"}
+            return result
+        except Exception as exc:
+            return {"available": False, "symbol": symbol, "reason": f"KIS 재무 조회 실패: {exc}"}
+
 
 def _f(value) -> float | None:
     try:
