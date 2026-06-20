@@ -20,8 +20,11 @@ __pycache__/
 venv/
 env/
 
-# 디자인 원본 업로드(대용량) — 가공본은 app/web/static 에 커밋됨
+# 디자인 원본 업로드 — 가공본은 app/web/static 에 커밋됨
 KakaoTalk_*.png
+/radar.png
+/radar2.png
+/뭉개짐.JPG
 
 # 에디터/OS
 .idea/

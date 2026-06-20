@@ -4,11 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Stock Watchdog</title>
-  <link rel="icon" type="image/png" sizes="16x16" href="/static/icon-16.png?v=5" />
-  <link rel="icon" type="image/png" sizes="32x32" href="/static/icon-32.png?v=5" />
-  <link rel="icon" type="image/png" sizes="48x48" href="/static/icon-48.png?v=5" />
-  <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png?v=5" />
-  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png?v=5" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/icon-16.png?v=6" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/icon-32.png?v=6" />
+  <link rel="icon" type="image/png" sizes="48x48" href="/static/icon-48.png?v=6" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png?v=6" />
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png?v=6" />
   <meta name="theme-color" content="#142d5a" />
   <!-- TradingView Lightweight Charts (standalone production build, 버전 고정) -->
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
@@ -995,17 +995,27 @@
       try { if (window.Notification && Notification.permission === "default") Notification.requestPermission(); } catch (e) {}
     }
     let _audioCtx;
-    function beep() {
+    function beep() {  // 사이렌(목표가 도달 시) — 두 톤을 왕복하는 경보음
       try {
         _audioCtx = _audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-        const o = _audioCtx.createOscillator(), g = _audioCtx.createGain();
-        o.connect(g); g.connect(_audioCtx.destination);
-        o.type = "sine"; o.frequency.value = 880;
-        const t0 = _audioCtx.currentTime;
+        const ctx = _audioCtx;
+        const t0 = ctx.currentTime;
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = "sawtooth";
+        o.connect(g); g.connect(ctx.destination);
+        const lo = 660, hi = 1040, step = 0.22, cycles = 3;
+        o.frequency.setValueAtTime(lo, t0);
+        let t = t0;
+        for (let i = 0; i < cycles; i++) {
+          o.frequency.linearRampToValueAtTime(hi, t + step);
+          o.frequency.linearRampToValueAtTime(lo, t + step * 2);
+          t += step * 2;
+        }
         g.gain.setValueAtTime(0.0001, t0);
-        g.gain.exponentialRampToValueAtTime(0.3, t0 + 0.01);
-        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.45);
-        o.start(t0); o.stop(t0 + 0.45);
+        g.gain.exponentialRampToValueAtTime(0.25, t0 + 0.03);
+        g.gain.setValueAtTime(0.25, t - 0.06);
+        g.gain.exponentialRampToValueAtTime(0.0001, t);
+        o.start(t0); o.stop(t + 0.03);
       } catch (e) {}
     }
     function setTarget(symbol, price) {
