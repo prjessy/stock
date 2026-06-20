@@ -297,16 +297,18 @@
 
     <section class="panel flow-panel" style="margin-bottom:16px;">
       <div class="chart-head">
-        <div class="title" style="font-size:15px;">💰 수급 · 호가 <span style="color:var(--muted);font-weight:500;font-size:12px;margin-left:6px;">외국인·기관·개인 순매수 / 매도·매수 호가</span></div>
+        <div class="title" style="font-size:15px;">📊 수급 — 투자자별 순매수 <span style="color:var(--muted);font-weight:500;font-size:12px;margin-left:6px;">누가 샀나 · 체결 기준 · 하루 단위</span></div>
       </div>
-      <div style="margin-bottom:16px;">
-        <div class="flow-sub">📊 투자자별 순매수 (주 단위, ▲순매수 / ▼순매도) — 외국인 강조</div>
-        <div id="flowSupply" class="empty-state">불러오는 중…</div>
+      <div class="sub">외국인·기관·개인이 그날 <b>실제 사고판(체결)</b> 순매수 주식 수. ▲순매수 / ▼순매도 · 외국인 강조 · 60초 갱신</div>
+      <div id="flowSupply" class="empty-state">불러오는 중…</div>
+    </section>
+
+    <section class="panel flow-panel" style="margin-bottom:16px;">
+      <div class="chart-head">
+        <div class="title" style="font-size:15px;">📐 호가창 — 매수/매도 대기 잔량 <span style="color:var(--muted);font-weight:500;font-size:12px;margin-left:6px;">지금 얼마에 얼마나 대기중 · 실시간</span></div>
       </div>
-      <div>
-        <div class="flow-sub">📐 호가 (삼성전자·하이닉스·삼성전자레버리지·하이닉스레버리지) — 장중 실시간</div>
-        <div id="flowOrderbook" class="empty-state">불러오는 중…</div>
-      </div>
+      <div class="sub">각 가격에 걸려있는 <b>아직 체결 안 된(대기)</b> 주문 수량. <span style="color:var(--down)">빨강=매도 대기</span> / <span style="color:var(--up)">파랑=매수 대기</span> · 장중 3초 갱신 (삼성전자·하이닉스·삼전레버·하닉레버)</div>
+      <div id="flowOrderbook" class="empty-state">불러오는 중…</div>
     </section>
 
     <section class="chart-panel" style="margin-bottom:16px;">
