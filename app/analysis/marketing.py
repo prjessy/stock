@@ -21,17 +21,17 @@ _FILE = Path(settings.db_path).resolve().parent / "marketing.json"
 _SCHEMA = {
     "type": "object",
     "properties": {
-        "summary": {"type": "string", "description": "헤드라인 기반 한국어 한 문장 요약(사실만)"},
-        "copy": {"type": "string", "description": "투자자 관심을 끄는 절제된 홍보용 한 문장(과장·단정 금지)"},
+        "summary": {"type": "string", "description": "헤드라인을 종합한 한국어 핵심 요약 2~3문장(사실만, 간결히)"},
+        "keywords": {"type": "array", "items": {"type": "string"}, "description": "summary 안에서 색으로 강조할 핵심 단어·수치 2~4개(요약문에 나온 그대로 발췌)"},
         "sentiment": {"type": "string", "enum": ["긍정", "중립", "부정"]},
     },
-    "required": ["summary", "copy", "sentiment"],
+    "required": ["summary", "keywords", "sentiment"],
     "additionalProperties": False,
 }
 
 _SYSTEM = (
-    "너는 한국 주식 콘텐츠 에디터다. 주어진 뉴스 헤드라인만 근거로 과장·투자 단정 없이 "
-    "사실 기반 한줄 요약과 절제된 홍보 카피를 쓴다. 반드시 스키마 JSON으로만 답한다."
+    "너는 한국 주식 뉴스 에디터다. 주어진 뉴스 헤드라인만 근거로 과장·투자 단정 없이 "
+    "핵심을 간결하게 요약한다(2~3문장). 반드시 스키마 JSON으로만 답한다."
 )
 
 
@@ -85,8 +85,8 @@ def _claude_copy(name: str, headlines: list[dict]) -> dict | None:
     titles = "\n".join(f"- {h['title']}" for h in headlines)
     prompt = (
         f"{name} 관련 최신 뉴스 헤드라인입니다:\n{titles}\n\n"
-        f"이 헤드라인들만 근거로 summary(한줄 요약)·copy(절제된 홍보 카피)·sentiment(분위기)를 채우세요. "
-        f"과장·투자 단정 금지."
+        f"이 헤드라인들만 근거로 summary(핵심 2~3문장 요약)·keywords(요약문에서 강조할 핵심 단어/수치 2~4개, 원문 그대로)·sentiment(분위기)를 채우세요. "
+        f"과장·투자 단정 금지, 간결하게."
     )
     try:
         client = anthropic.Anthropic(api_key=key)

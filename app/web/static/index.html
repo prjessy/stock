@@ -133,6 +133,16 @@
     .change.flat { color: var(--muted); }
     .card .err { font-size: 11px; color: var(--down); margin-top: 6px; opacity: .85; }
     .card .stale-note { font-size: 11px; color: var(--muted); margin-top: 6px; }
+    .news-card { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
+    .news-head { font-weight: 800; font-size: 15px; margin-bottom: 10px; overflow: hidden; }
+    .news-summary { font-size: 14.5px; line-height: 1.75; }
+    .news-summary .hl { color: var(--accent); font-weight: 700; }
+    .news-more { margin-top: 10px; }
+    .news-more > summary { cursor: pointer; color: var(--muted); font-size: 12px; list-style: revert; }
+    .news-more ul { margin: 8px 0 0; padding-left: 18px; font-size: 12.5px; line-height: 1.7; color: var(--muted); }
+    .news-more ul a { color: var(--muted); text-decoration: none; }
+    .news-more ul a:hover { color: var(--text); text-decoration: underline; }
+    .news-links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
     .flow-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; }
     @media (max-width: 760px) { .flow-grid { grid-template-columns: 1fr; } }
     .flow-sub { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
@@ -283,8 +293,8 @@
 
     <nav class="tabs" id="tabs" role="tablist">
       <button class="tab-btn active" data-tab="dashboard" role="tab" aria-selected="true">📊 대시보드</button>
-      <button class="tab-btn" data-tab="briefing" role="tab" aria-selected="false">🇺🇸 미국 브리핑</button>
-      <button class="tab-btn" data-tab="marketing" role="tab" aria-selected="false">📰 종목 뉴스</button>
+      <button class="tab-btn" data-tab="briefing" role="tab" aria-selected="false">🇺🇸 미국 시장 동향</button>
+      <button class="tab-btn" data-tab="marketing" role="tab" aria-selected="false">📌 핵심 요약</button>
       <button class="tab-btn" data-tab="deudeumi" role="tab" aria-selected="false">🐜 더듬이</button>
       <button class="tab-btn" data-tab="autobot" role="tab" aria-selected="false">🤖 자동매매봇</button>
       <button class="tab-btn" data-tab="alarm" role="tab" aria-selected="false">🔔 알람</button>
@@ -408,7 +418,7 @@
     <div class="tab-panel" id="panel-briefing" role="tabpanel">
       <section class="panel" style="margin-bottom:16px;">
         <div class="chart-head">
-          <h2 style="font-size:15px;margin:0;">🇺🇸 미국 브리핑 <span style="color:var(--muted);font-weight:500;font-size:12px;margin-left:6px;">밤사이 미국 시황 · 개장 전 참고</span></h2>
+          <h2 style="font-size:15px;margin:0;">🇺🇸 미국 시장 동향 <span style="color:var(--muted);font-weight:500;font-size:12px;margin-left:6px;">밤사이 미국 시황 · 개장 전 참고</span></h2>
           <button class="refresh-btn" onclick="refreshBriefing(this)">🔄 지금 갱신</button>
         </div>
         <div class="sub">미국 지수/선물 + 미국장 뉴스 → AI 분석. 매일 새벽 자동 생성(프리장 전 준비) · <span id="brfUpdated">—</span></div>
@@ -420,7 +430,7 @@
     <div class="tab-panel" id="panel-marketing" role="tabpanel">
       <section class="panel" style="margin-bottom:16px;">
         <div class="chart-head">
-          <h2 style="font-size:15px;margin:0;">📰 종목 뉴스 · 소식 <span style="color:var(--muted);font-weight:500;font-size:12px;margin-left:6px;">언론기사 + AI 요약 · 자동 최신화</span></h2>
+          <h2 style="font-size:15px;margin:0;">📌 핵심 요약 <span style="color:var(--muted);font-weight:500;font-size:12px;margin-left:6px;">종목별 뉴스 AI 핵심 요약 · 자동 최신화</span></h2>
           <button class="refresh-btn" onclick="refreshMarketing(this)">🔄 지금 갱신</button>
         </div>
         <div class="sub">구글뉴스 최신 헤드라인 → AI 한줄 요약·카피. 매일 장마감 후 자동 갱신 · <span id="mktUpdated">—</span></div>
@@ -1738,23 +1748,34 @@
         const A = (href, txt) => href ? `<a href="${href}" target="_blank" rel="noopener" class="refresh-btn">${txt}</a>` : "";
         el.innerHTML = d.stocks.map((s) => {
           const code = s.symbol, isKR = /^\d{6}$/.test(code), nm = encodeURIComponent(s.name);
-          const heads = (s.headlines || []).map((h) =>
-            `<li><a href="${h.link}" target="_blank" rel="noopener" style="color:var(--text);text-decoration:none;">${h.title}</a></li>`).join("");
-          const sent = s.sentiment ? `<span style="float:right;font-size:12px;color:var(--muted);font-weight:500;">${SENT_ICON[s.sentiment] || s.sentiment}</span>` : "";
+          const n = (s.headlines || []).length;
+          const heads = (s.headlines || []).slice(0, 3).map((h) =>
+            `<li><a href="${h.link}" target="_blank" rel="noopener">${h.title}</a></li>`).join("");
+          const sentCls = s.sentiment === "긍정" ? "up" : (s.sentiment === "부정" ? "down" : "");
+          const sent = s.sentiment ? `<span class="${sentCls}" style="float:right;font-size:12px;font-weight:600;">${SENT_ICON[s.sentiment] || s.sentiment}</span>` : "";
           const links = [
             isKR ? A(`https://finance.naver.com/item/main.naver?code=${code}`, "네이버") : A(`https://www.google.com/search?q=${nm}`, "검색"),
             isKR ? A(`https://www.google.com/search?q=${nm}+site:dart.fss.or.kr`, "📑 DART") : "",
             A(`https://news.google.com/search?q=${nm}&hl=ko`, "📰 더보기"),
           ].filter(Boolean).join("");
-          return `<div class="panel" style="margin-bottom:10px;">
-            <div style="font-weight:700;margin-bottom:6px;">${s.name} <span style="color:var(--muted);font-size:12px;">${code}</span>${sent}</div>
-            ${s.summary ? `<div style="margin-bottom:4px;">📌 ${s.summary}</div>` : ""}
-            ${s.copy ? `<div style="color:var(--accent);font-size:13px;margin-bottom:8px;">“${s.copy}”</div>` : ""}
-            ${heads ? `<ul style="margin:0 0 8px 0;padding-left:18px;font-size:13px;line-height:1.7;color:var(--muted);">${heads}</ul>` : `<div class="sub" style="margin-bottom:8px;">관련 뉴스 없음</div>`}
-            <div style="display:flex;gap:8px;flex-wrap:wrap;">${links}</div>
+          return `<div class="news-card">
+            <div class="news-head">${s.name}${sent}</div>
+            ${s.summary ? `<div class="news-summary">${hlText(s.summary, s.keywords)}</div>` : `<div class="sub" style="margin-bottom:8px;">관련 뉴스 없음</div>`}
+            ${heads ? `<details class="news-more"><summary>📰 관련 기사 ${n}건</summary><ul>${heads}</ul></details>` : ""}
+            <div class="news-links">${links}</div>
           </div>`;
         }).join("");
-      } catch (e) { el.className = "empty-state"; el.textContent = "마케팅 자료 로딩 실패"; }
+      } catch (e) { el.className = "empty-state"; el.textContent = "종목 뉴스 로딩 실패"; }
+    }
+    // 요약문에서 핵심어/수치를 색으로 강조.
+    function hlText(text, keywords) {
+      let out = String(text);
+      (keywords || []).forEach((k) => {
+        if (!k) return;
+        const esc = String(k).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        out = out.replace(new RegExp(esc, "g"), `<b class="hl">${k}</b>`);
+      });
+      return out;
     }
     async function refreshMarketing(btn) {
       const old = btn.textContent; btn.disabled = true; btn.textContent = "⏳ 생성 중…(최대 1분)";
