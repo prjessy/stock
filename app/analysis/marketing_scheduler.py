@@ -1,4 +1,4 @@
-"""마케팅 자료 자동 생성 스케줄러 — 하루 1회(장마감 후, 기본 16시 KST).
+"""찰떡 써머리(종목 뉴스 요약) 자동 생성 스케줄러 — 하루 1회(장 시작, 기본 9시 KST).
 
 가벼운 백그라운드 스레드. 시작 시 자료가 없으면 1회 생성, 이후 매일 지정 시각 이후 1회 갱신.
 생성 실패해도 직전 파일을 유지한다(graceful). interval 개념 없이 '하루 1회'만 보장.
@@ -13,7 +13,7 @@ from app.core.market import KST
 
 
 class MarketingScheduler:
-    def __init__(self, hour: int = 16) -> None:
+    def __init__(self, hour: int = 9) -> None:
         self._hour = hour
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None

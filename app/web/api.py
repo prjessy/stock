@@ -49,7 +49,7 @@ _poller = RealtimePoller(_registry)
 from app.analysis.deudeumi_scheduler import DeudeumiScheduler
 _deudeumi = DeudeumiScheduler(_registry, _poller, settings.deudeumi_interval_min)
 
-# 마케팅 자료 자동 최신화(하루 1회, 장마감 후). 뉴스 수집→Claude 요약/카피→data/marketing.json.
+# 찰떡 써머리 자동 최신화(하루 1회, 오전 9시 장 시작). 뉴스 수집→Claude 요약→data/marketing.json.
 from app.analysis.marketing_scheduler import MarketingScheduler
 _marketing = MarketingScheduler()
 
