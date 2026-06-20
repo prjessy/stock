@@ -421,7 +421,7 @@
     <div class="tab-panel" id="panel-briefing" role="tabpanel">
       <section class="panel" style="margin-bottom:16px;">
         <div class="chart-head">
-          <h2 style="font-size:15px;margin:0;">🇺🇸 미국 시장 동향 <span style="color:var(--muted);font-weight:500;font-size:12px;margin-left:6px;">밤사이 미국 시황 · 개장 전 참고</span></h2>
+          <h2 style="font-size:15px;margin:0;">🇺🇸 미국 시장 동향 <span style="color:var(--muted);font-weight:500;font-size:12px;margin-left:6px;">직전 미국 정규장 · 개장 전 참고</span></h2>
           <button class="refresh-btn" onclick="refreshBriefing(this)">🔄 지금 갱신</button>
         </div>
         <div class="sub">미국 지수/선물 + 미국장 뉴스 → AI 분석. 매일 새벽 자동 생성(프리장 전 준비) · <span id="brfUpdated">—</span></div>
@@ -1712,10 +1712,16 @@
         }).join("");
         const heads = (d.headlines || []).map((h) =>
           `<li><a href="${h.link}" target="_blank" rel="noopener" style="color:var(--muted);text-decoration:none;">${h.title}</a></li>`).join("");
+        // 미국장 상태 + 기준일 — '밤사이' 오인 방지. 휴장이면 빨강, 개장이면 초록.
+        const mktClosed = d.market_open === false;
+        const mktDot = d.market_label ? `<span style="color:${mktClosed ? "#f0b73d" : "var(--up)"};font-weight:700;">${mktClosed ? "●" : "●"} 미국장 ${d.market_label}</span>` : "";
+        const asof = d.last_session_label
+          ? `직전 정규장 <b>${d.last_session_label}</b> 마감 기준 (종가)`
+          : "직전 정규장 종가 기준";
         el.innerHTML = `
-          <section class="panel" style="margin-bottom:16px;">
-            <div style="font-size:13px;color:var(--muted);margin-bottom:6px;">밤사이 미국 지수·선물</div>
-            <div class="kv-grid">${quotes || "<div class='sub'>데이터 없음</div>"}</div>
+          <section class="panel" style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:13px;">
+            ${mktDot}
+            <span style="color:var(--muted);">${asof}</span>
           </section>
           <section class="panel" style="margin-bottom:16px;">
             <div style="font-weight:700;margin-bottom:8px;">🧭 종합 ${d.bias ? `<span style="float:right;font-size:13px;font-weight:500;color:var(--muted)">${BIAS_ICON[d.bias] || d.bias}</span>` : ""}</div>
@@ -1723,6 +1729,10 @@
             ${d.overview ? `<div style="margin-bottom:12px;"><b>📊 미국장 요약</b><br>${d.overview}</div>` : ""}
             ${d.semiconductor ? `<div style="margin-bottom:12px;"><b>💾 반도체·한국 영향</b><br>${d.semiconductor}</div>` : ""}
             ${d.kr_implication ? `<div><b>🇰🇷 오늘 한국장 시사점</b><br>${d.kr_implication}</div>` : ""}
+          </section>
+          <section class="panel" style="margin-bottom:16px;">
+            <div style="font-size:13px;color:var(--muted);margin-bottom:6px;">📈 미국 지수·선물 <span style="font-size:11px;">(직전 정규장 종가)</span></div>
+            <div class="kv-grid">${quotes || "<div class='sub'>데이터 없음</div>"}</div>
           </section>
           ${heads ? `<section class="panel"><div style="font-weight:700;margin-bottom:8px;">📰 미국장 헤드라인</div><ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.8;">${heads}</ul></section>` : ""}`;
       } catch (e) { el.className = "empty-state"; el.textContent = "브리핑 로딩 실패"; }

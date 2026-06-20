@@ -22,7 +22,7 @@ _US_SYMS = ["^DJI", "^SOX", "NQ=F", "MU"]
 _SCHEMA = {
     "type": "object",
     "properties": {
-        "overview": {"type": "string", "description": "밤사이 미국 증시 흐름 2~3문장 요약"},
+        "overview": {"type": "string", "description": "직전 미국 정규장 흐름 2~3문장 요약(기준일 명시)"},
         "semiconductor": {"type": "string", "description": "반도체 섹터(필라델피아 반도체지수·마이크론) 동향과 한국 반도체(삼성전자·SK하이닉스)에의 영향"},
         "kr_implication": {"type": "string", "description": "오늘 한국장 개장 전 참고할 시사점"},
         "one_liner": {"type": "string", "description": "핵심 한 줄"},
@@ -33,8 +33,11 @@ _SCHEMA = {
 }
 
 _SYSTEM = (
-    "너는 한국 투자자를 위한 미국 시황 애널리스트다. 밤사이 미국 증시 데이터와 뉴스만 근거로 "
-    "과장·단정 없이 한국장 개장 전 참고용 브리핑을 쓴다. 반드시 스키마 JSON으로만 답한다."
+    "너는 한국 투자자를 위한 미국 시황 애널리스트다. 제공된 '직전 미국 정규장' 데이터와 뉴스만 "
+    "근거로 과장·단정 없이 한국장 개장 전 참고용 브리핑을 쓴다. "
+    "데이터는 직전 '완료된' 정규장 마감 기준이므로 '밤사이/간밤에'처럼 방금 끝난 장인 양 쓰지 말고 "
+    "반드시 기준일(예: 6/18 목)을 명시한다. 그 이후 미국장이 휴장(주말·공휴일)이었다면 그 사실을 분명히 한다. "
+    "반드시 스키마 JSON으로만 답한다."
 )
 
 
@@ -51,7 +54,7 @@ def _us_quotes(registry) -> list[dict]:
     return out
 
 
-def _claude(quotes: list[dict], headlines: list[dict]) -> dict | None:
+def _claude(quotes: list[dict], headlines: list[dict], ctx: dict) -> dict | None:
     key = settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")
     if not key:
         return None
@@ -64,10 +67,17 @@ def _claude(quotes: list[dict], headlines: list[dict]) -> dict | None:
         for q in quotes if q.get("change_pct") is not None
     )
     htxt = "\n".join(f"- {h['title']}" for h in headlines)
+    last_label = ctx.get("last_session_label") or "직전 거래일"
+    mkt = ctx.get("market_label") or "—"
+    closed_note = "" if ctx.get("market_open") else (
+        f" 현재 미국장은 '{mkt}'(휴장/장외) 상태이며, 위 기준일 이후 새로 열린 정규장은 없다."
+    )
     prompt = (
-        f"밤사이 미국 시장 데이터:\n{qtxt or '(데이터 없음)'}\n\n"
+        f"[기준] 직전 완료 미국 정규장: {last_label} 마감. 현재 미국장 상태: {mkt}.{closed_note}\n"
+        f"아래 시세는 그 직전 정규장의 종가·등락이다(실시간 아님):\n{qtxt or '(데이터 없음)'}\n\n"
         f"관련 뉴스 헤드라인:\n{htxt or '(없음)'}\n\n"
         f"한국 투자자가 오늘 개장(09:00) 전에 볼 '미국 브리핑'을 스키마대로 작성하세요. "
+        f"서두에 기준일({last_label})을 자연스럽게 명시하고, '밤사이' 같은 표현은 쓰지 마세요. "
         f"반도체(삼성전자·SK하이닉스) 연관 영향을 강조."
     )
     try:
@@ -97,8 +107,14 @@ def generate(registry) -> dict:
             seen.add(h["title"])
             uniq.append(h)
     uniq = uniq[:8]
-    body = _claude(quotes, uniq) or {}
+    from app.core.market import us_brief_context
+    ctx = us_brief_context()
+    body = _claude(quotes, uniq, ctx) or {}
     out = {"updated_at": _dt.datetime.now().isoformat(timespec="seconds"),
+           "market_label": ctx.get("market_label"),
+           "market_open": ctx.get("market_open"),
+           "last_session_date": ctx.get("last_session_date"),
+           "last_session_label": ctx.get("last_session_label"),
            "quotes": quotes, "headlines": uniq, **body}
     try:
         _FILE.parent.mkdir(parents=True, exist_ok=True)

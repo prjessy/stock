@@ -47,13 +47,22 @@ class SourceRegistry:
         휴장/주말/점검으로 실시간이 안 와도 '직전 종가'를 보여주기 위함.
         폴백 시 stale=True, asof=종가일자 를 달아 프론트가 '휴장·종가'로 표기한다.
         """
-        q = self.source_for(symbol).get_quote(symbol)
+        src = self.source_for(symbol)
+        q = src.get_quote(symbol)
         if q and q.get("price") is not None:
-            # 미국 심볼: 시장이 닫혀 있으면 '종가(stale)' 표기(선물=글로벡스, 그 외=정규장 기준).
-            if self.source_for(symbol) is self._us:
+            # 시장이 닫혀 있으면 '종가(stale)' 표기 — 프론트가 '🕘 휴장·종가'로 표시.
+            if src is self._us:
+                # 미국: 선물=글로벡스, 그 외=정규장 기준.
                 from app.core.market import us_futures_open, us_session
                 open_now = us_futures_open() if symbol.endswith("=F") else us_session()["open"]
                 if not open_now:
+                    return {**q, "stale": True}
+            elif src is self._kr:
+                # 국내: 프리/본/에프터장 밖(주말·공휴일·장 종료)이면 KIS 가 마지막
+                # 정규장 종가를 그대로 내려주므로, 실시간이 아님을 stale 로 표기한다.
+                # (증권사 앱의 '시간외 단일가'와 값이 달라 보이는 혼란을 방지)
+                from app.core.market import is_market_open
+                if not is_market_open():
                     return {**q, "stale": True}
             return q
         try:

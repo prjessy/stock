@@ -148,6 +148,58 @@ def us_session(now_utc: datetime | None = None) -> dict:
     return {"session": s[0], "label": s[1], "open": s[2], "now": nowtxt}
 
 
+_WD_KR = ["월", "화", "수", "목", "금", "토", "일"]
+
+
+def last_us_trading_day(now_utc: datetime | None = None) -> str | None:
+    """가장 최근에 '마감까지 완료된' 미국 정규장 날짜(YYYY-MM-DD, ET). 실패 시 None.
+
+    오늘 정규장 마감(16:00 ET) 전이면 오늘 세션은 미완료로 보고 직전 거래일부터 탐색하며,
+    주말·휴장일은 건너뛴다(연휴 대비 최대 10일 거슬러 올라감 → 무한루프 방지).
+    """
+    try:
+        from zoneinfo import ZoneInfo
+        et = (now_utc or datetime.now(timezone.utc)).astimezone(ZoneInfo("America/New_York"))
+    except Exception:
+        return None
+    d = et.date()
+    if et.hour * 60 + et.minute < 16 * 60:  # 오늘 정규장 마감 전 → 오늘 세션 미완료
+        d = d - timedelta(days=1)
+    hol = _us_holidays()
+    for _ in range(10):
+        if d.weekday() < 5 and d.strftime("%Y-%m-%d") not in hol:
+            return d.strftime("%Y-%m-%d")
+        d = d - timedelta(days=1)
+    return None
+
+
+def us_brief_context(now_utc: datetime | None = None) -> dict:
+    """미국 브리핑용 시장 상태 컨텍스트.
+
+    반환: {market_label, market_open, et_now, last_session_date, last_session_label}
+        market_label: 현재 미국장 세션 라벨(정규장/프리장/애프터장/휴장)
+        last_session_label: '2026-06-18 (목)' 형식 — 직전 '완료된' 정규장
+    이걸로 브리핑/UI가 '밤사이' 대신 정확한 기준일을 명시한다(휴장·주말 오인 방지).
+    """
+    sess = us_session(now_utc)
+    last = last_us_trading_day(now_utc)
+    last_label = None
+    if last:
+        try:
+            from datetime import date
+            d = date.fromisoformat(last)
+            last_label = f"{last} ({_WD_KR[d.weekday()]})"
+        except Exception:
+            last_label = last
+    return {
+        "market_label": sess["label"],
+        "market_open": sess["open"],
+        "et_now": sess["now"],
+        "last_session_date": last,
+        "last_session_label": last_label,
+    }
+
+
 def us_futures_open(now_utc: datetime | None = None) -> bool:
     """미국 지수 선물(NQ=F 등) CME 글로벡스 거래 여부.
 
