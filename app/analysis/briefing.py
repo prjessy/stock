@@ -28,7 +28,10 @@ _SCHEMA = {
         "one_liner": {"type": "string", "description": "핵심 한 줄"},
         "bias": {"type": "string", "enum": ["우호적", "중립", "주의"]},
         "keywords": {"type": "array", "items": {"type": "string"},
-                     "description": "본문(overview/semiconductor/kr_implication)에서 강조할 핵심어·수치 5~10개. 예: '+6.42%','필라델피아 반도체지수','마이크론'. 본문에 실제로 등장한 표현 그대로 넣을 것."},
+                     "description": "본문에 그대로 등장하는 '짧은 단일 토큰' 6~10개(강조용). 각 항목은 한 단어 또는 하나의 수치만. "
+                                    "예: '필라델피아 반도체지수','마이크론','+6.42%','+8.70%','삼성전자'. "
+                                    "절대 두 개념을 한 항목에 합치지 말 것 — '필라델피아 반도체지수 +6.42%'(X) → '필라델피아 반도체지수'와 '+6.42%'로 분리(O). "
+                                    "본문에 토씨까지 그대로 있는 표현만 넣을 것(없는 표현 금지)."},
     },
     "required": ["overview", "semiconductor", "kr_implication", "one_liner", "bias", "keywords"],
     "additionalProperties": False,

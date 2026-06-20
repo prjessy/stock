@@ -1725,6 +1725,9 @@
         const asof = d.last_session_label
           ? `직전 정규장 <b>${d.last_session_label}</b> 마감 기준 (종가)`
           : "직전 정규장 종가 기준";
+        // Claude 키워드 + 본문에서 뽑은 퍼센트 수치(안전망)를 함께 강조.
+        const KW = d.keywords || [];
+        const hl = (t) => hlText(t || "", KW.concat((String(t || "").match(/[+-]?\d[\d,]*\.?\d*%/g) || [])));
         el.innerHTML = `
           <section class="panel" style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:13px;">
             ${mktDot}
@@ -1733,10 +1736,10 @@
           </section>
           <section class="panel" style="margin-bottom:16px;">
             <div style="font-weight:700;margin-bottom:8px;">🧭 종합 ${d.bias ? `<span style="float:right;font-size:13px;font-weight:500;color:var(--muted)">${BIAS_ICON[d.bias] || d.bias}</span>` : ""}</div>
-            ${d.one_liner ? `<div style="font-size:15px;color:var(--accent);margin-bottom:12px;">“${hlText(d.one_liner, d.keywords)}”</div>` : ""}
-            ${d.overview ? `<div style="margin-bottom:12px;"><b>📊 미국장 요약</b><br>${hlText(d.overview, d.keywords)}</div>` : ""}
-            ${d.semiconductor ? `<div style="margin-bottom:12px;"><b>💾 반도체·한국 영향</b><br>${hlText(d.semiconductor, d.keywords)}</div>` : ""}
-            ${d.kr_implication ? `<div><b>🇰🇷 오늘 한국장 시사점</b><br>${hlText(d.kr_implication, d.keywords)}</div>` : ""}
+            ${d.one_liner ? `<div style="font-size:15px;color:var(--accent);margin-bottom:12px;">“${hl(d.one_liner)}”</div>` : ""}
+            ${d.overview ? `<div style="margin-bottom:12px;"><b>📊 미국장 요약</b><br>${hl(d.overview)}</div>` : ""}
+            ${d.semiconductor ? `<div style="margin-bottom:12px;"><b>💾 반도체·한국 영향</b><br>${hl(d.semiconductor)}</div>` : ""}
+            ${d.kr_implication ? `<div><b>🇰🇷 오늘 한국장 시사점</b><br>${hl(d.kr_implication)}</div>` : ""}
           </section>
           <section class="panel" style="margin-bottom:16px;">
             <div style="font-size:13px;color:var(--muted);margin-bottom:6px;">📈 미국 지수·선물 <span style="font-size:11px;">(직전 정규장 종가)</span></div>
