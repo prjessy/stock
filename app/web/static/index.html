@@ -194,6 +194,8 @@
     .hit-badge { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 999px; margin-left: 6px; vertical-align: middle; }
     .hit-badge.up { color: #f0b73d; background: rgba(240,183,61,0.16); }
     .hit-badge.down { color: #ff5d6c; background: rgba(255,93,108,0.16); }
+    .tgt-badge { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 999px; margin-left: 6px; vertical-align: middle; color: var(--muted); background: rgba(255,255,255,0.05); border: 1px solid var(--border); }
+    .tgt-badge.on { color: #0c1018; background: var(--gold); border-color: var(--gold); }
 
     /* LIVE 표시 + 시세 변동 플래시 */
     .live-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 650;
@@ -219,7 +221,7 @@
     .gear-btn { margin-left: 6px; }
     .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 50; align-items: center; justify-content: center; padding: 20px; }
     .modal-overlay.open { display: flex; }
-    .modal { width: 100%; max-width: 380px; background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--border); border-radius: 16px; padding: 18px 20px; box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
+    .modal { width: 100%; max-width: 380px; max-height: 88vh; overflow-y: auto; background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--border); border-radius: 16px; padding: 18px 20px; box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
     .modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
     .modal-head h2 { font-size: 16px; font-weight: 640; margin: 0; }
     .modal-x { background: transparent; border: none; color: var(--muted); font-size: 16px; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
@@ -385,6 +387,11 @@
           <div class="modal-v"><input class="rtb-input" type="number" min="1" max="600" step="1" value="1" style="width:62px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:4px 6px;font-size:14px;font-variant-numeric:tabular-nums;">초</div>
         </div>
         <div class="modal-note">'⚡실시간' 라인을 N초 간격으로 묶어 표시합니다(1=원본 초단위). 초 단위는 페이지를 연 시점부터 쌓인 데이터에만 적용됩니다. 값은 이 브라우저(localStorage)에 저장됩니다.</div>
+        <div class="modal-row" style="display:block;">
+          <div class="modal-k" style="margin-bottom:4px;">🎯 목표가 알림</div>
+          <div id="targetList"></div>
+        </div>
+        <div class="modal-note">종목별 목표가 도달 시 <b>카드 강조 + 브라우저 알림 + 소리</b>. 목표가가 현재가보다 높으면 '이상', 낮으면 '이하' 도달 시 발동합니다. 한 번 발동하면 값을 다시 설정할 때까지 반복하지 않습니다. (대시보드가 열려 있을 때 동작 · localStorage 저장)</div>
       </div>
     </div>
 
@@ -411,6 +418,15 @@
     if (!(ALERT_PCT > 0)) ALERT_PCT = 3;
     const prevPrice = {};   // 시세 변동 플래시용: 심볼별 직전 가격
 
+    // 목표가 알림(클라이언트, localStorage). {symbol: {price, dir:"up"|"down", fired}}
+    let priceTargets = {};
+    try { priceTargets = JSON.parse(localStorage.getItem("priceTargets")) || {}; } catch (e) { priceTargets = {}; }
+    function saveTargets() { localStorage.setItem("priceTargets", JSON.stringify(priceTargets)); }
+    function fmtPriceNum(currency, v) {
+      if (v == null) return "—";
+      return currency === "KRW" ? KRW.format(Math.round(v)) + "원" : "$" + USD.format(v);
+    }
+
     // ---- 가격/등락 포맷 (카드용) ----
     function fmtPrice(q) {
       if (q.price === null || q.price === undefined) return "—";
@@ -435,6 +451,8 @@
         quotesById[q.symbol] = q;
         const hasPrice = q.price !== null && q.price !== undefined;
         const hit = q.change_pct != null && Math.abs(q.change_pct) >= ALERT_PCT;
+        const tgt = priceTargets[q.symbol];
+        const tgtReached = tgt && hasPrice && (tgt.dir === "up" ? q.price >= tgt.price : q.price <= tgt.price);
         const prev = prevPrice[q.symbol];
         const flashCls = (prev != null && hasPrice && q.price !== prev)
           ? (q.price > prev ? " flash-up" : " flash-down") : "";
@@ -451,12 +469,13 @@
             <div class="tag">${q.note || (q.currency === "KRW" ? "코스피" : "")}</div>
           </div>
           <div class="price ${hasPrice ? "" : "dim"}">${hasPrice ? fmtPrice(q) : "로딩 중…"}</div>
-          <div class="change ${changeClass(q.change_pct)}">${fmtChange(q.change_pct)}${hit ? `<span class="hit-badge ${q.change_pct >= 0 ? "up" : "down"}">🔔 ±${ALERT_PCT}%</span>` : ""}</div>
+          <div class="change ${changeClass(q.change_pct)}">${fmtChange(q.change_pct)}${hit ? `<span class="hit-badge ${q.change_pct >= 0 ? "up" : "down"}">🔔 ±${ALERT_PCT}%</span>` : ""}${tgt ? `<span class="tgt-badge${tgtReached ? " on" : ""}">🎯 ${tgt.dir === "up" ? "≥" : "≤"} ${fmtPriceNum(q.currency, tgt.price)}</span>` : ""}</div>
           ${q.error ? `<div class="err">데이터 없음</div>` : ""}
           ${(q.note || "").includes("레버리지") ? `<div class="warn-lev">⚠️ 매수 전 교육 필수(미이수 시 매수 불가) · 비용 약 8,000원 발생 · 음의 복리 유의</div>` : ""}
         `;
         root.appendChild(el);
       });
+      checkTargets(quotes);
     }
 
     function selectSymbol(symbol) {
@@ -968,10 +987,79 @@
         if (parseFloat(inp.value) !== ALERT_PCT) inp.value = ALERT_PCT;
       });
     }
+    // ---- 목표가 알림(클라이언트) ----
+    function requestNotifyPermission() {
+      try { if (window.Notification && Notification.permission === "default") Notification.requestPermission(); } catch (e) {}
+    }
+    let _audioCtx;
+    function beep() {
+      try {
+        _audioCtx = _audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+        const o = _audioCtx.createOscillator(), g = _audioCtx.createGain();
+        o.connect(g); g.connect(_audioCtx.destination);
+        o.type = "sine"; o.frequency.value = 880;
+        const t0 = _audioCtx.currentTime;
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.3, t0 + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.45);
+        o.start(t0); o.stop(t0 + 0.45);
+      } catch (e) {}
+    }
+    function setTarget(symbol, price) {
+      price = parseFloat(price);
+      if (!(price > 0)) { delete priceTargets[symbol]; saveTargets(); populateTargets(); renderCards(Object.values(quotesById)); return; }
+      const cur = (quotesById[symbol] || {}).price;
+      const dir = (cur != null && price < cur) ? "down" : "up";  // 현재가보다 낮으면 '이하', 아니면 '이상'
+      priceTargets[symbol] = { price, dir, fired: false };
+      saveTargets();
+      requestNotifyPermission();
+      populateTargets();
+      renderCards(Object.values(quotesById));
+    }
+    function clearTarget(symbol) {
+      delete priceTargets[symbol]; saveTargets(); populateTargets(); renderCards(Object.values(quotesById));
+    }
+    function checkTargets(quotes) {
+      quotes.forEach((q) => {
+        const t = priceTargets[q.symbol];
+        if (!t || q.price == null) return;
+        const reached = t.dir === "up" ? q.price >= t.price : q.price <= t.price;
+        if (reached && !t.fired) { t.fired = true; saveTargets(); fireTargetAlert(q, t); }
+      });
+    }
+    function fireTargetAlert(q, t) {
+      const msg = `${q.name} ${t.dir === "up" ? "▲ 이상" : "▼ 이하"} 목표가 ${fmtPriceNum(q.currency, t.price)} 도달 — 현재 ${fmtPrice(q)}`;
+      try {
+        if (window.Notification && Notification.permission === "granted")
+          new Notification("🎯 목표가 도달", { body: msg, icon: "/static/favicon-192.png?v=2" });
+      } catch (e) {}
+      beep();
+    }
+    function populateTargets() {
+      const box = document.getElementById("targetList");
+      if (!box) return;
+      const syms = Object.values(quotesById);
+      if (!syms.length) { box.innerHTML = `<div class="fin-note">시세 로딩 후 표시됩니다.</div>`; return; }
+      const inStyle = "width:104px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:4px 6px;font-size:14px;font-variant-numeric:tabular-nums;";
+      box.innerHTML = syms.map((q) => {
+        const t = priceTargets[q.symbol];
+        const cur = q.price != null ? fmtPrice(q) : "—";
+        const state = t ? `<span style="color:var(--gold);font-size:12px;">${t.dir === "up" ? "이상" : "이하"}${t.fired ? " · 도달✓" : ""}</span>` : "";
+        return `<div class="tgt-row" data-sym="${q.symbol}" style="display:flex;align-items:center;gap:8px;margin:7px 0;flex-wrap:wrap;">
+          <span style="min-width:96px;">${q.name}</span>
+          <span style="color:var(--muted);font-size:12px;min-width:74px;">현 ${cur}</span>
+          <input class="tgt-input" type="number" min="0" step="any" placeholder="목표가" value="${t ? t.price : ""}" style="${inStyle}">
+          <button class="tgt-clear" title="삭제" style="background:var(--panel);color:var(--muted);border:1px solid var(--border);border-radius:8px;padding:3px 8px;cursor:pointer;">✕</button>
+          ${state}
+        </div>`;
+      }).join("");
+    }
+
     function openSettings() {
       renderAlertThreshold();
       syncIvInputs();
       syncRtbInputs();
+      populateTargets();
       document.getElementById("settingsOverlay").classList.add("open");
     }
     function closeSettings() {
@@ -985,6 +1073,15 @@
       if (t.classList.contains("thr-input")) setAlertPct(parseFloat(t.value));
       else if (t.classList.contains("iv-input")) setIntraMin(parseFloat(t.value));
       else if (t.classList.contains("rtb-input")) setRtBucket(parseFloat(t.value));
+      else if (t.classList.contains("tgt-input")) {
+        const row = t.closest(".tgt-row"); if (row) setTarget(row.dataset.sym, t.value);
+      }
+    });
+    // 목표가 삭제(✕) — 모달은 동적 생성이라 위임.
+    document.addEventListener("click", (e) => {
+      const btn = e.target.closest && e.target.closest(".tgt-clear");
+      if (!btn) return;
+      const row = btn.closest(".tgt-row"); if (row) clearTarget(row.dataset.sym);
     });
 
     // ===================== 실시간 (초단위) =====================
