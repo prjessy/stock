@@ -1748,26 +1748,18 @@
         }
         if (upd) upd.textContent = "갱신 " + (d.updated_at || "").replace("T", " ");
         el.className = "";
-        const A = (href, txt) => href ? `<a href="${href}" target="_blank" rel="noopener" class="refresh-btn">${txt}</a>` : "";
         el.innerHTML = d.stocks.map((s) => {
-          const code = s.symbol, isKR = /^\d{6}$/.test(code), nm = encodeURIComponent(s.name);
           const n = (s.headlines || []).length;
           const heads = (s.headlines || []).slice(0, 3).map((h) =>
             `<li><a href="${h.link}" target="_blank" rel="noopener">${h.title}</a></li>`).join("");
           const sentCls = s.sentiment === "긍정" ? "up" : (s.sentiment === "부정" ? "down" : "");
           const sent = s.sentiment ? `<span class="${sentCls}" style="float:right;font-size:12px;font-weight:600;">${SENT_ICON[s.sentiment] || s.sentiment}</span>` : "";
-          const links = [
-            isKR ? A(`https://finance.naver.com/item/main.naver?code=${code}`, "네이버") : A(`https://www.google.com/search?q=${nm}`, "검색"),
-            isKR ? A(`https://www.google.com/search?q=${nm}+site:dart.fss.or.kr`, "📑 DART") : "",
-            A(`https://news.google.com/search?q=${nm}&hl=ko`, "📰 더보기"),
-          ].filter(Boolean).join("");
           const pts = (s.points || []).map((p) => `<li>${p}</li>`).join("");
           return `<div class="news-card">
             <div class="news-head">${s.name}${sent}</div>
             ${s.headline ? `<div class="news-lead">💡 ${s.headline}</div>` : `<div class="sub" style="margin-bottom:8px;">관련 뉴스 없음</div>`}
             ${pts ? `<ul class="news-points">${pts}</ul>` : ""}
             ${heads ? `<details class="news-more"><summary>📰 관련 기사 ${n}건</summary><ul>${heads}</ul></details>` : ""}
-            <div class="news-links">${links}</div>
           </div>`;
         }).join("");
       } catch (e) { el.className = "empty-state"; el.textContent = "종목 뉴스 로딩 실패"; }
