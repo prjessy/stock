@@ -198,6 +198,14 @@
     .hit-badge.down { color: #ff5d6c; background: rgba(255,93,108,0.16); }
     .tgt-badge { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 999px; margin-left: 6px; vertical-align: middle; color: var(--muted); background: rgba(255,255,255,0.05); border: 1px solid var(--border); }
     .tgt-badge.on { color: #0c1018; background: var(--gold); border-color: var(--gold); }
+    /* 더듬이 표 — 바깥 테두리 없이 안쪽 구분선만 */
+    .deu-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    .deu-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    .deu-table tr:last-child td { border-bottom: none; }
+    .deu-table td.k { color: var(--muted); width: 34%; white-space: nowrap; }
+    .deu-table tr.sec td { font-weight: 700; color: var(--text); background: var(--panel-2); border-bottom: none; padding-top: 9px; }
+    .deu-table .muted { color: var(--muted); font-size: 12px; }
+    .deu-table .up { color: var(--up); } .deu-table .down { color: var(--down); } .deu-table .flat { color: var(--gold); }
 
     /* LIVE 표시 + 시세 변동 플래시 */
     .live-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 650;
@@ -1361,30 +1369,31 @@
     }
     function renderDeuAi(ai, sg) {
       const cls = (ai.signal || "").includes("buy") ? "up" : (ai.signal || "").includes("sell") ? "down" : "flat";
-      const kf = (ai.key_factors || []).map((f) => `<li>${f}</li>`).join("");
+      const kf = (ai.key_factors || []).map((f) => `<tr><td class="k">근거</td><td>${f}</td></tr>`).join("");
       document.getElementById("deuAiSub").textContent = ai.name ? `${ai.name} · ${ai.asof}` : "";
       const body = document.getElementById("deuAiBody");
       body.className = "";
       body.innerHTML = `
-        <div class="chg ${cls}" style="font-size:18px;font-weight:700;margin-bottom:6px;">${SIGNAL_LABEL[ai.signal] || ai.signal} <span style="font-size:12px;">(신뢰도 ${ai.confidence})</span></div>
-        <div style="margin-bottom:10px;">${ai.summary || ""}</div>
-        <div class="kv-grid">
-          <div class="kv"><div class="k">매수존</div><div class="v">${ai.buy_zone}</div></div>
-          <div class="kv"><div class="k">매도존</div><div class="v">${ai.sell_zone}</div></div>
-          <div class="kv"><div class="k">손절</div><div class="v">${ai.stop}</div></div>
-          <div class="kv"><div class="k">현재가</div><div class="v">${ai.price}</div></div>
-        </div>
-        <div class="title" style="font-size:13px;margin:12px 0 4px;">근거</div>
-        <ul style="margin:0 0 6px 18px;color:var(--muted);font-size:13px;line-height:1.6;">${kf}</ul>
-        <div class="fin-note">⚠️ Claude(sonnet) 판단 보조 · 예측 아님 · 투자 책임은 본인.</div>`;
+        <table class="deu-table">
+          <tr class="sec"><td colspan="2">🤖 AI 판단</td></tr>
+          <tr><td class="k">신호</td><td class="${cls}" style="font-weight:700;">${SIGNAL_LABEL[ai.signal] || ai.signal} <span class="muted">신뢰도 ${ai.confidence}</span></td></tr>
+          <tr><td class="k">요약</td><td>${ai.summary || ""}</td></tr>
+          <tr><td class="k">매수존</td><td>${ai.buy_zone}</td></tr>
+          <tr><td class="k">매도존</td><td>${ai.sell_zone}</td></tr>
+          <tr><td class="k">손절</td><td>${ai.stop}</td></tr>
+          <tr><td class="k">현재가</td><td>${ai.price}</td></tr>
+          <tr class="sec"><td colspan="2">📌 근거</td></tr>
+          ${kf}
+        </table>
+        <div class="fin-note" style="margin-top:8px;">⚠️ Claude(sonnet) 판단 보조 · 예측 아님 · 책임 본인.</div>`;
       const el = document.getElementById("deuAiSignals");
       if (sg && !sg.error) {
         const acc = sg.accuracy_pct != null ? `${sg.accuracy_pct}% (${sg.evaluated}건·${sg.window_days}일)` : "평가 대기(신호 누적 중)";
         const rows = (sg.recent || []).slice().reverse().map((r) => {
           const oc = r.outcome === "hit" ? "✅" : r.outcome === "miss" ? "❌" : "⏳";
-          return `<div class="kv"><div class="k">${(r.ts || "").slice(0, 16).replace("T", " ")}</div><div class="v">${SIGNAL_LABEL[r.signal] || r.signal} ${oc} <span style="color:var(--muted);font-size:12px;">@${r.price}</span></div></div>`;
+          return `<tr><td class="k">${(r.ts || "").slice(0, 16).replace("T", " ")}</td><td>${SIGNAL_LABEL[r.signal] || r.signal} ${oc} <span class="muted">@${r.price}</span></td></tr>`;
         }).join("");
-        el.innerHTML = `<div class="title" style="font-size:13px;margin:14px 0 4px;">📒 신호 기록 · 적중률 ${acc} <span style="color:var(--muted);font-weight:500;">(쌓일수록 진화)</span></div><div class="kv-grid">${rows || '<div class="fin-note">기록 없음</div>'}</div>`;
+        el.innerHTML = `<table class="deu-table" style="margin-top:12px;"><tr class="sec"><td colspan="2">📒 신호 기록 · 적중률 ${acc}</td></tr>${rows || '<tr><td colspan="2" class="muted">기록 없음</td></tr>'}</table>`;
       } else el.innerHTML = "";
     }
 
@@ -1488,36 +1497,34 @@
       const lvRows = (arr, kind) => arr.length ? arr.map((gp, i) => {
         const labels = gp.items.map((x) => x.label).join("·");
         const strong = gp.items.length >= 2 ? ` <b style="color:var(--gold);">합류${gp.items.length}</b>` : "";
-        return `<div class="kv"><div class="k">${kind} ${i + 1}차${strong}</div><div class="v">${pn(gp.price)} <span style="color:var(--muted);font-size:12px;">(${pct(gp.price)} · ${labels})</span></div></div>`;
-      }).join("") : `<div class="fin-note">해당 구간 없음</div>`;
-      const reading = (lbl, val, note) => `<div class="kv"><div class="k">${lbl}</div><div class="v">${val}${note ? ` <span style="color:var(--muted);font-size:12px;">${note}</span>` : ""}</div></div>`;
+        return `<tr><td class="k">${kind} ${i + 1}차${strong}</td><td><b>${pn(gp.price)}</b> <span class="muted">${pct(gp.price)} · ${labels}</span></td></tr>`;
+      }).join("") : `<tr><td class="k">—</td><td class="muted">해당 구간 없음</td></tr>`;
+      const row = (k, v, note) => `<tr><td class="k">${k}</td><td>${v}${note ? ` <span class="muted">${note}</span>` : ""}</td></tr>`;
       const maOrder = (ma5 != null && ma20 != null && ma60 != null) ? (ma5 > ma20 && ma20 > ma60 ? "정배열↑" : ma5 < ma20 && ma20 < ma60 ? "역배열↓" : "혼조") : "—";
 
       const body = document.getElementById("deuBody");
       body.className = "";
       body.innerHTML = `
-        <div style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;margin-bottom:12px;">
-          <div style="font-size:19px;font-weight:700;">현재가 ${pn(P)}</div>
-          <div class="chg ${vcls}" style="font-size:15px;font-weight:700;">${verdict} <span style="font-size:12px;">(점수 ${s > 0 ? "+" : ""}${s.toFixed(1)})</span></div>
-          <div style="color:var(--muted);font-size:13px;">추세 ${trend}${up.length ? " · 🟢" + up.join(",") : ""}${dn.length ? " · 🔴" + dn.join(",") : ""}</div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
-          <div><div class="title" style="font-size:14px;color:var(--up);margin-bottom:6px;">🟢 매수 구간(분할)</div><div class="kv-grid">${lvRows(buy3, "매수")}</div></div>
-          <div><div class="title" style="font-size:14px;color:var(--down);margin-bottom:6px;">🔴 매도 구간(분할)</div><div class="kv-grid">${lvRows(sell3, "매도")}</div></div>
-        </div>
-        <div class="sub" style="margin-top:10px;">손절 제안: <b>${pn(stop)}</b> (${pct(stop)}) · ${atrV != null ? "현재가 −1.5×ATR / 최근저점 중 높은 값" : "최근 저점"}</div>
-        <div class="title" style="font-size:14px;margin:14px 0 6px;">📊 지표 현황 (전문가 체크포인트)</div>
-        <div class="kv-grid">
-          ${reading("① 추세(이동평균)", maOrder, `5:${pn(ma5)} 20:${pn(ma20)} 60:${pn(ma60)}${ma120 != null ? " 120:" + pn(ma120) : ""}`)}
-          ${reading("② 지지/저항", `${pn(L)} ~ ${pn(H)}`, "최근 저점~고점")}
-          ${reading("③ 거래량", volRatio != null ? volRatio.toFixed(1) + "배" : "—", "20일평균 대비(돌파 확인)")}
-          ${reading("④ 모멘텀 RSI", rsiV != null ? rsiV.toFixed(0) : "—", rsiV == null ? "" : rsiV < 30 ? "과매도" : rsiV > 70 ? "과매수" : "중립")}
-          ${reading("④ 모멘텀 스토캐스틱", stoch != null ? stoch.toFixed(0) : "—", stoch == null ? "" : stoch < 20 ? "과매도" : stoch > 80 ? "과매수" : "중립")}
-          ${reading("④ 모멘텀 MACD", golden == null ? "—" : golden ? "골든" : "데드", mHist != null ? (mHist >= 0 ? "히스토 +" : "히스토 −") : "")}
-          ${reading("⑤ 밸류 PER/PBR", `${per != null ? per.toFixed(1) : "—"} / ${pbr != null ? pbr.toFixed(2) : "—"}`, pbr == null ? "" : pbr < 1 ? "저평가" : pbr > 4 ? "고평가" : "적정권")}
-          ${reading("⑥ 변동성/위치", `ATR ${atrV != null ? pn(atrV) : "—"}`, pos52 != null ? `52주 ${Math.round(pos52 * 100)}%` : "")}
-        </div>
-        <div class="fin-note" style="margin-top:10px;">📌 전문가는 보통 <b>추세·지지저항·거래량·모멘텀(RSI·MACD)·밸류에이션(PER·PBR)·수급</b>을 종합합니다. 여기선 수급(외국인·기관)을 제외한 항목을 규칙 기반으로 종합 — <b>예측 아님 · 판단 보조 · 투자 책임은 본인</b>. (수급 지표는 추후 추가 예정)</div>
+        <table class="deu-table">
+          <tr class="sec"><td colspan="2">📋 종합 판단</td></tr>
+          <tr><td class="k">판단</td><td class="${vcls}" style="font-weight:700;">${verdict} <span class="muted">점수 ${s > 0 ? "+" : ""}${s.toFixed(1)}</span></td></tr>
+          <tr><td class="k">현재가 · 추세</td><td>${pn(P)} · ${trend}</td></tr>
+          <tr><td class="k">손절 제안</td><td>${pn(stop)} <span class="muted">${pct(stop)}</span></td></tr>
+          <tr class="sec"><td colspan="2">🟢 매수 구간(분할)</td></tr>
+          ${lvRows(buy3, "매수")}
+          <tr class="sec"><td colspan="2">🔴 매도 구간(분할)</td></tr>
+          ${lvRows(sell3, "매도")}
+          <tr class="sec"><td colspan="2">📊 지표</td></tr>
+          ${row("이동평균", maOrder, `5:${pn(ma5)} · 20:${pn(ma20)} · 60:${pn(ma60)}${ma120 != null ? " · 120:" + pn(ma120) : ""}`)}
+          ${row("지지/저항", `${pn(L)} ~ ${pn(H)}`)}
+          ${row("RSI", rsiV != null ? rsiV.toFixed(0) : "—", rsiV == null ? "" : rsiV < 30 ? "과매도" : rsiV > 70 ? "과매수" : "중립")}
+          ${row("스토캐스틱", stoch != null ? stoch.toFixed(0) : "—", stoch == null ? "" : stoch < 20 ? "과매도" : stoch > 80 ? "과매수" : "중립")}
+          ${row("MACD", golden == null ? "—" : golden ? "골든크로스" : "데드크로스", mHist != null ? (mHist >= 0 ? "히스토 +" : "히스토 −") : "")}
+          ${row("볼린저", P <= bbL ? "하단권" : P >= bbU ? "상단권" : "중단", `${pn(bbL)}~${pn(bbU)}`)}
+          ${row("PER / PBR", `${per != null ? per.toFixed(1) : "—"} / ${pbr != null ? pbr.toFixed(2) : "—"}`, pbr == null ? "" : pbr < 1 ? "저평가" : pbr > 4 ? "고평가" : "적정")}
+          ${row("거래량 · 52주 · ATR", `${volRatio != null ? volRatio.toFixed(1) + "배" : "—"} · ${pos52 != null ? Math.round(pos52 * 100) + "%" : "—"} · ${atrV != null ? pn(atrV) : "—"}`)}
+        </table>
+        <div class="fin-note" style="margin-top:8px;">⚠️ 규칙 기반 종합 · 예측 아님 · 판단 보조 · 책임 본인.</div>
       `;
     }
 
