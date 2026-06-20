@@ -133,6 +133,24 @@
     .change.flat { color: var(--muted); }
     .card .err { font-size: 11px; color: var(--down); margin-top: 6px; opacity: .85; }
     .card .stale-note { font-size: 11px; color: var(--muted); margin-top: 6px; }
+    .flow-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; }
+    @media (max-width: 760px) { .flow-grid { grid-template-columns: 1fr; } }
+    .flow-sub { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+    .flow-tbl { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+    .flow-tbl th, .flow-tbl td { padding: 7px 8px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    .flow-tbl th { color: var(--muted); font-weight: 600; text-align: right; }
+    .flow-tbl td:first-child, .flow-tbl th:first-child { text-align: left; }
+    .flow-tbl tr:last-child td { border-bottom: none; }
+    .flow-tbl .col-frgn { background: var(--panel-2); font-weight: 700; }
+    .flow-tbl .sum { color: var(--muted); font-size: 11px; }
+    .ob-tbl { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+    .ob-tbl td { padding: 3px 8px; border-bottom: 1px solid var(--border); }
+    .ob-tbl .obp { text-align: right; font-weight: 600; }
+    .ob-tbl .obq { text-align: right; color: var(--muted); }
+    .ob-tbl .ask .obp { color: var(--down); }
+    .ob-tbl .bid .obp { color: var(--up); }
+    .ob-tbl .mid td { text-align: center; color: var(--muted); font-size: 11px; background: var(--panel-2); }
+    .ob-bar { display: inline-block; height: 8px; border-radius: 3px; vertical-align: middle; margin-left: 6px; }
     .card .warn-lev { font-size: 10.5px; color: #f0b73d; margin-top: 9px; line-height: 1.45; border-top: 1px dashed var(--border); padding-top: 7px; }
 
     .chart-panel {
@@ -271,6 +289,22 @@
     <!-- ===== 탭 1: 대시보드 (기존 기능 그대로) ===== -->
     <div class="tab-panel active" id="panel-dashboard" role="tabpanel">
     <section class="grid" id="cards"></section>
+
+    <section class="panel flow-panel" style="margin-bottom:16px;">
+      <div class="chart-head">
+        <div class="title" style="font-size:15px;">💰 수급 · 호가 <span style="color:var(--muted);font-weight:500;font-size:12px;margin-left:6px;">외국인·기관·개인 순매수 / 매도·매수 호가</span></div>
+      </div>
+      <div class="flow-grid">
+        <div>
+          <div class="flow-sub">📊 투자자별 순매수 (주 단위, ▲순매수 / ▼순매도)</div>
+          <div id="flowSupply" class="empty-state">불러오는 중…</div>
+        </div>
+        <div>
+          <div class="flow-sub">📐 호가 <span id="obSym" style="color:var(--muted);font-weight:500;"></span></div>
+          <div id="flowOrderbook" class="empty-state">종목 선택 시 표시</div>
+        </div>
+      </div>
+    </section>
 
     <section class="chart-panel" style="margin-bottom:16px;">
       <div class="chart-head">
@@ -565,6 +599,7 @@
       loadHistory();
       loadIntraday();
       loadFundamentals();
+      loadOrderbook();
     }
 
     async function loadQuotes(fresh = false) {
@@ -1301,9 +1336,69 @@
           ue.innerHTML = `<span class="dot" style="background:${uc}"></span>🇺🇸 ${u.label}${u.now ? " · " + u.now : ""}`;
           ue.style.color = uc; ue.style.background = uc + "1a"; ue.style.borderColor = uc + "59";
         }
+        krOpen = !!s.open;
         const rs = document.getElementById("rtSession");
         if (rs) rs.textContent = `🇰🇷 ${s.label} (${s.now} KST)${u ? " · 🇺🇸 " + u.label : ""}`;
       } catch (e) { /* 화면 유지 */ }
+    }
+
+    // ---- 수급(투자자별 순매수) + 호가 ----
+    const SUPPLY_SYMS = ["005930", "000660"];  // 삼성전자, SK하이닉스
+    let krOpen = false;
+    function fmtQty(n) {
+      if (n == null) return "—";
+      const a = Math.abs(n), sign = n > 0 ? "+" : (n < 0 ? "-" : "");
+      let v;
+      if (a >= 1e8) v = (a / 1e8).toFixed(1) + "억";
+      else if (a >= 1e4) v = (a / 1e4).toFixed(1) + "만";
+      else v = a.toLocaleString();
+      return sign + v;
+    }
+    const flowCls = (n) => n > 0 ? "up" : (n < 0 ? "down" : "");
+    const arrow = (n) => n > 0 ? "▲" : (n < 0 ? "▼" : "");
+    async function loadSupply() {
+      const box = document.getElementById("flowSupply");
+      try {
+        const rows = await Promise.all(SUPPLY_SYMS.map((s) =>
+          fetch(`/api/investor/${s}`).then((r) => r.json()).catch(() => null)));
+        const ok = rows.filter((r) => r && r.available);
+        if (!ok.length) { box.className = "empty-state"; box.textContent = "수급 데이터 없음"; return; }
+        box.className = "";
+        const cell = (q, sum, emph) => `<td class="${emph ? "col-frgn " : ""}${flowCls(q)}">${arrow(q)} ${fmtQty(q)}<div class="sum">5일 ${fmtQty(sum)}</div></td>`;
+        const fmtD = (d) => d ? d.replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3") : "—";
+        box.innerHTML = `<table class="flow-tbl">
+          <thead><tr><th>종목</th><th>외국인</th><th>기관</th><th>개인</th></tr></thead>
+          <tbody>${ok.map((r) => `<tr>
+            <td>${r.name}</td>
+            ${cell(r.frgn_ntby_qty, r.frgn_ntby_sum, true)}
+            ${cell(r.orgn_ntby_qty, r.orgn_ntby_sum, false)}
+            ${cell(r.prsn_ntby_qty, r.prsn_ntby_sum, false)}
+          </tr>`).join("")}</tbody></table>
+          <div class="flow-sub" style="margin-top:6px;">기준일 ${fmtD(ok[0].date)} · 단위 주(외국인 강조)</div>`;
+      } catch (e) { box.className = "empty-state"; box.textContent = "수급 로딩 실패"; }
+    }
+    async function loadOrderbook() {
+      const box = document.getElementById("flowOrderbook");
+      const symEl = document.getElementById("obSym");
+      const sym = selected || "";
+      const isKR = /^\d{6}$/.test(sym);
+      symEl.textContent = isKR ? ((quotesById[sym] && quotesById[sym].name) || sym) : "";
+      if (!isKR) { box.className = "empty-state"; box.textContent = "국내 종목만 호가 제공"; return; }
+      if (!krOpen) { box.className = "empty-state"; box.textContent = "🕘 호가는 장중에 표시됩니다"; return; }
+      try {
+        const d = await (await fetch(`/api/orderbook/${sym}`)).json();
+        if (!d.available || (!(d.asks || []).length && !(d.bids || []).length)) {
+          box.className = "empty-state"; box.textContent = "🕘 호가는 장중에 표시됩니다"; return;
+        }
+        box.className = "";
+        const maxq = Math.max(1, ...d.asks.map((a) => a.qty), ...d.bids.map((b) => b.qty));
+        const bar = (q, c) => `<span class="ob-bar" style="width:${Math.round(q / maxq * 44)}px;background:${c}"></span>`;
+        const askRows = d.asks.slice().reverse().map((a) => `<tr class="ask"><td class="obp">${a.price.toLocaleString()}</td><td class="obq">${a.qty.toLocaleString()}${bar(a.qty, "var(--down)")}</td></tr>`).join("");
+        const bidRows = d.bids.map((b) => `<tr class="bid"><td class="obp">${b.price.toLocaleString()}</td><td class="obq">${b.qty.toLocaleString()}${bar(b.qty, "var(--up)")}</td></tr>`).join("");
+        box.innerHTML = `<table class="ob-tbl">${askRows}
+          <tr class="mid"><td colspan="2">── 총매도 ${fmtQty(d.total_ask_qty)} / 총매수 ${fmtQty(d.total_bid_qty)} ──</td></tr>
+          ${bidRows}</table>`;
+      } catch (e) { box.className = "empty-state"; box.textContent = "호가 로딩 실패"; }
     }
 
     // ---- 1초 실시간 루프 (세션 무관하게 항상 폴링: 미국 선물은 주말에도 거래) ----
@@ -1312,6 +1407,8 @@
       loadSession();
       setInterval(loadSession, 15000);  // 세션 배지는 15초마다 갱신
       setInterval(loadIntraday, 60000); // 5분 흐름 표는 60초마다 갱신
+      loadSupply(); setInterval(loadSupply, 60000);       // 수급: 60초마다
+      loadOrderbook(); setInterval(loadOrderbook, 3000);  // 호가: 3초마다(장중에만 실제 조회)
     }
 
     // ===================== 탭 전환 =====================
