@@ -104,8 +104,13 @@ def _claude_copy(name: str, headlines: list[dict]) -> dict | None:
 
 
 def _sig(st: dict) -> str:
-    """내용 비교용 서명(요약 헤드라인+포인트). 같으면 '동일' 판정."""
-    return (st.get("headline") or "") + "||" + "||".join(st.get("points") or [])
+    """내용 비교용 서명 = '실제 뉴스 헤드라인 집합'. Claude 표현이 매번 달라도 뉴스가 같으면 '동일'.
+
+    AI 요약문이 아니라 원본 기사 제목으로 비교해야 의미가 맞다(Claude는 비결정적이라 같은
+    뉴스도 표현이 매번 달라짐).
+    """
+    titles = sorted((h.get("title") or "") for h in (st.get("headlines") or []))
+    return "||".join(titles)
 
 
 def generate(items: list[tuple[str, str]] | None = None) -> dict:
