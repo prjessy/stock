@@ -53,12 +53,17 @@ _deudeumi = DeudeumiScheduler(_registry, _poller, settings.deudeumi_interval_min
 from app.analysis.marketing_scheduler import MarketingScheduler
 _marketing = MarketingScheduler()
 
+# 미국 브리핑 자동 생성(하루 1회, 새벽 6시). 미국 지수/뉴스→Claude 브리핑→data/briefing.json.
+from app.analysis.briefing_scheduler import BriefingScheduler
+_briefing = BriefingScheduler(_registry)
+
 
 @app.on_event("startup")
 def _start_poller() -> None:
     _poller.start()
     _deudeumi.start()
     _marketing.start()
+    _briefing.start()
 
 
 def _name_for(symbol: str) -> str:
@@ -114,6 +119,26 @@ def get_investor_api(symbol: str) -> JSONResponse:
     if not flow:
         return JSONResponse({"symbol": symbol, "name": _name_for(symbol), "available": False})
     return JSONResponse({"symbol": symbol, "name": _name_for(symbol), "available": True, **flow})
+
+
+@app.get("/api/briefing")
+def get_briefing_api() -> JSONResponse:
+    """저장된 미국 브리핑(개장 전 참고). 500 금지."""
+    from app.analysis.briefing import load
+    try:
+        return JSONResponse(load())
+    except Exception:
+        return JSONResponse({"available": False})
+
+
+@app.post("/api/briefing/refresh")
+def refresh_briefing_api() -> JSONResponse:
+    """미국 브리핑 즉시 재생성(수동). Claude 호출 발생. 500 금지."""
+    from app.analysis.briefing import generate
+    try:
+        return JSONResponse({"ok": True, **generate(_registry)})
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)})
 
 
 @app.get("/api/marketing")

@@ -278,17 +278,16 @@
         <span class="badge" id="usSessionBadge"><span class="dot"></span>미국 —</span>
       </div>
       <div class="meta">수신 <b id="recvTime">—</b> <span id="liveAge" style="color:var(--muted)"></span> · 1초 실시간(KIS) · 데이터: 한국투자증권 OpenAPI
-        <button id="refreshBtn" class="refresh-btn" onclick="forceRefresh()">🔄 강제 동기화</button>
         <button id="gearBtn" class="refresh-btn gear-btn" title="설정" onclick="openSettings()">⚙️ 설정</button></div>
     </header>
 
     <nav class="tabs" id="tabs" role="tablist">
       <button class="tab-btn active" data-tab="dashboard" role="tab" aria-selected="true">📊 대시보드</button>
-      <button class="tab-btn" data-tab="deudeumi" role="tab" aria-selected="false">🐜 더듬이</button>
-      <button class="tab-btn" data-tab="briefing" role="tab" aria-selected="false">🌅 브리핑</button>
+      <button class="tab-btn" data-tab="briefing" role="tab" aria-selected="false">🇺🇸 미국 브리핑</button>
       <button class="tab-btn" data-tab="marketing" role="tab" aria-selected="false">📰 마케팅</button>
-      <button class="tab-btn" data-tab="alarm" role="tab" aria-selected="false">🔔 알람</button>
+      <button class="tab-btn" data-tab="deudeumi" role="tab" aria-selected="false">🐜 더듬이</button>
       <button class="tab-btn" data-tab="autobot" role="tab" aria-selected="false">🤖 자동매매봇</button>
+      <button class="tab-btn" data-tab="alarm" role="tab" aria-selected="false">🔔 알람</button>
     </nav>
 
     <!-- ===== 탭 1: 대시보드 (기존 기능 그대로) ===== -->
@@ -407,19 +406,14 @@
     </div>
 
     <div class="tab-panel" id="panel-briefing" role="tabpanel">
-      <section class="panel">
-        <h2>장 전 방향성</h2>
-        <div class="sub">나스닥 선물(NQ=F) 흐름으로 미국 시장 분위기를 가늠합니다.</div>
-        <div id="briefDir" class="empty-state">불러오는 중…</div>
+      <section class="panel" style="margin-bottom:16px;">
+        <div class="chart-head">
+          <h2 style="font-size:15px;margin:0;">🇺🇸 미국 브리핑 <span style="color:var(--muted);font-weight:500;font-size:12px;margin-left:6px;">밤사이 미국 시황 · 개장 전 참고</span></h2>
+          <button class="refresh-btn" onclick="refreshBriefing(this)">🔄 지금 갱신</button>
+        </div>
+        <div class="sub">미국 지수/선물 + 미국장 뉴스 → AI 분석. 매일 새벽 자동 생성(프리장 전 준비) · <span id="brfUpdated">—</span></div>
       </section>
-      <section class="panel">
-        <h2 style="font-size:15px;">📋 워치리스트 한눈에</h2>
-        <div class="sub">종목별 현재가·전일대비. 상세 매수/매도 신호는 🐜 더듬이 탭에서.</div>
-        <div id="briefWatch" class="empty-state">불러오는 중…</div>
-      </section>
-      <section class="panel">
-        <div class="note-line">📨 매일 07:00 자동 브리핑이 Telegram(워치독)으로 발송됩니다. (AI 자연어 브리핑은 hermes 연동으로 추후 강화 예정)</div>
-      </section>
+      <div id="brfBody" class="empty-state">불러오는 중…</div>
     </div>
 
     <!-- ===== 탭 3: 마케팅(자동 최신화) ===== -->
@@ -1448,8 +1442,8 @@
         deuFillSymbols();
         if (!deuSymbol) { const first = Object.keys(quotesById)[0]; if (first) setDeuSymbol(first); }
         else loadDeudeumi(deuSymbol);
-      } else if (name === "briefing" && !briefingLoaded) {
-        briefingLoaded = true; loadBriefing();
+      } else if (name === "briefing") {
+        loadBriefing();
       } else if (name === "marketing") {
         loadMarketing();
       } else if (name === "alarm" && !alarmLoaded) {
@@ -1685,48 +1679,47 @@
       return { cls: "flat", label: "보합", arrow: "" };
     }
 
-    function renderBriefDir(q) {
-      const el = document.getElementById("briefDir");
-      if (!q) {
-        el.className = "empty-state";
-        el.textContent = "나스닥 선물 시세를 불러오지 못했습니다.";
-        return;
-      }
-      const d = dirWords(q.change_pct);
-      const pctTxt = (q.change_pct == null) ? "—" : d.arrow + Math.abs(q.change_pct).toFixed(2) + "%";
-      el.className = "dir-card";
-      el.innerHTML = `
-        <div><div class="nm">${q.name || "나스닥 선물"}</div><div class="tk">${q.symbol}</div></div>
-        <div class="pct ${d.cls}">${pctTxt}</div>
-        <div class="dir-badge ${d.cls}">${d.label}</div>`;
-    }
-
+    const BIAS_ICON = { "우호적": "🟢 우호적", "중립": "🟡 중립", "주의": "🔴 주의" };
     async function loadBriefing() {
-      // quotesById 에 이미 NQ=F 가 있으면 재사용, 없으면 quotes 호출.
-      let nq = quotesById["NQ=F"];
-      if (!nq) {
-        try {
-          const res = await fetch("/api/quotes");
-          const data = await res.json();
-          (data.quotes || []).forEach((q) => { quotesById[q.symbol] = q; });
-          nq = quotesById["NQ=F"];
-        } catch (e) { /* 화면 유지 */ }
-      }
-      renderBriefDir(nq);
-      renderBriefWatch();
-    }
-    function renderBriefWatch() {
-      const el = document.getElementById("briefWatch");
+      const el = document.getElementById("brfBody");
       if (!el) return;
-      const syms = Object.values(quotesById);
-      if (!syms.length) { el.className = "empty-state"; el.textContent = "시세 로딩 중…"; return; }
-      el.className = "";
-      el.innerHTML = `<div class="kv-grid">` + syms.map((q) => {
-        const d = dirWords(q.change_pct);
-        const price = q.price != null ? fmtPriceNum(q.currency || "KRW", q.price) : "—";
-        const chg = q.change_pct == null ? "—" : (q.change_pct >= 0 ? "+" : "") + q.change_pct.toFixed(2) + "%";
-        return `<div class="kv"><div class="k">${q.name}</div><div class="v"><span class="${d.cls}">${price} (${chg}) · ${d.label}</span></div></div>`;
-      }).join("") + `</div>`;
+      try {
+        const d = await (await fetch("/api/briefing")).json();
+        const upd = document.getElementById("brfUpdated");
+        if (!d.available) {
+          el.className = "empty-state"; el.textContent = "아직 생성 전입니다. '🔄 지금 갱신'을 눌러보세요.";
+          if (upd) upd.textContent = "갱신 전"; return;
+        }
+        if (upd) upd.textContent = "갱신 " + (d.updated_at || "").replace("T", " ");
+        el.className = "";
+        const quotes = (d.quotes || []).map((q) => {
+          const cls = q.change_pct == null ? "" : (q.change_pct >= 0 ? "up" : "down");
+          const chg = q.change_pct == null ? "—" : (q.change_pct >= 0 ? "+" : "") + q.change_pct.toFixed(2) + "%";
+          const price = q.price == null ? "—" : q.price.toLocaleString();
+          return `<div class="kv"><div class="k">${q.name}</div><div class="v"><span class="${cls}">${price} (${chg})</span></div></div>`;
+        }).join("");
+        const heads = (d.headlines || []).map((h) =>
+          `<li><a href="${h.link}" target="_blank" rel="noopener" style="color:var(--muted);text-decoration:none;">${h.title}</a></li>`).join("");
+        el.innerHTML = `
+          <section class="panel" style="margin-bottom:16px;">
+            <div style="font-size:13px;color:var(--muted);margin-bottom:6px;">밤사이 미국 지수·선물</div>
+            <div class="kv-grid">${quotes || "<div class='sub'>데이터 없음</div>"}</div>
+          </section>
+          <section class="panel" style="margin-bottom:16px;">
+            <div style="font-weight:700;margin-bottom:8px;">🧭 종합 ${d.bias ? `<span style="float:right;font-size:13px;font-weight:500;color:var(--muted)">${BIAS_ICON[d.bias] || d.bias}</span>` : ""}</div>
+            ${d.one_liner ? `<div style="font-size:15px;color:var(--accent);margin-bottom:12px;">“${d.one_liner}”</div>` : ""}
+            ${d.overview ? `<div style="margin-bottom:12px;"><b>📊 미국장 요약</b><br>${d.overview}</div>` : ""}
+            ${d.semiconductor ? `<div style="margin-bottom:12px;"><b>💾 반도체·한국 영향</b><br>${d.semiconductor}</div>` : ""}
+            ${d.kr_implication ? `<div><b>🇰🇷 오늘 한국장 시사점</b><br>${d.kr_implication}</div>` : ""}
+          </section>
+          ${heads ? `<section class="panel"><div style="font-weight:700;margin-bottom:8px;">📰 미국장 헤드라인</div><ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.8;">${heads}</ul></section>` : ""}`;
+      } catch (e) { el.className = "empty-state"; el.textContent = "브리핑 로딩 실패"; }
+    }
+    async function refreshBriefing(btn) {
+      const old = btn.textContent; btn.disabled = true; btn.textContent = "⏳ 생성 중…(최대 1분)";
+      try { await fetch("/api/briefing/refresh", { method: "POST" }); await loadBriefing(); }
+      catch (e) { /* 무시 */ }
+      finally { btn.disabled = false; btn.textContent = old; }
     }
     const SENT_ICON = { "긍정": "😊 긍정", "중립": "😐 중립", "부정": "😟 부정" };
     async function loadMarketing() {
