@@ -276,7 +276,7 @@
           <button data-iv="30m">30분</button>
         </div>
       </div>
-      <div class="sub">시각·가격·전일대비. ±임계값 도달 시 🔔 (⚙️ 설정) · 정규장(09:00~15:30) 기준 · 무료소스 ~15분 지연</div>
+      <div class="sub">시각·가격·전일대비. ±임계값 도달 시 🔔 (⚙️ 설정) · 정규장(09:00~15:30) 기준</div>
       <div id="intraBody" class="empty-state">불러오는 중…</div>
     </section>
 
@@ -370,6 +370,18 @@
           <div class="modal-v">±<input class="thr-input" type="number" min="0.5" max="50" step="0.5" value="3">%</div>
         </div>
         <div class="modal-note">설정한 ±% 도달 시 <b>종목 카드</b>에 🔔 로 강조됩니다. 값은 이 브라우저(localStorage)에 저장됩니다.<br>(실제 Telegram 알림 임계값은 서버 <code>.env</code> 로 관리됩니다.)</div>
+        <div class="modal-row">
+          <div class="modal-k">오늘 흐름 간격</div>
+          <div class="modal-v">
+            <div class="periods" id="intraRangeModal">
+              <button data-iv="1m">1분</button>
+              <button data-iv="5m">5분</button>
+              <button data-iv="15m">15분</button>
+              <button data-iv="30m">30분</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-note">'🕔 오늘 흐름' 표의 시간 간격입니다. 값은 이 브라우저(localStorage)에 저장됩니다.</div>
       </div>
     </div>
 
@@ -382,7 +394,10 @@
 
     let selected = null;       // 선택된 심볼
     let period = "3mo";
-    let intraInterval = "5m";  // 오늘 흐름 표 간격(1m/5m/15m/30m), 기본 5분
+    const IV_ALLOWED = ["1m", "5m", "15m", "30m"];
+    // 오늘 흐름 표 간격(1m/5m/15m/30m). localStorage 저장, 기본 5분.
+    let intraInterval = localStorage.getItem("intraInterval");
+    if (!IV_ALLOWED.includes(intraInterval)) intraInterval = "5m";
     let quotesById = {};
     let lastRows = [];         // 현재 차트에 들어간 OHLC 행들
 
@@ -860,14 +875,22 @@
       loadHistory();
     });
 
-    // 오늘 흐름 표 간격 토글 (1/5/15/30분)
-    document.getElementById("intraRange").addEventListener("click", (e) => {
-      const btn = e.target.closest("button");
-      if (!btn) return;
-      intraInterval = btn.dataset.iv;
-      document.querySelectorAll("#intraRange button").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
+    // 오늘 흐름 표 간격 토글 (1/5/15/30분) — 표 버튼·설정창 버튼 어디서 눌러도 동작/동기화.
+    function setIntraInterval(iv) {
+      if (!IV_ALLOWED.includes(iv)) return;
+      intraInterval = iv;
+      localStorage.setItem("intraInterval", iv);
+      syncIntervalButtons();
       loadIntraday();
+    }
+    function syncIntervalButtons() {
+      document.querySelectorAll("button[data-iv]").forEach((b) => {
+        b.classList.toggle("active", b.dataset.iv === intraInterval);
+      });
+    }
+    document.addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-iv]");
+      if (btn) setIntraInterval(btn.dataset.iv);
     });
 
     async function forceRefresh() {
@@ -896,6 +919,7 @@
     }
     function openSettings() {
       renderAlertThreshold();
+      syncIntervalButtons();
       document.getElementById("settingsOverlay").classList.add("open");
     }
     function closeSettings() {
@@ -1146,6 +1170,7 @@
     }
 
     (async function init() {
+      syncIntervalButtons();          // 저장된 간격으로 버튼 활성표시 보정
       await loadQuotes();
       renderRt();
       await loadHistory();
