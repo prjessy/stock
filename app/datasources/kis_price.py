@@ -255,13 +255,16 @@ class KisPriceSource(PriceSource):
             recent = out[:days]
             frgn_sum = sum(_f(r.get("frgn_ntby_qty")) or 0 for r in recent)
             orgn_sum = sum(_f(r.get("orgn_ntby_qty")) or 0 for r in recent)
+            prsn_sum = sum(_f(r.get("prsn_ntby_qty")) or 0 for r in recent)
             latest = out[0]
             return {
                 "date": latest.get("stck_bsop_date"),
                 "frgn_ntby_qty": _f(latest.get("frgn_ntby_qty")),
                 "orgn_ntby_qty": _f(latest.get("orgn_ntby_qty")),
+                "prsn_ntby_qty": _f(latest.get("prsn_ntby_qty")),
                 "frgn_ntby_sum": round(frgn_sum),
                 "orgn_ntby_sum": round(orgn_sum),
+                "prsn_ntby_sum": round(prsn_sum),
                 "days": days,
             }
         except Exception:

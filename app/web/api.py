@@ -99,6 +99,18 @@ def get_fundamentals_api(symbol: str) -> JSONResponse:
     return JSONResponse(_registry.fundamentals(symbol))
 
 
+@app.get("/api/investor/{symbol}")
+def get_investor_api(symbol: str) -> JSONResponse:
+    """투자자별 수급(외국인/기관/개인 순매수 수량, 당일·5일합). 국내 종목만. 500 금지."""
+    try:
+        flow = _registry.investor_flow(symbol)
+    except Exception:
+        flow = None
+    if not flow:
+        return JSONResponse({"symbol": symbol, "name": _name_for(symbol), "available": False})
+    return JSONResponse({"symbol": symbol, "name": _name_for(symbol), "available": True, **flow})
+
+
 @app.get("/api/feed/{symbol}")
 def get_feed_api(symbol: str) -> JSONResponse:
     """분석 피드 — hermes(Claude)용 지표 묶음(MA/RSI/볼린저/MACD/스토캐스틱/ATR/거래량/피보/52주/밸류).
