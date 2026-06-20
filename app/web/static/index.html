@@ -392,7 +392,8 @@
           <div class="kv"><div class="k">① 종목 스캔</div><div class="v">거래량 상위·급등락·조건식 필터</div></div>
           <div class="kv"><div class="k">② 전략 엔진</div><div class="v">이동평균·RSI·볼린저 (교체 가능 인터페이스)</div></div>
           <div class="kv"><div class="k">③ 주문 엔진</div><div class="v">시장가·지정가·<b>분할 매수/매도</b>·체결확인</div></div>
-          <div class="kv"><div class="k">④ 리스크 관리</div><div class="v">손절·익절·트레일링스탑·1회/일일 한도·동시보유 제한</div></div>
+          <div class="kv"><div class="k">④ 리스크 관리</div><div class="v">손절·익절·트레일링스탑·<b>예약 손절 스케줄</b>·1회/일일 한도·동시보유 제한</div></div>
+          <div class="kv"><div class="k">④-1 예약 손절 스케줄</div><div class="v">지정 시점/가격에 손절 자동 예약·집행 (장중 감시 → 조건 도달 시 매도)</div></div>
           <div class="kv"><div class="k">⑤ 포트폴리오</div><div class="v">보유·평균단가·평가손익·현금잔고</div></div>
           <div class="kv"><div class="k">⑥ 로그/리포트</div><div class="v">주문·에러·전략 로그 + 성과 요약</div></div>
           <div class="kv"><div class="k">⑦ 알림</div><div class="v">체결·손절익절·에러·장시작종료 (텔레그램)</div></div>
@@ -795,6 +796,22 @@
       }
       const hist = line.map((v, i) => (v != null && sig[i] != null) ? v - sig[i] : null);
       return { line, sig, hist };
+    }
+    function stochK(highs, lows, closes, period) {
+      const n = closes.length;
+      if (n < period) return null;
+      const hh = Math.max(...highs.slice(-period)), ll = Math.min(...lows.slice(-period));
+      if (hh === ll) return 50;
+      return (closes[n - 1] - ll) / (hh - ll) * 100;
+    }
+    function atr(highs, lows, closes, period) {
+      const trs = [];
+      for (let i = 1; i < closes.length; i++) {
+        trs.push(Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i - 1]), Math.abs(lows[i] - closes[i - 1])));
+      }
+      if (trs.length < period) return null;
+      const last = trs.slice(-period);
+      return last.reduce((a, b) => a + b, 0) / last.length;
     }
 
     function paired(times, arr) {
@@ -1307,7 +1324,7 @@
       body.className = "empty-state"; body.textContent = "분석 중…";
       try {
         const [hRes, fRes] = await Promise.all([
-          fetch(`/api/history/${encodeURIComponent(sym)}?period=3mo`),
+          fetch(`/api/history/${encodeURIComponent(sym)}?period=1y`),
           fetch(`/api/fundamentals/${encodeURIComponent(sym)}`),
         ]);
         const rows = ((await hRes.json()).history || []).filter((r) => r && r.close != null);
@@ -1337,59 +1354,99 @@
       const R = (H - L) || 1;
       const w52h = fund && fund.w52_high, w52l = fund && fund.w52_low;
 
+      // 추가 지표
+      const ma120 = lastv(sma(closes, 120));
+      const mObj = macd(closes, 12, 26, 9);
+      const mLine = lastv(mObj.line), mSig = lastv(mObj.sig), mHist = lastv(mObj.hist);
+      const golden = (mLine != null && mSig != null) ? mLine > mSig : null;
+      const stoch = stochK(highs, lows, closes, 14);
+      const atrV = atr(highs, lows, closes, 14);
+      const vols = rows.map((r) => r.volume != null ? r.volume : 0);
+      const lastVol = vols[vols.length - 1];
+      const avgVol = vols.slice(-20).reduce((a, b) => a + b, 0) / Math.min(20, vols.length || 1);
+      const volRatio = avgVol > 0 ? lastVol / avgVol : null;
+      const per = fund && fund.per, pbr = fund && fund.pbr;
+
+      // 후보 레벨(가중치) → 클러스터(합류)
       const buys = [], sells = [];
-      const add = (arr, label, price) => { if (price != null && price > 0) arr.push({ label, price }); };
-      if (ma20 != null) (ma20 < P ? add(buys, "MA20", ma20) : add(sells, "MA20", ma20));
-      if (ma60 != null) (ma60 < P ? add(buys, "MA60", ma60) : add(sells, "MA60", ma60));
-      add(buys, "볼린저 하단", bbL); add(sells, "볼린저 상단", bbU);
-      DEU_FIB.forEach((f) => { const pr = H - f * R; (pr < P ? add(buys, `피보 ${Math.round(f * 100)}%`, pr) : add(sells, `피보 ${Math.round(f * 100)}%`, pr)); });
-      add(buys, "최근 저점", L); add(sells, "최근 고점", H);
-      if (w52l) add(buys, "52주 저점", w52l);
-      if (w52h) add(sells, "52주 고점", w52h);
+      const add = (label, price, weight) => { if (price != null && price > 0) (price < P ? buys : sells).push({ label, price, weight }); };
+      if (ma20 != null) add("MA20", ma20, 2);
+      if (ma60 != null) add("MA60", ma60, 2);
+      if (ma120 != null) add("MA120", ma120, 1.5);
+      add("볼린저하단", bbL, 2); add("볼린저상단", bbU, 2);
+      DEU_FIB.forEach((f) => add(`피보${Math.round(f * 100)}%`, H - f * R, 1));
+      add("최근저점", L, 1.5); add("최근고점", H, 1.5);
+      if (w52l) add("52주저점", w52l, 1);
+      if (w52h) add("52주고점", w52h, 1);
 
-      const pick = (arr, desc) => {
-        const a = arr.filter((x) => desc ? x.price < P : x.price > P).sort((x, y) => desc ? y.price - x.price : x.price - y.price);
-        const out = [];
+      const cluster = (arr, desc) => {
+        const a = arr.slice().sort((x, y) => x.price - y.price); const g = [];
         for (const x of a) {
-          const prev = out[out.length - 1];
-          if (prev && Math.abs(prev.price - x.price) / x.price < 0.004) { prev.label += " · " + x.label; continue; }
-          out.push({ label: x.label, price: x.price });
+          const last = g[g.length - 1];
+          if (last && Math.abs(last.price - x.price) / x.price < 0.008) {
+            last.items.push(x); last.weight += x.weight;
+            last.price = last.items.reduce((s, i) => s + i.price * i.weight, 0) / last.items.reduce((s, i) => s + i.weight, 0);
+          } else g.push({ price: x.price, weight: x.weight, items: [x] });
         }
-        return out.slice(0, 3);
+        return g.sort((x, y) => desc ? y.price - x.price : x.price - y.price).slice(0, 3);
       };
-      const buy3 = pick(buys, true), sell3 = pick(sells, false);
+      const buy3 = cluster(buys, true), sell3 = cluster(sells, false);
 
-      let s = 0; const notes = [];
-      if (rsiV != null) { if (rsiV < 30) { s += 2; notes.push("RSI 과매도"); } else if (rsiV > 70) { s -= 2; notes.push("RSI 과매수"); } }
-      if (P <= bbL) { s += 1; notes.push("볼린저 하단권"); } else if (P >= bbU) { s -= 1; notes.push("볼린저 상단권"); }
+      // 종합 점수(다지표: 추세·모멘텀·변동성·밸류에이션)
+      let s = 0; const up = [], dn = [];
+      const sig = (c, w, tu, td) => { if (c > 0) { s += w; up.push(tu); } else if (c < 0) { s -= w; dn.push(td); } };
+      if (rsiV != null) sig(rsiV < 30 ? 1 : rsiV > 70 ? -1 : 0, 2, "RSI 과매도", "RSI 과매수");
+      if (stoch != null) sig(stoch < 20 ? 1 : stoch > 80 ? -1 : 0, 1, "스토캐스틱 바닥", "스토캐스틱 과열");
+      if (golden != null) sig(golden ? 1 : -1, 1, "MACD 골든", "MACD 데드");
+      sig(P <= bbL ? 1 : P >= bbU ? -1 : 0, 1, "볼린저 하단권", "볼린저 상단권");
+      if (ma5 != null && ma20 != null && ma60 != null) sig((ma5 > ma20 && ma20 > ma60) ? 1 : (ma5 < ma20 && ma20 < ma60) ? -1 : 0, 1.5, "정배열(상승추세)", "역배열(하락추세)");
       let pos52 = null;
-      if (w52h && w52l && w52h > w52l) { pos52 = (P - w52l) / (w52h - w52l); if (pos52 < 0.25) { s += 1; notes.push("52주 저점권"); } else if (pos52 > 0.75) { s -= 1; notes.push("52주 고점권"); } }
+      if (w52h && w52l && w52h > w52l) { pos52 = (P - w52l) / (w52h - w52l); sig(pos52 < 0.25 ? 1 : pos52 > 0.75 ? -1 : 0, 1, "52주 저점권", "52주 고점권"); }
+      if (pbr != null) sig(pbr < 1 ? 1 : pbr > 4 ? -1 : 0, 1, "PBR 저평가(자산가치 이하)", "PBR 고평가");
       const trend = (ma20 != null && ma60 != null) ? (ma20 > ma60 ? "정배열(상승)" : "역배열(하락)") : "—";
       let verdict, vcls;
-      if (s >= 2) { verdict = "🟢 매수 우호"; vcls = "up"; }
-      else if (s <= -2) { verdict = "🔴 과열·매도 우호"; vcls = "down"; }
+      if (s >= 3) { verdict = "🟢 적극 매수 우호"; vcls = "up"; }
+      else if (s >= 1.5) { verdict = "🟢 매수 우호"; vcls = "up"; }
+      else if (s <= -3) { verdict = "🔴 적극 매도/과열"; vcls = "down"; }
+      else if (s <= -1.5) { verdict = "🔴 매도 우호"; vcls = "down"; }
       else { verdict = "🟡 중립·관망"; vcls = "flat"; }
+      const stop = (atrV != null) ? Math.max(L, P - 1.5 * atrV) : L;
 
       const pn = (v) => fmtPriceNum(cur, v);
       const pct = (v) => { const d = (v - P) / P * 100; return (d >= 0 ? "+" : "") + d.toFixed(1) + "%"; };
-      const lvRows = (arr, kind) => arr.length ? arr.map((x, i) =>
-        `<div class="kv"><div class="k">${kind} ${i + 1}차</div><div class="v">${pn(x.price)} <span style="color:var(--muted);font-size:12px;">(${pct(x.price)} · ${x.label})</span></div></div>`).join("")
-        : `<div class="fin-note">해당 구간 없음</div>`;
+      const lvRows = (arr, kind) => arr.length ? arr.map((gp, i) => {
+        const labels = gp.items.map((x) => x.label).join("·");
+        const strong = gp.items.length >= 2 ? ` <b style="color:var(--gold);">합류${gp.items.length}</b>` : "";
+        return `<div class="kv"><div class="k">${kind} ${i + 1}차${strong}</div><div class="v">${pn(gp.price)} <span style="color:var(--muted);font-size:12px;">(${pct(gp.price)} · ${labels})</span></div></div>`;
+      }).join("") : `<div class="fin-note">해당 구간 없음</div>`;
+      const reading = (lbl, val, note) => `<div class="kv"><div class="k">${lbl}</div><div class="v">${val}${note ? ` <span style="color:var(--muted);font-size:12px;">${note}</span>` : ""}</div></div>`;
+      const maOrder = (ma5 != null && ma20 != null && ma60 != null) ? (ma5 > ma20 && ma20 > ma60 ? "정배열↑" : ma5 < ma20 && ma20 < ma60 ? "역배열↓" : "혼조") : "—";
 
       const body = document.getElementById("deuBody");
       body.className = "";
       body.innerHTML = `
         <div style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;margin-bottom:12px;">
           <div style="font-size:19px;font-weight:700;">현재가 ${pn(P)}</div>
-          <div class="chg ${vcls}" style="font-size:15px;font-weight:700;">${verdict} <span style="font-size:12px;">(점수 ${s > 0 ? "+" : ""}${s})</span></div>
-          <div style="color:var(--muted);font-size:13px;">추세 ${trend}${notes.length ? " · " + notes.join(", ") : ""}</div>
+          <div class="chg ${vcls}" style="font-size:15px;font-weight:700;">${verdict} <span style="font-size:12px;">(점수 ${s > 0 ? "+" : ""}${s.toFixed(1)})</span></div>
+          <div style="color:var(--muted);font-size:13px;">추세 ${trend}${up.length ? " · 🟢" + up.join(",") : ""}${dn.length ? " · 🔴" + dn.join(",") : ""}</div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
           <div><div class="title" style="font-size:14px;color:var(--up);margin-bottom:6px;">🟢 매수 구간(분할)</div><div class="kv-grid">${lvRows(buy3, "매수")}</div></div>
           <div><div class="title" style="font-size:14px;color:var(--down);margin-bottom:6px;">🔴 매도 구간(분할)</div><div class="kv-grid">${lvRows(sell3, "매도")}</div></div>
         </div>
-        <div class="sub" style="margin-top:12px;">손절 참고: 최근 저점 <b>${pn(L)}</b> 이탈 시 · 지표 — MA5 ${pn(ma5)} / MA20 ${pn(ma20)} / MA60 ${pn(ma60)} · RSI ${rsiV != null ? rsiV.toFixed(0) : "—"} · 볼린저 ${pn(bbL)}~${pn(bbU)}${pos52 != null ? ` · 52주위치 ${Math.round(pos52 * 100)}%` : ""}</div>
-        <div class="fin-note" style="margin-top:8px;">⚠️ 규칙 기반 종합신호 · 예측 아님 · 판단 보조 · 투자 책임은 본인.</div>
+        <div class="sub" style="margin-top:10px;">손절 제안: <b>${pn(stop)}</b> (${pct(stop)}) · ${atrV != null ? "현재가 −1.5×ATR / 최근저점 중 높은 값" : "최근 저점"}</div>
+        <div class="title" style="font-size:14px;margin:14px 0 6px;">📊 지표 현황 (전문가 체크포인트)</div>
+        <div class="kv-grid">
+          ${reading("① 추세(이동평균)", maOrder, `5:${pn(ma5)} 20:${pn(ma20)} 60:${pn(ma60)}${ma120 != null ? " 120:" + pn(ma120) : ""}`)}
+          ${reading("② 지지/저항", `${pn(L)} ~ ${pn(H)}`, "최근 저점~고점")}
+          ${reading("③ 거래량", volRatio != null ? volRatio.toFixed(1) + "배" : "—", "20일평균 대비(돌파 확인)")}
+          ${reading("④ 모멘텀 RSI", rsiV != null ? rsiV.toFixed(0) : "—", rsiV == null ? "" : rsiV < 30 ? "과매도" : rsiV > 70 ? "과매수" : "중립")}
+          ${reading("④ 모멘텀 스토캐스틱", stoch != null ? stoch.toFixed(0) : "—", stoch == null ? "" : stoch < 20 ? "과매도" : stoch > 80 ? "과매수" : "중립")}
+          ${reading("④ 모멘텀 MACD", golden == null ? "—" : golden ? "골든" : "데드", mHist != null ? (mHist >= 0 ? "히스토 +" : "히스토 −") : "")}
+          ${reading("⑤ 밸류 PER/PBR", `${per != null ? per.toFixed(1) : "—"} / ${pbr != null ? pbr.toFixed(2) : "—"}`, pbr == null ? "" : pbr < 1 ? "저평가" : pbr > 4 ? "고평가" : "적정권")}
+          ${reading("⑥ 변동성/위치", `ATR ${atrV != null ? pn(atrV) : "—"}`, pos52 != null ? `52주 ${Math.round(pos52 * 100)}%` : "")}
+        </div>
+        <div class="fin-note" style="margin-top:10px;">📌 전문가는 보통 <b>추세·지지저항·거래량·모멘텀(RSI·MACD)·밸류에이션(PER·PBR)·수급</b>을 종합합니다. 여기선 수급(외국인·기관)을 제외한 항목을 규칙 기반으로 종합 — <b>예측 아님 · 판단 보조 · 투자 책임은 본인</b>. (수급 지표는 추후 추가 예정)</div>
       `;
     }
 
