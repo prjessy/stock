@@ -269,11 +269,10 @@
     <section class="panel" style="margin-bottom:16px;">
       <div class="chart-head">
         <div class="title" style="font-size:15px;">🕔 오늘 흐름 <span id="intraSub" style="color:var(--muted);font-weight:500;font-size:13px;margin-left:6px;"></span></div>
-        <div class="periods" id="intraRange">
-          <button data-iv="1m">1분</button>
-          <button data-iv="5m" class="active">5분</button>
-          <button data-iv="15m">15분</button>
-          <button data-iv="30m">30분</button>
+        <div class="periods">
+          <label style="display:flex;align-items:center;gap:4px;color:var(--muted);font-size:13px;">간격
+            <input class="iv-input" type="number" min="1" max="120" step="1" value="5" style="width:56px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:4px 6px;font-size:14px;font-variant-numeric:tabular-nums;">분
+          </label>
         </div>
       </div>
       <div class="sub">시각·가격·전일대비. ±임계값 도달 시 🔔 (⚙️ 설정) · 정규장(09:00~15:30) 기준</div>
@@ -372,16 +371,14 @@
         <div class="modal-note">설정한 ±% 도달 시 <b>종목 카드</b>에 🔔 로 강조됩니다. 값은 이 브라우저(localStorage)에 저장됩니다.<br>(실제 Telegram 알림 임계값은 서버 <code>.env</code> 로 관리됩니다.)</div>
         <div class="modal-row">
           <div class="modal-k">오늘 흐름 간격</div>
-          <div class="modal-v">
-            <div class="periods" id="intraRangeModal">
-              <button data-iv="1m">1분</button>
-              <button data-iv="5m">5분</button>
-              <button data-iv="15m">15분</button>
-              <button data-iv="30m">30분</button>
-            </div>
-          </div>
+          <div class="modal-v"><input class="iv-input" type="number" min="1" max="120" step="1" value="5" style="width:62px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:4px 6px;font-size:14px;font-variant-numeric:tabular-nums;">분</div>
         </div>
-        <div class="modal-note">'🕔 오늘 흐름' 표의 시간 간격입니다. 값은 이 브라우저(localStorage)에 저장됩니다.</div>
+        <div class="modal-note">'🕔 오늘 흐름' 표 간격(1~120분). 1분봉을 받아 합쳐 표시하므로 아무 분이나 가능합니다. 값은 이 브라우저(localStorage)에 저장됩니다.</div>
+        <div class="modal-row">
+          <div class="modal-k">실시간 묶음</div>
+          <div class="modal-v"><input class="rtb-input" type="number" min="1" max="600" step="1" value="1" style="width:62px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:4px 6px;font-size:14px;font-variant-numeric:tabular-nums;">초</div>
+        </div>
+        <div class="modal-note">'⚡실시간' 라인을 N초 간격으로 묶어 표시합니다(1=원본 초단위). 초 단위는 페이지를 연 시점부터 쌓인 데이터에만 적용됩니다. 값은 이 브라우저(localStorage)에 저장됩니다.</div>
       </div>
     </div>
 
@@ -394,10 +391,12 @@
 
     let selected = null;       // 선택된 심볼
     let period = "3mo";
-    const IV_ALLOWED = ["1m", "5m", "15m", "30m"];
-    // 오늘 흐름 표 간격(1m/5m/15m/30m). localStorage 저장, 기본 5분.
-    let intraInterval = localStorage.getItem("intraInterval");
-    if (!IV_ALLOWED.includes(intraInterval)) intraInterval = "5m";
+    // 오늘 흐름 표 간격(분, 자유). 1분봉을 받아 N분으로 합쳐 표시. localStorage 저장.
+    let intraMin = parseInt(localStorage.getItem("intraMin"), 10);
+    if (!(intraMin >= 1 && intraMin <= 120)) intraMin = 5;
+    // ⚡실시간 라인 묶음(초, 1=원본 초단위). localStorage 저장.
+    let rtBucketSec = parseInt(localStorage.getItem("rtBucketSec"), 10);
+    if (!(rtBucketSec >= 1 && rtBucketSec <= 600)) rtBucketSec = 1;
     let quotesById = {};
     let lastRows = [];         // 현재 차트에 들어간 OHLC 행들
 
@@ -532,12 +531,14 @@
       const q = quotesById[selected] || {};
       document.getElementById("intraSub").textContent = q.name ? `${q.name} (${selected})` : selected;
       try {
-        const res = await fetch(`/api/intraday/${encodeURIComponent(selected)}?interval=${intraInterval}`);
+        // 1분봉을 받아 클라이언트에서 N분으로 합친다(임의 분 간격 지원).
+        const res = await fetch(`/api/intraday/${encodeURIComponent(selected)}?interval=1m`);
         const data = await res.json();
-        renderIntraday((data.rows || []).filter((r) => r && r.close != null), q);
+        const rows = (data.rows || []).filter((r) => r && r.close != null);
+        renderIntraday(resampleBars(rows, intraMin), q);
       } catch (e) {
         body.className = "empty-state";
-        body.textContent = "5분 데이터를 불러오지 못했습니다.";
+        body.textContent = "데이터를 불러오지 못했습니다.";
       }
     }
 
@@ -545,7 +546,7 @@
       const body = document.getElementById("intraBody");
       if (!rows.length) {
         body.className = "empty-state";
-        body.textContent = "오늘 5분 데이터가 없습니다(장 시작 후 표시).";
+        body.textContent = "오늘 데이터가 없습니다(장 시작 후 표시).";
         return;
       }
       const cur = q.currency;
@@ -875,23 +876,61 @@
       loadHistory();
     });
 
-    // 오늘 흐름 표 간격 토글 (1/5/15/30분) — 표 버튼·설정창 버튼 어디서 눌러도 동작/동기화.
-    function setIntraInterval(iv) {
-      if (!IV_ALLOWED.includes(iv)) return;
-      intraInterval = iv;
-      localStorage.setItem("intraInterval", iv);
-      syncIntervalButtons();
+    // 오늘 흐름 간격(분) / 실시간 묶음(초) — 표·설정창 입력칸 동기화. localStorage 저장.
+    function setIntraMin(n) {
+      n = Math.round(n);
+      if (!(n >= 1 && n <= 120)) { syncIvInputs(); return; }  // 범위 밖이면 되돌림
+      intraMin = n;
+      localStorage.setItem("intraMin", String(n));
+      syncIvInputs();
       loadIntraday();
     }
-    function syncIntervalButtons() {
-      document.querySelectorAll("button[data-iv]").forEach((b) => {
-        b.classList.toggle("active", b.dataset.iv === intraInterval);
-      });
+    function syncIvInputs() {
+      document.querySelectorAll(".iv-input").forEach((i) => { if (parseInt(i.value, 10) !== intraMin) i.value = intraMin; });
     }
-    document.addEventListener("click", (e) => {
-      const btn = e.target.closest("button[data-iv]");
-      if (btn) setIntraInterval(btn.dataset.iv);
-    });
+    function setRtBucket(n) {
+      n = Math.round(n);
+      if (!(n >= 1 && n <= 600)) { syncRtbInputs(); return; }
+      rtBucketSec = n;
+      localStorage.setItem("rtBucketSec", String(n));
+      syncRtbInputs();
+      renderRt();
+    }
+    function syncRtbInputs() {
+      document.querySelectorAll(".rtb-input").forEach((i) => { if (parseInt(i.value, 10) !== rtBucketSec) i.value = rtBucketSec; });
+    }
+    // 1분봉 → N분 OHLC 합치기(epoch 기준 정렬). 1분이면 그대로.
+    function resampleBars(rows, minutes) {
+      if (minutes <= 1) return rows;
+      const span = minutes * 60;
+      const out = [];
+      let b = null;
+      for (const r of rows) {
+        const bt = Math.floor(r.t / span) * span;
+        if (!b || b.t !== bt) {
+          b = { t: bt, open: r.open, high: r.high, low: r.low, close: r.close, volume: r.volume || 0 };
+          out.push(b);
+        } else {
+          if (r.high != null) b.high = (b.high == null) ? r.high : Math.max(b.high, r.high);
+          if (r.low != null) b.low = (b.low == null) ? r.low : Math.min(b.low, r.low);
+          b.close = r.close;
+          b.volume += r.volume || 0;
+        }
+      }
+      return out;
+    }
+    // 초당 틱 → N초 묶음(버킷 마지막 값=종가). 1초면 그대로.
+    function bucketTicks(arr, sec) {
+      if (sec <= 1) return arr;
+      const out = [];
+      let cur = null;
+      for (const p of arr) {
+        const bt = Math.floor(p.time / sec) * sec;
+        if (!cur || cur.time !== bt) { cur = { time: bt, value: p.value }; out.push(cur); }
+        else cur.value = p.value;
+      }
+      return out;
+    }
 
     async function forceRefresh() {
       const btn = document.getElementById("refreshBtn");
@@ -919,18 +958,21 @@
     }
     function openSettings() {
       renderAlertThreshold();
-      syncIntervalButtons();
+      syncIvInputs();
+      syncRtbInputs();
       document.getElementById("settingsOverlay").classList.add("open");
     }
     function closeSettings() {
       document.getElementById("settingsOverlay").classList.remove("open");
     }
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSettings(); });
-    // thr-input 은 모달·알람탭 두 곳에 있고 알람탭은 동적 생성이라 위임 바인딩.
+    // 설정 입력칸들(여러 곳·동적 생성)이라 위임 바인딩.
     document.addEventListener("change", (e) => {
-      if (e.target.classList && e.target.classList.contains("thr-input")) {
-        setAlertPct(parseFloat(e.target.value));
-      }
+      const t = e.target;
+      if (!t.classList) return;
+      if (t.classList.contains("thr-input")) setAlertPct(parseFloat(t.value));
+      else if (t.classList.contains("iv-input")) setIntraMin(parseFloat(t.value));
+      else if (t.classList.contains("rtb-input")) setRtBucket(parseFloat(t.value));
     });
 
     // ===================== 실시간 (초단위) =====================
@@ -982,6 +1024,7 @@
         const cut = localSec() - rtRangeSec;
         data = arr.filter((p) => p.time >= cut);
       }
+      data = bucketTicks(data, rtBucketSec);   // N초 묶음(1=원본)
       if (data.length >= 2) {
         const up = data[data.length - 1].value >= data[0].value;
         rtSeries.applyOptions({
@@ -1170,7 +1213,8 @@
     }
 
     (async function init() {
-      syncIntervalButtons();          // 저장된 간격으로 버튼 활성표시 보정
+      syncIvInputs();                 // 저장된 간격/묶음 값으로 입력칸 보정
+      syncRtbInputs();
       await loadQuotes();
       renderRt();
       await loadHistory();
