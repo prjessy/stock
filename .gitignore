@@ -20,6 +20,9 @@ __pycache__/
 venv/
 env/
 
+# 디자인 원본 업로드(대용량) — 가공본은 app/web/static 에 커밋됨
+KakaoTalk_*.png
+
 # 에디터/OS
 .idea/
 .vscode/
