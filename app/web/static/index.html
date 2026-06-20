@@ -346,6 +346,15 @@
         <div class="sub">피보나치·이동평균·볼린저·RSI·52주·지지/저항을 종합한 <b>규칙 기반</b> 매수/매도 가격. 예측 아님 · 판단 보조 · 책임은 본인.</div>
         <div id="deuBody" class="empty-state">종목을 선택하세요.</div>
       </section>
+      <section class="panel" style="margin-bottom:16px;">
+        <div class="chart-head">
+          <div class="title">🤖 AI 판단 (더듬이 2·3) <span id="deuAiSub" style="color:var(--muted);font-weight:500;font-size:13px;margin-left:6px;"></span></div>
+          <div class="periods"><button id="deuAiBtn">AI 분석 실행</button></div>
+        </div>
+        <div class="sub">Claude가 변동성·추세·수급(외인/기관)·밸류·모멘텀을 종합해 매수/매도 시점을 판단합니다. 버튼 누를 때만 호출(비용 발생) · 판단 보조.</div>
+        <div id="deuAiBody" class="empty-state">종목 선택 후 'AI 분석 실행'을 누르세요.</div>
+        <div id="deuAiSignals"></div>
+      </section>
     </div>
 
     <div class="tab-panel" id="panel-briefing" role="tabpanel">
@@ -1320,10 +1329,64 @@
       deuSymbol = sym;
       document.querySelectorAll("#deuSymbols button").forEach((b) => b.classList.toggle("active", b.dataset.sym === sym));
       loadDeudeumi(sym);
+      const ab = document.getElementById("deuAiBody"); if (ab) { ab.className = "empty-state"; ab.textContent = "'AI 분석 실행'을 누르세요."; }
+      const as = document.getElementById("deuAiSignals"); if (as) as.innerHTML = "";
+      const sub = document.getElementById("deuAiSub"); if (sub) sub.textContent = "";
     }
     document.getElementById("deuSymbols").addEventListener("click", (e) => {
       const b = e.target.closest("button[data-sym]"); if (b) setDeuSymbol(b.dataset.sym);
     });
+
+    const SIGNAL_LABEL = { strong_buy: "🟢 적극 매수", buy: "🟢 매수", hold: "🟡 관망", sell: "🔴 매도", strong_sell: "🔴 적극 매도" };
+    document.getElementById("deuAiBtn").addEventListener("click", loadDeuAi);
+    async function loadDeuAi() {
+      const sym = deuSymbol;
+      if (!sym) return;
+      const body = document.getElementById("deuAiBody"), btn = document.getElementById("deuAiBtn");
+      body.className = "empty-state"; body.textContent = "🤖 AI 분석 중… (수 초 소요)";
+      if (btn) { btn.disabled = true; btn.textContent = "분석 중…"; }
+      try {
+        const [aiR, sgR] = await Promise.all([
+          fetch(`/api/deudeumi-ai/${encodeURIComponent(sym)}`),
+          fetch(`/api/deudeumi-signals/${encodeURIComponent(sym)}`),
+        ]);
+        const ai = await aiR.json(), sg = await sgR.json();
+        if (ai.error) { body.className = "empty-state"; body.textContent = "AI 분석 실패: " + ai.error; return; }
+        renderDeuAi(ai, sg);
+      } catch (e) {
+        body.className = "empty-state"; body.textContent = "AI 분석을 불러오지 못했습니다.";
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = "AI 분석 실행"; }
+      }
+    }
+    function renderDeuAi(ai, sg) {
+      const cls = (ai.signal || "").includes("buy") ? "up" : (ai.signal || "").includes("sell") ? "down" : "flat";
+      const kf = (ai.key_factors || []).map((f) => `<li>${f}</li>`).join("");
+      document.getElementById("deuAiSub").textContent = ai.name ? `${ai.name} · ${ai.asof}` : "";
+      const body = document.getElementById("deuAiBody");
+      body.className = "";
+      body.innerHTML = `
+        <div class="chg ${cls}" style="font-size:18px;font-weight:700;margin-bottom:6px;">${SIGNAL_LABEL[ai.signal] || ai.signal} <span style="font-size:12px;">(신뢰도 ${ai.confidence})</span></div>
+        <div style="margin-bottom:10px;">${ai.summary || ""}</div>
+        <div class="kv-grid">
+          <div class="kv"><div class="k">매수존</div><div class="v">${ai.buy_zone}</div></div>
+          <div class="kv"><div class="k">매도존</div><div class="v">${ai.sell_zone}</div></div>
+          <div class="kv"><div class="k">손절</div><div class="v">${ai.stop}</div></div>
+          <div class="kv"><div class="k">현재가</div><div class="v">${ai.price}</div></div>
+        </div>
+        <div class="title" style="font-size:13px;margin:12px 0 4px;">근거</div>
+        <ul style="margin:0 0 6px 18px;color:var(--muted);font-size:13px;line-height:1.6;">${kf}</ul>
+        <div class="fin-note">⚠️ Claude(sonnet) 판단 보조 · 예측 아님 · 투자 책임은 본인.</div>`;
+      const el = document.getElementById("deuAiSignals");
+      if (sg && !sg.error) {
+        const acc = sg.accuracy_pct != null ? `${sg.accuracy_pct}% (${sg.evaluated}건·${sg.window_days}일)` : "평가 대기(신호 누적 중)";
+        const rows = (sg.recent || []).slice().reverse().map((r) => {
+          const oc = r.outcome === "hit" ? "✅" : r.outcome === "miss" ? "❌" : "⏳";
+          return `<div class="kv"><div class="k">${(r.ts || "").slice(0, 16).replace("T", " ")}</div><div class="v">${SIGNAL_LABEL[r.signal] || r.signal} ${oc} <span style="color:var(--muted);font-size:12px;">@${r.price}</span></div></div>`;
+        }).join("");
+        el.innerHTML = `<div class="title" style="font-size:13px;margin:14px 0 4px;">📒 신호 기록 · 적중률 ${acc} <span style="color:var(--muted);font-weight:500;">(쌓일수록 진화)</span></div><div class="kv-grid">${rows || '<div class="fin-note">기록 없음</div>'}</div>`;
+      } else el.innerHTML = "";
+    }
 
     async function loadDeudeumi(sym) {
       const body = document.getElementById("deuBody");
