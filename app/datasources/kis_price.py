@@ -170,13 +170,15 @@ class KisPriceSource(PriceSource):
                 "error": "",
             }
             # NXT(넥스트레이드) — 증권사·네이버가 보여주는 '시간외/애프터마켓' 체결가.
-            # 미지원 종목(일부 ETF 등)이나 실패 시 생략(graceful). 정규장과 같으면 프론트가 알아서 처리.
-            try:
-                nx = self._inquire(symbol, "NX")
-                if nx["price"] is not None:
-                    quote["nxt"] = nx
-            except Exception:
-                pass
+            # 레버리지 ETF 등은 NXT 시간외가 없으므로(정규장만) 조회 자체를 건너뛴다(0원 표시 방지).
+            # 그 외에도 가격이 0/없음이면 부착하지 않는다(graceful).
+            if "레버리지" not in meta["note"]:
+                try:
+                    nx = self._inquire(symbol, "NX")
+                    if nx["price"] and nx["price"] > 0:
+                        quote["nxt"] = nx
+                except Exception:
+                    pass
             self._cache.set(cache_key, quote)
             return quote
         except Exception as exc:
