@@ -3,10 +3,11 @@
 본인 카톡(나와의 채팅)으로 알림을 받는 기능. 최초 1회 카카오 로그인(OAuth)만 하면,
 이후 access_token 자동 갱신으로 무인 동작한다. (코드: `app/kakao_notify.py`, API: `app/web/api.py`)
 
-## ⚠️ 핵심 — 설정은 전부 "플랫폼 키(REST API 키)" 화면에 있다
+## ⚠️ 핵심 — 설정은 전부 "플랫폼 키(REST API 키)" 화면에 모여 있다
 
-콘솔이 개편되면서 **Redirect URI는 [카카오 로그인] 페이지가 아니라 [앱 설정]→[앱 키(플랫폼 키)]→[REST API 키]** 화면에 있다.
-키를 만들/관리할 때 그 화면에서 한 번에 등록한다. (이걸 몰라서 헤맴 — 2026-06)
+콘솔이 개편되면서 **Redirect URI도, Client Secret(시크릿 키)도 모두 [앱 설정]→[앱 키(플랫폼 키)]→[REST API 키]** 화면에 있다.
+([카카오 로그인] 페이지나 별도 [보안]/[고급] 메뉴가 아니다.)
+키를 만들/관리할 때 그 한 화면에서 Redirect URI 등록 + Client Secret 설정을 한 번에 끝낸다. (이걸 몰라서 헤맴 — 2026-06)
 
 - ❌ "로그아웃 리다이렉트 URI" 칸 = 다른 용도. 여기 넣으면 KOE006.
 - ✅ "카카오 로그인 리다이렉트 URI" 칸 = 여기에 넣어야 함.
@@ -15,28 +16,30 @@
 
 앱: `stockwatch` / App ID `1491760` / REST API 키 `a9d5fad7...`
 
-1. **앱 활성화 등 기본**
-   - [제품 설정]→[카카오 로그인] → **활성화 ON**
-   - [제품 설정]→[카카오 로그인]→[동의항목] → **"카카오톡 메시지 전송(talk_message)" 활성화**
-   - OpenID Connect = **OFF** (안 씀)
+### STEP 1. 한 화면에서 끝내기 — [앱 설정]→[앱 키(플랫폼 키)]→[REST API 키]
 
-2. **Redirect URI 등록** ← 가장 헷갈리는 부분
-   - [앱 설정]→[앱 키/플랫폼 키]→**[REST API 키]** 화면
-   - **"카카오 로그인 리다이렉트 URI"** 칸에 정확히 입력 후 `+` → 저장:
-     ```
-     https://jessystock.com/api/kakao/callback
-     ```
+이 **한 화면**에서 아래 두 가지를 한 번에 처리한다 (Redirect URI도, 시크릿 키도 여기 다 있음):
 
-3. **Client Secret** ([카카오 로그인]→[고급], 이 콘솔엔 "보안"이 아니라 "고급")
-   - 우리 서버는 토큰 요청에 client_secret을 **안 보냄**.
-   - 따라서 Client Secret **"사용 안 함"** 으로 두어야 한다. "사용함"이면 토큰 교환에서 **HTTP 401**.
-   - (켜두고 쓰려면 `kakao_notify.py`의 토큰 요청에 `client_secret`을 추가하고 `.env`에 값 저장 필요.)
-
-4. **서버 `.env`** (VPS, scp 전송)
+1. **카카오 로그인 리다이렉트 URI** 칸에 정확히 입력 후 `+` → 저장:
    ```
-   KAKAO_REST_API_KEY=<REST API 키>
-   KAKAO_REDIRECT_URI=https://jessystock.com/api/kakao/callback
+   https://jessystock.com/api/kakao/callback
    ```
+   - ❌ "로그아웃 리다이렉트 URI" / "비즈니스 인증 리다이렉트 URI" 칸 아님. 잘못 넣으면 KOE006.
+2. **Client Secret(시크릿 키)** → **"사용 안 함"(OFF)** 으로 둔다.
+   - 우리 서버는 토큰 요청에 client_secret을 **안 보낸다**. "사용함"이면 토큰 교환에서 **HTTP 401**.
+   - (켜두고 쓰려면 `kakao_notify.py` 토큰 요청에 `client_secret` 추가 + `.env`에 값 저장 필요.)
+
+### STEP 2. 카카오 로그인 활성화 + 동의항목 (한 번만)
+
+- [제품 설정]→[카카오 로그인] → **활성화 ON** / OpenID Connect = **OFF**
+- [제품 설정]→[카카오 로그인]→[동의항목] → **"카카오톡 메시지 전송(talk_message)" 활성화**
+
+### STEP 3. 서버 `.env` (VPS, scp 전송)
+
+```
+KAKAO_REST_API_KEY=<REST API 키>
+KAKAO_REDIRECT_URI=https://jessystock.com/api/kakao/callback
+```
 
 ## 연동 실행 (최초 1회)
 
@@ -51,7 +54,7 @@
 |---|---|---|
 | `KOE006` / "서비스 설정 오류, 관리자 확인 필요" | Redirect URI 미등록·오타 | REST API 키 화면 "카카오 로그인 리다이렉트 URI"에 정확히 등록 |
 | 콜백 `code 없음` / `raw {}` | 위 KOE006 때문에 카카오가 code 없이 되돌림 | 위와 동일 |
-| `HTTP Error 401` (code는 도착) | Client Secret "사용함" 인데 서버가 미전송 | [고급]에서 Client Secret "사용 안 함" |
+| `HTTP Error 401` (code는 도착) | Client Secret "사용함" 인데 서버가 미전송 | 플랫폼 키 화면에서 Client Secret "사용 안 함" |
 
 ## 한계 — '나에게 보내기'는 로그인한 본인에게만 간다
 
