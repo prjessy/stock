@@ -288,11 +288,20 @@ def kakao_test_api() -> JSONResponse:
 
 
 @app.get("/api/kakao/callback")
-def kakao_callback_api(code: str = "", error: str = "") -> HTMLResponse:
+def kakao_callback_api(request: Request, code: str = "", error: str = "", error_description: str = "") -> HTMLResponse:
     """카카오 OAuth 콜백 → code 를 토큰으로 교환·저장."""
     from app.kakao_notify import exchange_code
+    # 진단용: 카카오가 보낸 원본 쿼리 전체를 로그에 남긴다(에러 사유 파악).
+    print(f"[kakao/callback] query={dict(request.query_params)}", flush=True)
     if error or not code:
-        return HTMLResponse(f"<h3>카카오 연동 실패: {error or 'code 없음'}</h3><p>창을 닫고 다시 시도하세요.</p>")
+        return HTMLResponse(
+            f"<h3>카카오 연동 실패</h3>"
+            f"<pre>error: {error or '(없음)'}\n"
+            f"error_description: {error_description or '(없음)'}\n"
+            f"code: {'있음' if code else '없음'}\n"
+            f"raw: {dict(request.query_params)}</pre>"
+            f"<p>창을 닫고 다시 시도하세요.</p>"
+        )
     r = exchange_code(code)
     if r.get("ok"):
         return HTMLResponse("<h2>✅ 카카오 연동 완료</h2><p>이제 알림이 카톡(나와의 채팅)으로도 옵니다. 이 창을 닫으세요.</p>")
