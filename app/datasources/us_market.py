@@ -11,8 +11,10 @@ from app.datasources.base import PriceSource, TTLCache, empty_quote
 
 # 심볼 메타 (이름/통화/표시 비고).
 US_META: dict[str, dict[str, str]] = {
-    "MU": {"name": "마이크론", "currency": "USD", "note": "나스닥"},
+    "MU": {"name": "마이크론 테크놀로지", "currency": "USD", "note": "나스닥"},
     "^SOX": {"name": "필라델피아 반도체지수", "currency": "USD", "note": "지수"},
+    "^IXIC": {"name": "나스닥 종합지수", "currency": "USD", "note": "지수"},
+    "^DJI": {"name": "다우존스 산업평균", "currency": "USD", "note": "지수"},
     "NQ=F": {"name": "나스닥 선물", "currency": "USD", "note": "선물"},
 }
 

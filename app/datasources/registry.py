@@ -49,6 +49,12 @@ class SourceRegistry:
         """
         q = self.source_for(symbol).get_quote(symbol)
         if q and q.get("price") is not None:
+            # 미국 심볼: 시장이 닫혀 있으면 '종가(stale)' 표기(선물=글로벡스, 그 외=정규장 기준).
+            if self.source_for(symbol) is self._us:
+                from app.core.market import us_futures_open, us_session
+                open_now = us_futures_open() if symbol.endswith("=F") else us_session()["open"]
+                if not open_now:
+                    return {**q, "stale": True}
             return q
         try:
             rows = [r for r in (self.history(symbol, "1mo") or []) if r.get("close") is not None]

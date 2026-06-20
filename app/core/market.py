@@ -146,3 +146,24 @@ def us_session(now_utc: datetime | None = None) -> dict:
     else:
         s = ("closed", "휴장", False)
     return {"session": s[0], "label": s[1], "open": s[2], "now": nowtxt}
+
+
+def us_futures_open(now_utc: datetime | None = None) -> bool:
+    """미국 지수 선물(NQ=F 등) CME 글로벡스 거래 여부.
+
+    일요일 18:00 ET 개장 ~ 금요일 17:00 ET 마감(주중 거의 24시간). 토요일·일요일 낮·
+    금요일 야간은 휴장. (월~목 17:00~18:00 일일 정산휴식은 단순화 위해 무시.)
+    """
+    try:
+        from zoneinfo import ZoneInfo
+        et = (now_utc or datetime.now(timezone.utc)).astimezone(ZoneInfo("America/New_York"))
+    except Exception:
+        return False
+    wd, mins = et.weekday(), et.hour * 60 + et.minute  # Mon=0..Sun=6
+    if wd == 5:        # 토: 종일 휴장
+        return False
+    if wd == 6:        # 일: 18:00 ET 개장
+        return mins >= 18 * 60
+    if wd == 4:        # 금: 17:00 ET 마감
+        return mins < 17 * 60
+    return True         # 월~목
