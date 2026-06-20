@@ -543,7 +543,7 @@
             </div>
             <div class="tag">${q.note || (q.currency === "KRW" ? "코스피" : "")}</div>
           </div>
-          <div class="price ${hasPrice ? "" : "dim"}">${hasPrice ? fmtPrice(q) : "로딩 중…"}</div>
+          <div class="price ${hasPrice ? "" : "dim"}">${hasPrice ? fmtPrice(q) : (q.error ? "—" : "로딩 중…")}</div>
           <div class="change ${changeClass(q.change_pct)}">${fmtChange(q.change_pct)}${hit ? `<span class="hit-badge ${q.change_pct >= 0 ? "up" : "down"}">🔔 ±${ALERT_PCT}%</span>` : ""}${tgt ? `<span class="tgt-badge${tgtReached ? " on" : ""}">🎯 ${tgt.dir === "up" ? "≥" : "≤"} ${fmtPriceNum(q.currency, tgt.price)}</span>` : ""}</div>
           ${q.error ? `<div class="err">데이터 없음</div>` : ""}
           ${(q.note || "").includes("레버리지") ? `<div class="warn-lev">⚠️ 매수 전 교육 필수(미이수 시 매수 불가) · 비용 약 8,000원 발생 · 음의 복리 유의</div>` : ""}
