@@ -14,7 +14,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
@@ -224,7 +224,7 @@ def get_deudeumi_signals_api(symbol: str) -> JSONResponse:
 
 @app.post("/api/notify")
 async def notify_api(request: Request) -> JSONResponse:
-    """브라우저 알림 → 텔레그램 전달(hermes send). 절대 500 금지."""
+    """브라우저 알림 → 텔레그램(hermes) + 카카오 나에게(직접). 절대 500 금지."""
     import os
     import subprocess
     try:
@@ -235,15 +235,68 @@ async def notify_api(request: Request) -> JSONResponse:
     subject = data.get("subject") or "🔔 Stock Watchdog"
     if not msg:
         return JSONResponse({"ok": False, "error": "empty"})
+    out: dict = {"ok": True}
+    # 1) 텔레그램(hermes)
     try:
         subprocess.run(
             ["/usr/local/bin/hermes", "send", "--to", "telegram", "--subject", subject, msg],
             env={**os.environ, "HERMES_HOME": os.environ.get("HERMES_HOME", "/root/.hermes")},
             timeout=30, capture_output=True,
         )
-        return JSONResponse({"ok": True})
+        out["telegram"] = True
+    except Exception as exc:
+        out["telegram"] = False
+        out["telegram_error"] = str(exc)
+    # 2) 카카오 나에게 보내기(연동돼 있을 때만)
+    try:
+        from app.kakao_notify import linked, send as kakao_send
+        out["kakao"] = bool(linked() and kakao_send(f"{subject}\n{msg}"))
+    except Exception:
+        out["kakao"] = False
+    return JSONResponse(out)
+
+
+@app.get("/api/kakao/status")
+def kakao_status_api() -> JSONResponse:
+    """카카오 연동 상태(키 설정 여부·로그인 완료 여부). 500 금지."""
+    from app.kakao_notify import configured, linked
+    try:
+        return JSONResponse({"configured": configured(), "linked": linked()})
+    except Exception:
+        return JSONResponse({"configured": False, "linked": False})
+
+
+@app.get("/api/kakao/login")
+def kakao_login_api():
+    """카카오 로그인 동의 페이지로 리다이렉트(최초 1회 연동)."""
+    from app.kakao_notify import authorize_url, configured
+    if not configured():
+        return JSONResponse({"ok": False, "error": "KAKAO_REST_API_KEY 미설정"})
+    return RedirectResponse(authorize_url())
+
+
+@app.get("/api/kakao/test")
+def kakao_test_api() -> JSONResponse:
+    """카카오 나에게 보내기 테스트 1건. 500 금지."""
+    from app.kakao_notify import linked, send
+    try:
+        if not linked():
+            return JSONResponse({"ok": False, "error": "미연동"})
+        return JSONResponse({"ok": bool(send("🔔 Stock Watchdog 카카오 테스트입니다. 연동 정상!"))})
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc)})
+
+
+@app.get("/api/kakao/callback")
+def kakao_callback_api(code: str = "", error: str = "") -> HTMLResponse:
+    """카카오 OAuth 콜백 → code 를 토큰으로 교환·저장."""
+    from app.kakao_notify import exchange_code
+    if error or not code:
+        return HTMLResponse(f"<h3>카카오 연동 실패: {error or 'code 없음'}</h3><p>창을 닫고 다시 시도하세요.</p>")
+    r = exchange_code(code)
+    if r.get("ok"):
+        return HTMLResponse("<h2>✅ 카카오 연동 완료</h2><p>이제 알림이 카톡(나와의 채팅)으로도 옵니다. 이 창을 닫으세요.</p>")
+    return HTMLResponse(f"<h3>연동 실패</h3><pre>{r.get('error')}</pre><p>동의항목(카카오톡 메시지 전송)·Redirect URI 설정을 확인하세요.</p>")
 
 
 _BOT_LINK: dict = {}

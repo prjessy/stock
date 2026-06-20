@@ -486,6 +486,7 @@
         </div>
         <div class="modal-note">목표가 도달 시 <b>선택한 방식으로</b> 알립니다(복수 가능, localStorage 저장). 자동 더듬이 사이렌은 별도로 항상 텔레그램으로 발송됩니다.</div>
         <div class="modal-note">📱 <b>텔레그램 받기</b>: 아래 봇 링크를 누르고 <b>/start</b> 한 번이면 끝.<br>👉 <a id="botLink" href="#" target="_blank" rel="noopener" style="color:var(--accent);font-weight:700;">봇 링크 불러오는 중…</a><br><span style="color:var(--muted)">봇 생성·유저명·번호 입력 전부 불필요 — /start가 chat_id를 자동 등록합니다.</span></div>
+        <div class="modal-note">💬 <b>카카오톡(나에게) 받기</b> — 본인 카톡 '나와의 채팅'으로 무료 수신. <span id="kakaoStatus" style="color:var(--muted)">상태 확인 중…</span><br><button id="kakaoBtn" class="refresh-btn" style="margin-top:6px;" onclick="kakaoConnect()">카카오 연동</button> <button class="refresh-btn" style="margin-top:6px;" onclick="kakaoTest(this)">테스트 발송</button><br><span style="color:var(--muted)">최초 1회 카카오 로그인 → 이후 자동. 본인에게만 발송됩니다.</span></div>
         <div class="modal-row" style="display:block;">
           <div class="modal-k" style="margin-bottom:4px;">🎯 목표가 알림</div>
           <div id="targetList"></div>
@@ -1197,6 +1198,31 @@
         else { el.textContent = "봇 미설정 (운영자가 .env에 봇 토큰 설정 필요)"; el.removeAttribute("href"); }
       } catch (e) { el.textContent = "링크 불러오기 실패"; }
     }
+    async function loadKakaoStatus() {
+      const st = document.getElementById("kakaoStatus");
+      const btn = document.getElementById("kakaoBtn");
+      if (!st) return;
+      try {
+        const d = await (await fetch("/api/kakao/status")).json();
+        if (!d.configured) { st.textContent = "(운영자가 .env에 카카오 키 설정 필요)"; if (btn) btn.disabled = true; return; }
+        if (d.linked) { st.innerHTML = '<b style="color:var(--up)">✅ 연동됨</b>'; if (btn) btn.textContent = "다시 연동"; }
+        else { st.textContent = "미연동 — '카카오 연동'을 누르세요"; if (btn) btn.textContent = "카카오 연동"; }
+      } catch (e) { st.textContent = "상태 확인 실패"; }
+    }
+    function kakaoConnect() {
+      window.open("/api/kakao/login", "kakaoLogin", "width=480,height=720");
+      // 팝업에서 로그인 후 상태 갱신(몇 초 뒤).
+      setTimeout(loadKakaoStatus, 4000);
+      setTimeout(loadKakaoStatus, 9000);
+    }
+    async function kakaoTest(btn) {
+      const old = btn.textContent; btn.disabled = true; btn.textContent = "발송 중…";
+      try {
+        const d = await (await fetch("/api/kakao/test")).json();
+        btn.textContent = d.ok ? "✅ 전송됨" : "❌ " + (d.error || "실패");
+      } catch (e) { btn.textContent = "❌ 실패"; }
+      setTimeout(() => { btn.disabled = false; btn.textContent = old; }, 2500);
+    }
     function openSettings() {
       renderAlertThreshold();
       syncIvInputs();
@@ -1204,6 +1230,7 @@
       syncAlertChannels();
       populateTargets();
       loadBotLink();
+      loadKakaoStatus();
       document.getElementById("settingsOverlay").classList.add("open");
     }
     function closeSettings() {

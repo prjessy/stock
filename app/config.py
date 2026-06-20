@@ -60,6 +60,10 @@ class Settings:
     # 더듬이2·3 자동 감시 주기(분). 0=비활성(기본). 본장(09:00~15:30)에만 동작.
     deudeumi_interval_min: int = 0
 
+    # 카카오톡 '나에게 보내기'(무료). REST API 키·리다이렉트는 .env 에서만.
+    kakao_rest_api_key: str = ""
+    kakao_redirect_uri: str = "https://jessystock.com/api/kakao/callback"
+
     # 접근 제어: 허용된 Telegram chat id 목록
     allowed_chat_ids: list[str] = field(default_factory=list)
 
@@ -90,6 +94,8 @@ def load_settings() -> Settings:
         anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
         deudeumi_model=os.getenv("DEUDEUMI_MODEL", "claude-sonnet-4-6"),
         deudeumi_interval_min=int(os.getenv("DEUDEUMI_INTERVAL_MIN", "0")),
+        kakao_rest_api_key=os.getenv("KAKAO_REST_API_KEY", ""),
+        kakao_redirect_uri=os.getenv("KAKAO_REDIRECT_URI", "https://jessystock.com/api/kakao/callback"),
         allowed_chat_ids=_split_csv(os.getenv("ALLOWED_CHAT_IDS", "")),
         hermes_base_url=os.getenv("HERMES_BASE_URL", "http://localhost:8080"),
         db_path=os.getenv("DB_PATH", "data/stock.db"),
