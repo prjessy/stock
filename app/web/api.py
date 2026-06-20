@@ -49,11 +49,16 @@ _poller = RealtimePoller(_registry)
 from app.analysis.deudeumi_scheduler import DeudeumiScheduler
 _deudeumi = DeudeumiScheduler(_registry, _poller, settings.deudeumi_interval_min)
 
+# 마케팅 자료 자동 최신화(하루 1회, 장마감 후). 뉴스 수집→Claude 요약/카피→data/marketing.json.
+from app.analysis.marketing_scheduler import MarketingScheduler
+_marketing = MarketingScheduler()
+
 
 @app.on_event("startup")
 def _start_poller() -> None:
     _poller.start()
     _deudeumi.start()
+    _marketing.start()
 
 
 def _name_for(symbol: str) -> str:
@@ -109,6 +114,27 @@ def get_investor_api(symbol: str) -> JSONResponse:
     if not flow:
         return JSONResponse({"symbol": symbol, "name": _name_for(symbol), "available": False})
     return JSONResponse({"symbol": symbol, "name": _name_for(symbol), "available": True, **flow})
+
+
+@app.get("/api/marketing")
+def get_marketing_api() -> JSONResponse:
+    """저장된 마케팅 자료(종목별 뉴스 요약·카피·헤드라인). 500 금지."""
+    from app.analysis.marketing import load
+    try:
+        return JSONResponse(load())
+    except Exception:
+        return JSONResponse({"available": False})
+
+
+@app.post("/api/marketing/refresh")
+def refresh_marketing_api() -> JSONResponse:
+    """마케팅 자료 즉시 재생성(수동 새로고침 버튼). Claude 호출 발생. 500 금지."""
+    from app.analysis.marketing import generate
+    try:
+        data = generate()
+        return JSONResponse({"ok": True, **data})
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)})
 
 
 @app.get("/api/orderbook/{symbol}")
