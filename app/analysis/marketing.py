@@ -21,17 +21,17 @@ _FILE = Path(settings.db_path).resolve().parent / "marketing.json"
 _SCHEMA = {
     "type": "object",
     "properties": {
-        "summary": {"type": "string", "description": "헤드라인을 종합한 한국어 핵심 요약 2~3문장(사실만, 간결히)"},
-        "keywords": {"type": "array", "items": {"type": "string"}, "description": "summary 안에서 색으로 강조할 핵심 단어·수치 2~4개(요약문에 나온 그대로 발췌)"},
+        "headline": {"type": "string", "description": "이 종목의 가장 중요한 핵심 한 줄(무슨 일인지 한눈에, 명사형으로 짧게)"},
+        "points": {"type": "array", "items": {"type": "string"}, "description": "핵심 포인트 2~4개, 각 짧은 한 줄(사실 중심, 서로 다른 이슈, 과장 금지)"},
         "sentiment": {"type": "string", "enum": ["긍정", "중립", "부정"]},
     },
-    "required": ["summary", "keywords", "sentiment"],
+    "required": ["headline", "points", "sentiment"],
     "additionalProperties": False,
 }
 
 _SYSTEM = (
-    "너는 한국 주식 뉴스 에디터다. 주어진 뉴스 헤드라인만 근거로 과장·투자 단정 없이 "
-    "핵심을 간결하게 요약한다(2~3문장). 반드시 스키마 JSON으로만 답한다."
+    "너는 한국 주식 뉴스 에디터다. 주어진 뉴스 헤드라인만 근거로 '무엇이 핵심인지' 한 줄로 짚고 "
+    "핵심 포인트를 짧게 정리한다. 과장·투자 단정 금지. 반드시 스키마 JSON으로만 답한다."
 )
 
 
@@ -85,8 +85,8 @@ def _claude_copy(name: str, headlines: list[dict]) -> dict | None:
     titles = "\n".join(f"- {h['title']}" for h in headlines)
     prompt = (
         f"{name} 관련 최신 뉴스 헤드라인입니다:\n{titles}\n\n"
-        f"이 헤드라인들만 근거로 summary(핵심 2~3문장 요약)·keywords(요약문에서 강조할 핵심 단어/수치 2~4개, 원문 그대로)·sentiment(분위기)를 채우세요. "
-        f"과장·투자 단정 금지, 간결하게."
+        f"이 헤드라인들만 근거로 headline(가장 중요한 핵심 한 줄)·points(핵심 포인트 2~4개, 각 짧은 한 줄)·sentiment(분위기)를 채우세요. "
+        f"과장·투자 단정 금지, 한눈에 들어오게 간결히."
     )
     try:
         client = anthropic.Anthropic(api_key=key)
@@ -113,8 +113,8 @@ def generate(items: list[tuple[str, str]] | None = None) -> dict:
         stocks.append({
             "symbol": symbol,
             "name": name,
-            "summary": copy.get("summary"),
-            "copy": copy.get("copy"),
+            "headline": copy.get("headline"),
+            "points": copy.get("points") or [],
             "sentiment": copy.get("sentiment"),
             "headlines": news[:5],
         })

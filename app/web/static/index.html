@@ -137,6 +137,9 @@
     .news-head { font-weight: 800; font-size: 15px; margin-bottom: 10px; overflow: hidden; }
     .news-summary { font-size: 14.5px; line-height: 1.75; }
     .news-summary .hl { color: var(--accent); font-weight: 700; }
+    .news-lead { font-size: 15px; font-weight: 700; color: var(--accent); line-height: 1.6; margin-bottom: 10px; }
+    .news-points { margin: 0; padding-left: 18px; font-size: 13.5px; line-height: 1.85; }
+    .news-points li { margin-bottom: 2px; }
     .news-more { margin-top: 10px; }
     .news-more > summary { cursor: pointer; color: var(--muted); font-size: 12px; list-style: revert; }
     .news-more ul { margin: 8px 0 0; padding-left: 18px; font-size: 12.5px; line-height: 1.7; color: var(--muted); }
@@ -1758,9 +1761,11 @@
             isKR ? A(`https://www.google.com/search?q=${nm}+site:dart.fss.or.kr`, "📑 DART") : "",
             A(`https://news.google.com/search?q=${nm}&hl=ko`, "📰 더보기"),
           ].filter(Boolean).join("");
+          const pts = (s.points || []).map((p) => `<li>${p}</li>`).join("");
           return `<div class="news-card">
             <div class="news-head">${s.name}${sent}</div>
-            ${s.summary ? `<div class="news-summary">${hlText(s.summary, s.keywords)}</div>` : `<div class="sub" style="margin-bottom:8px;">관련 뉴스 없음</div>`}
+            ${s.headline ? `<div class="news-lead">💡 ${s.headline}</div>` : `<div class="sub" style="margin-bottom:8px;">관련 뉴스 없음</div>`}
+            ${pts ? `<ul class="news-points">${pts}</ul>` : ""}
             ${heads ? `<details class="news-more"><summary>📰 관련 기사 ${n}건</summary><ul>${heads}</ul></details>` : ""}
             <div class="news-links">${links}</div>
           </div>`;
