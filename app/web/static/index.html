@@ -251,6 +251,7 @@
 
     <nav class="tabs" id="tabs" role="tablist">
       <button class="tab-btn active" data-tab="dashboard" role="tab" aria-selected="true">📊 대시보드</button>
+      <button class="tab-btn" data-tab="deudeumi" role="tab" aria-selected="false">🐜 더듬이</button>
       <button class="tab-btn" data-tab="briefing" role="tab" aria-selected="false">🌅 브리핑</button>
       <button class="tab-btn" data-tab="marketing" role="tab" aria-selected="false">📰 마케팅</button>
       <button class="tab-btn" data-tab="alarm" role="tab" aria-selected="false">🔔 알람</button>
@@ -335,6 +336,17 @@
     </div><!-- /panel-dashboard -->
 
     <!-- ===== 탭 2: 브리핑 ===== -->
+    <div class="tab-panel" id="panel-deudeumi" role="tabpanel">
+      <section class="panel" style="margin-bottom:16px;">
+        <div class="chart-head">
+          <div class="title">🐜 더듬이 1 · 종합 매매신호 <span id="deuSub" style="color:var(--muted);font-weight:500;font-size:13px;margin-left:6px;"></span></div>
+          <div class="periods" id="deuSymbols"></div>
+        </div>
+        <div class="sub">피보나치·이동평균·볼린저·RSI·52주·지지/저항을 종합한 <b>규칙 기반</b> 매수/매도 가격. 예측 아님 · 판단 보조 · 책임은 본인.</div>
+        <div id="deuBody" class="empty-state">종목을 선택하세요.</div>
+      </section>
+    </div>
+
     <div class="tab-panel" id="panel-briefing" role="tabpanel">
       <section class="panel">
         <h2>장 전 방향성</h2>
@@ -1223,6 +1235,10 @@
       if (name === "dashboard") {
         // 차트는 숨김 상태에서 0px 로 그려질 수 있어 보일 때 리사이즈한다.
         requestAnimationFrame(resizeCharts);
+      } else if (name === "deudeumi") {
+        deuFillSymbols();
+        if (!deuSymbol) { const first = Object.keys(quotesById)[0]; if (first) setDeuSymbol(first); }
+        else loadDeudeumi(deuSymbol);
       } else if (name === "briefing" && !briefingLoaded) {
         briefingLoaded = true; loadBriefing();
       } else if (name === "alarm" && !alarmLoaded) {
@@ -1234,6 +1250,119 @@
       const btn = e.target.closest(".tab-btn");
       if (btn) activateTab(btn.dataset.tab);
     });
+
+    // ===================== 🐜 더듬이 1 · 종합 매매신호 (규칙기반) =====================
+    let deuSymbol = null;
+    const DEU_FIB = [0.236, 0.382, 0.5, 0.618, 0.786];
+
+    function deuFillSymbols() {
+      const box = document.getElementById("deuSymbols");
+      const syms = Object.values(quotesById);
+      if (!box || !syms.length) return;
+      box.innerHTML = syms.map((q) =>
+        `<button data-sym="${q.symbol}" class="${q.symbol === deuSymbol ? "active" : ""}">${q.name}</button>`).join("");
+    }
+    function setDeuSymbol(sym) {
+      deuSymbol = sym;
+      document.querySelectorAll("#deuSymbols button").forEach((b) => b.classList.toggle("active", b.dataset.sym === sym));
+      loadDeudeumi(sym);
+    }
+    document.getElementById("deuSymbols").addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-sym]"); if (b) setDeuSymbol(b.dataset.sym);
+    });
+
+    async function loadDeudeumi(sym) {
+      const body = document.getElementById("deuBody");
+      const q = quotesById[sym] || {};
+      document.getElementById("deuSub").textContent = q.name ? `${q.name} (${sym})` : sym;
+      body.className = "empty-state"; body.textContent = "분석 중…";
+      try {
+        const [hRes, fRes] = await Promise.all([
+          fetch(`/api/history/${encodeURIComponent(sym)}?period=3mo`),
+          fetch(`/api/fundamentals/${encodeURIComponent(sym)}`),
+        ]);
+        const rows = ((await hRes.json()).history || []).filter((r) => r && r.close != null);
+        const fund = await fRes.json();
+        if (rows.length < 20) { body.className = "empty-state"; body.textContent = "데이터 부족(20영업일 이상 필요)."; return; }
+        renderDeudeumi(rows, q, fund);
+      } catch (e) {
+        body.className = "empty-state"; body.textContent = "분석을 불러오지 못했습니다.";
+      }
+    }
+
+    function renderDeudeumi(rows, q, fund) {
+      const closes = rows.map((r) => r.close);
+      const highs = rows.map((r) => r.high != null ? r.high : r.close);
+      const lows = rows.map((r) => r.low != null ? r.low : r.close);
+      const cur = q.currency || "KRW";
+      const P = (q.price != null) ? q.price : closes[closes.length - 1];
+      const lastv = (a) => { for (let i = a.length - 1; i >= 0; i--) if (a[i] != null) return a[i]; return null; };
+      const ma5 = lastv(sma(closes, 5)), ma20 = lastv(sma(closes, 20)), ma60 = lastv(sma(closes, 60));
+      const rsiV = lastv(rsi(closes, 14));
+      const l20 = closes.slice(-20);
+      const mid = l20.reduce((a, b) => a + b, 0) / l20.length;
+      const std = Math.sqrt(l20.reduce((a, b) => a + (b - mid) ** 2, 0) / l20.length);
+      const bbU = mid + 2 * std, bbL = mid - 2 * std;
+      const w = Math.min(60, rows.length);
+      const H = Math.max(...highs.slice(-w)), L = Math.min(...lows.slice(-w));
+      const R = (H - L) || 1;
+      const w52h = fund && fund.w52_high, w52l = fund && fund.w52_low;
+
+      const buys = [], sells = [];
+      const add = (arr, label, price) => { if (price != null && price > 0) arr.push({ label, price }); };
+      if (ma20 != null) (ma20 < P ? add(buys, "MA20", ma20) : add(sells, "MA20", ma20));
+      if (ma60 != null) (ma60 < P ? add(buys, "MA60", ma60) : add(sells, "MA60", ma60));
+      add(buys, "볼린저 하단", bbL); add(sells, "볼린저 상단", bbU);
+      DEU_FIB.forEach((f) => { const pr = H - f * R; (pr < P ? add(buys, `피보 ${Math.round(f * 100)}%`, pr) : add(sells, `피보 ${Math.round(f * 100)}%`, pr)); });
+      add(buys, "최근 저점", L); add(sells, "최근 고점", H);
+      if (w52l) add(buys, "52주 저점", w52l);
+      if (w52h) add(sells, "52주 고점", w52h);
+
+      const pick = (arr, desc) => {
+        const a = arr.filter((x) => desc ? x.price < P : x.price > P).sort((x, y) => desc ? y.price - x.price : x.price - y.price);
+        const out = [];
+        for (const x of a) {
+          const prev = out[out.length - 1];
+          if (prev && Math.abs(prev.price - x.price) / x.price < 0.004) { prev.label += " · " + x.label; continue; }
+          out.push({ label: x.label, price: x.price });
+        }
+        return out.slice(0, 3);
+      };
+      const buy3 = pick(buys, true), sell3 = pick(sells, false);
+
+      let s = 0; const notes = [];
+      if (rsiV != null) { if (rsiV < 30) { s += 2; notes.push("RSI 과매도"); } else if (rsiV > 70) { s -= 2; notes.push("RSI 과매수"); } }
+      if (P <= bbL) { s += 1; notes.push("볼린저 하단권"); } else if (P >= bbU) { s -= 1; notes.push("볼린저 상단권"); }
+      let pos52 = null;
+      if (w52h && w52l && w52h > w52l) { pos52 = (P - w52l) / (w52h - w52l); if (pos52 < 0.25) { s += 1; notes.push("52주 저점권"); } else if (pos52 > 0.75) { s -= 1; notes.push("52주 고점권"); } }
+      const trend = (ma20 != null && ma60 != null) ? (ma20 > ma60 ? "정배열(상승)" : "역배열(하락)") : "—";
+      let verdict, vcls;
+      if (s >= 2) { verdict = "🟢 매수 우호"; vcls = "up"; }
+      else if (s <= -2) { verdict = "🔴 과열·매도 우호"; vcls = "down"; }
+      else { verdict = "🟡 중립·관망"; vcls = "flat"; }
+
+      const pn = (v) => fmtPriceNum(cur, v);
+      const pct = (v) => { const d = (v - P) / P * 100; return (d >= 0 ? "+" : "") + d.toFixed(1) + "%"; };
+      const lvRows = (arr, kind) => arr.length ? arr.map((x, i) =>
+        `<div class="kv"><div class="k">${kind} ${i + 1}차</div><div class="v">${pn(x.price)} <span style="color:var(--muted);font-size:12px;">(${pct(x.price)} · ${x.label})</span></div></div>`).join("")
+        : `<div class="fin-note">해당 구간 없음</div>`;
+
+      const body = document.getElementById("deuBody");
+      body.className = "";
+      body.innerHTML = `
+        <div style="display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;margin-bottom:12px;">
+          <div style="font-size:19px;font-weight:700;">현재가 ${pn(P)}</div>
+          <div class="chg ${vcls}" style="font-size:15px;font-weight:700;">${verdict} <span style="font-size:12px;">(점수 ${s > 0 ? "+" : ""}${s})</span></div>
+          <div style="color:var(--muted);font-size:13px;">추세 ${trend}${notes.length ? " · " + notes.join(", ") : ""}</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+          <div><div class="title" style="font-size:14px;color:var(--up);margin-bottom:6px;">🟢 매수 구간(분할)</div><div class="kv-grid">${lvRows(buy3, "매수")}</div></div>
+          <div><div class="title" style="font-size:14px;color:var(--down);margin-bottom:6px;">🔴 매도 구간(분할)</div><div class="kv-grid">${lvRows(sell3, "매도")}</div></div>
+        </div>
+        <div class="sub" style="margin-top:12px;">손절 참고: 최근 저점 <b>${pn(L)}</b> 이탈 시 · 지표 — MA5 ${pn(ma5)} / MA20 ${pn(ma20)} / MA60 ${pn(ma60)} · RSI ${rsiV != null ? rsiV.toFixed(0) : "—"} · 볼린저 ${pn(bbL)}~${pn(bbU)}${pos52 != null ? ` · 52주위치 ${Math.round(pos52 * 100)}%` : ""}</div>
+        <div class="fin-note" style="margin-top:8px;">⚠️ 규칙 기반 종합신호 · 예측 아님 · 판단 보조 · 투자 책임은 본인.</div>
+      `;
+    }
 
     // ===================== 브리핑 탭 =====================
     function dirWords(pct) {
