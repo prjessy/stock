@@ -92,3 +92,57 @@ def current_session(now: datetime | None = None) -> dict:
 def is_market_open(now: datetime | None = None) -> bool:
     """프리/본/에프터 중 하나면 True."""
     return current_session(now)["open"]
+
+
+# 2026 미국 증시 휴장일(ET 기준). 환경변수 US_HOLIDAYS 로 덮어쓰기 가능.
+_US_HOLIDAYS = {
+    "2026-01-01",  # New Year's Day
+    "2026-01-19",  # MLK Day
+    "2026-02-16",  # Presidents' Day
+    "2026-04-03",  # Good Friday
+    "2026-05-25",  # Memorial Day
+    "2026-06-19",  # Juneteenth
+    "2026-07-03",  # Independence Day (관측, 7/4 토)
+    "2026-09-07",  # Labor Day
+    "2026-11-26",  # Thanksgiving
+    "2026-12-25",  # Christmas
+}
+
+
+def _us_holidays() -> set[str]:
+    env = os.getenv("US_HOLIDAYS")
+    if env:
+        return {x.strip() for x in env.split(",") if x.strip()}
+    return _US_HOLIDAYS
+
+
+def us_session(now_utc: datetime | None = None) -> dict:
+    """미국 증시 세션(ET, 서머타임 자동). NQ=F 등 미국 자산 배지용.
+
+    ET 기준 시각·요일로 판정하므로 KST 날짜 밀림(미국 주말이 KST 토~월)이 자연히 반영된다.
+        프리장   04:00 ~ 09:30 ET
+        정규장   09:30 ~ 16:00 ET
+        애프터장 16:00 ~ 20:00 ET
+        토·일·공휴일·그 외 = 휴장
+    타임존 데이터 부재 시 안전 기본값 반환(500 금지).
+    """
+    try:
+        from zoneinfo import ZoneInfo
+        et = (now_utc or datetime.now(timezone.utc)).astimezone(ZoneInfo("America/New_York"))
+    except Exception:
+        return {"session": "unknown", "label": "미국 —", "open": False, "now": ""}
+
+    nowtxt = et.strftime("%H:%M ET")
+    if et.weekday() >= 5 or et.strftime("%Y-%m-%d") in _us_holidays():
+        return {"session": "closed", "label": "휴장", "open": False, "now": nowtxt}
+
+    mins = et.hour * 60 + et.minute
+    if 4 * 60 <= mins < 9 * 60 + 30:
+        s = ("pre", "프리장", True)
+    elif 9 * 60 + 30 <= mins < 16 * 60:
+        s = ("regular", "정규장", True)
+    elif 16 * 60 <= mins < 20 * 60:
+        s = ("after", "애프터장", True)
+    else:
+        s = ("closed", "휴장", False)
+    return {"session": s[0], "label": s[1], "open": s[2], "now": nowtxt}

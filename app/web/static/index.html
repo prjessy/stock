@@ -251,6 +251,7 @@
         <h1><img class="brand-mark" src="/static/brand-radar.png?v=9" alt="" width="42" height="42" />Stock Watchdog</h1>
         <span class="live-badge" id="liveBadge"><span class="live-dot" id="liveDot"></span><span id="liveText">LIVE</span></span>
         <span class="badge" id="sessionBadge"><span class="dot"></span>세션 확인 중…</span>
+        <span class="badge" id="usSessionBadge"><span class="dot"></span>미국 —</span>
       </div>
       <div class="meta">수신 <b id="recvTime">—</b> <span id="liveAge" style="color:var(--muted)"></span> · 1초 실시간(KIS) · 데이터: 한국투자증권 OpenAPI
         <button id="refreshBtn" class="refresh-btn" onclick="forceRefresh()">🔄 강제 동기화</button>
@@ -1290,10 +1291,17 @@
         const s = await (await fetch("/api/session")).json();
         const col = SESSION_COLOR[s.session] || "#8b97a8";
         const el = document.getElementById("sessionBadge");
-        el.innerHTML = `<span class="dot" style="background:${col}"></span>${s.label} · ${s.now}`;
+        el.innerHTML = `<span class="dot" style="background:${col}"></span>🇰🇷 ${s.label} · ${s.now}`;
         el.style.color = col; el.style.background = col + "1a"; el.style.borderColor = col + "59";
+        const u = s.us;
+        const ue = document.getElementById("usSessionBadge");
+        if (u && ue) {
+          const uc = SESSION_COLOR[u.session] || "#8b97a8";
+          ue.innerHTML = `<span class="dot" style="background:${uc}"></span>🇺🇸 ${u.label}${u.now ? " · " + u.now : ""}`;
+          ue.style.color = uc; ue.style.background = uc + "1a"; ue.style.borderColor = uc + "59";
+        }
         const rs = document.getElementById("rtSession");
-        if (rs) rs.textContent = `${s.label} (${s.now} KST)`;
+        if (rs) rs.textContent = `🇰🇷 ${s.label} (${s.now} KST)${u ? " · 🇺🇸 " + u.label : ""}`;
       } catch (e) { /* 화면 유지 */ }
     }
 

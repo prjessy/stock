@@ -239,7 +239,10 @@ def get_session() -> JSONResponse:
     판정 실패 시에도 500 을 내지 않고 안전한 기본값을 반환한다.
     """
     try:
-        return JSONResponse(current_session())
+        from app.core.market import us_session
+        data = current_session()
+        data["us"] = us_session()
+        return JSONResponse(data)
     except Exception:
         return JSONResponse({"session": "closed", "label": "—", "open": False, "now": ""})
 
