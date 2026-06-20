@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -145,6 +145,30 @@ def get_deudeumi_signals_api(symbol: str) -> JSONResponse:
         return JSONResponse(evaluate_signals(symbol, _registry))
     except Exception as exc:
         return JSONResponse({"symbol": symbol, "error": str(exc)})
+
+
+@app.post("/api/notify")
+async def notify_api(request: Request) -> JSONResponse:
+    """브라우저 알림 → 텔레그램 전달(hermes send). 절대 500 금지."""
+    import os
+    import subprocess
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    msg = (data.get("message") or "").strip()
+    subject = data.get("subject") or "🔔 Stock Watchdog"
+    if not msg:
+        return JSONResponse({"ok": False, "error": "empty"})
+    try:
+        subprocess.run(
+            ["/usr/local/bin/hermes", "send", "--to", "telegram", "--subject", subject, msg],
+            env={**os.environ, "HERMES_HOME": os.environ.get("HERMES_HOME", "/root/.hermes")},
+            timeout=30, capture_output=True,
+        )
+        return JSONResponse({"ok": True})
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)})
 
 
 @app.get("/api/alerts")

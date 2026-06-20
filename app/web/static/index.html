@@ -455,6 +455,14 @@
         </div>
         <div class="modal-note">'⚡실시간' 라인을 N초 간격으로 묶어 표시합니다(1=원본 초단위). 초 단위는 페이지를 연 시점부터 쌓인 데이터에만 적용됩니다. 값은 이 브라우저(localStorage)에 저장됩니다.</div>
         <div class="modal-row" style="display:block;">
+          <div class="modal-k" style="margin-bottom:6px;">🔔 알림 방식 (복수 선택)</div>
+          <label style="display:block;margin:4px 0;font-size:14px;"><input type="checkbox" class="ch-input" value="popup"> 팝업 메시지 (브라우저 알림)</label>
+          <label style="display:block;margin:4px 0;font-size:14px;"><input type="checkbox" class="ch-input" value="siren"> 사이렌 소리</label>
+          <label style="display:block;margin:4px 0;font-size:14px;"><input type="checkbox" class="ch-input" value="telegram"> 텔레그램 메시지</label>
+        </div>
+        <div class="modal-note">목표가 도달 시 <b>선택한 방식으로</b> 알립니다(복수 가능, localStorage 저장). 자동 더듬이 사이렌은 별도로 항상 텔레그램으로 발송됩니다.</div>
+        <div class="modal-note">📱 <b>텔레그램 받는 법</b>: 알림은 텔레그램 봇(hermes)으로 전달됩니다. ① 텔레그램에서 봇과 1:1 대화를 <b>/start</b> 로 한 번 시작 → 자동 등록 ② 현재 본 계정으로 이미 연결돼 추가 설정 없이 수신 ③ 안 오면 봇 차단 해제·네트워크 확인. (다른 사용자는 본인 봇 토큰을 서버 .env에 설정)</div>
+        <div class="modal-row" style="display:block;">
           <div class="modal-k" style="margin-bottom:4px;">🎯 목표가 알림</div>
           <div id="targetList"></div>
         </div>
@@ -1121,13 +1129,19 @@
         if (reached && !t.fired) { t.fired = true; saveTargets(); fireTargetAlert(q, t); }
       });
     }
+    function getAlertChannels() { try { const a = JSON.parse(localStorage.getItem("alertChannels")); if (Array.isArray(a)) return a; } catch (e) {} return ["popup", "siren"]; }
+    function saveAlertChannels() {
+      const ch = [...document.querySelectorAll(".ch-input:checked")].map((c) => c.value);
+      localStorage.setItem("alertChannels", JSON.stringify(ch));
+      if (ch.includes("popup")) requestNotifyPermission();
+    }
+    function syncAlertChannels() { const ch = getAlertChannels(); document.querySelectorAll(".ch-input").forEach((c) => { c.checked = ch.includes(c.value); }); }
     function fireTargetAlert(q, t) {
       const msg = `${q.name} ${t.dir === "up" ? "▲ 이상" : "▼ 이하"} 목표가 ${fmtPriceNum(q.currency, t.price)} 도달 — 현재 ${fmtPrice(q)}`;
-      try {
-        if (window.Notification && Notification.permission === "granted")
-          new Notification("🎯 목표가 도달", { body: msg, icon: "/static/favicon-192.png?v=2" });
-      } catch (e) {}
-      beep();
+      const ch = getAlertChannels();
+      if (ch.includes("popup")) { try { if (window.Notification && Notification.permission === "granted") new Notification("🎯 목표가 도달", { body: msg, icon: "/static/icon-192.png?v=7" }); } catch (e) {} }
+      if (ch.includes("siren")) beep();
+      if (ch.includes("telegram")) { fetch("/api/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subject: "🎯 목표가 도달", message: msg }) }).catch(() => {}); }
     }
     function populateTargets() {
       const box = document.getElementById("targetList");
@@ -1153,6 +1167,7 @@
       renderAlertThreshold();
       syncIvInputs();
       syncRtbInputs();
+      syncAlertChannels();
       populateTargets();
       document.getElementById("settingsOverlay").classList.add("open");
     }
@@ -1170,6 +1185,7 @@
       else if (t.classList.contains("tgt-input")) {
         const row = t.closest(".tgt-row"); if (row) setTarget(row.dataset.sym, t.value);
       }
+      else if (t.classList.contains("ch-input")) saveAlertChannels();
     });
     // 목표가 삭제(✕) — 모달은 동적 생성이라 위임.
     document.addEventListener("click", (e) => {
