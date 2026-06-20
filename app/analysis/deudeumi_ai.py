@@ -15,18 +15,27 @@ from app.config import settings
 
 _LOG = Path(settings.db_path).resolve().parent / "deudeumi_signals.jsonl"
 
+_SIG = {"type": "string", "enum": ["strong_buy", "buy", "hold", "sell", "strong_sell"]}
+_SUB = {
+    "type": "object",
+    "properties": {"signal": _SIG, "summary": {"type": "string", "description": "한국어 한 문장"}},
+    "required": ["signal", "summary"],
+    "additionalProperties": False,
+}
 _SCHEMA = {
     "type": "object",
     "properties": {
-        "signal": {"type": "string", "enum": ["strong_buy", "buy", "hold", "sell", "strong_sell"]},
+        "deudeumi2": _SUB,  # 변동장 시점(타이밍)
+        "deudeumi3": _SUB,  # 종목 추이 특성
+        "signal": _SIG,
         "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
-        "summary": {"type": "string", "description": "한국어 한두 문장 판단 요약"},
+        "summary": {"type": "string", "description": "종합 한두 문장 판단 요약"},
         "buy_zone": {"type": "string", "description": "매수 적정 구간(가격), 없으면 '-'"},
         "sell_zone": {"type": "string", "description": "매도 목표 구간(가격), 없으면 '-'"},
         "stop": {"type": "string", "description": "손절 참고가, 없으면 '-'"},
-        "key_factors": {"type": "array", "items": {"type": "string"}, "description": "판단 핵심 근거 지표 3~5개"},
+        "key_factors": {"type": "array", "items": {"type": "string"}, "description": "판단 핵심 근거 3~5개"},
     },
-    "required": ["signal", "confidence", "summary", "buy_zone", "sell_zone", "stop", "key_factors"],
+    "required": ["deudeumi2", "deudeumi3", "signal", "confidence", "summary", "buy_zone", "sell_zone", "stop", "key_factors"],
     "additionalProperties": False,
 }
 
@@ -155,10 +164,11 @@ def analyze(symbol: str, feed: dict, recent: list[dict] | None = None, accuracy:
     prompt = (
         f"다음은 {feed.get('name')}({symbol}) 의 기술/밸류 지표 묶음(JSON)입니다.\n"
         f"```json\n{json.dumps(feed, ensure_ascii=False)}\n```\n"
-        f"[더듬이2] 최근 변동성·추세 흐름상 매수/매도 시점이 임박했는가?\n"
-        f"[더듬이3] 이 종목의 최근 추이 특성(정/역배열, 거래량, 모멘텀)을 반영해 판단.\n"
-        f"추세·지지/저항·거래량·모멘텀(RSI/스토캐스틱/MACD)·밸류(PER/PBR)·52주 위치를 종합해 "
-        f"매수/매도 우호도와 근거를 판단 보조로 제시하세요.{hist_txt}"
+        f"각각 따로 판단해 채우세요:\n"
+        f"- deudeumi2 (변동장 시점): 최근 변동성·모멘텀(RSI/스토캐스틱/MACD)·볼린저로 '지금 진입/이탈 타이밍'인지.\n"
+        f"- deudeumi3 (종목 추이): 이 종목의 추세 특성(정/역배열·거래량·수급·밸류)으로 본 중기 방향.\n"
+        f"- 그리고 둘을 종합한 overall(signal/confidence/summary)과 매수존·매도존·손절·핵심근거.\n"
+        f"예측 아닌 판단 보조로.{hist_txt}"
     )
 
     try:

@@ -1371,11 +1371,20 @@
       const cls = (ai.signal || "").includes("buy") ? "up" : (ai.signal || "").includes("sell") ? "down" : "flat";
       const kf = (ai.key_factors || []).map((f) => `<tr><td class="k">근거</td><td>${f}</td></tr>`).join("");
       document.getElementById("deuAiSub").textContent = ai.name ? `${ai.name} · ${ai.asof}` : "";
+      const subRows = (d) => {
+        if (!d) return `<tr><td class="muted" colspan="2">—</td></tr>`;
+        const c = (d.signal || "").includes("buy") ? "up" : (d.signal || "").includes("sell") ? "down" : "flat";
+        return `<tr><td class="k">신호</td><td class="${c}" style="font-weight:700;">${SIGNAL_LABEL[d.signal] || d.signal}</td></tr><tr><td class="k">요약</td><td>${d.summary || ""}</td></tr>`;
+      };
       const body = document.getElementById("deuAiBody");
       body.className = "";
       body.innerHTML = `
         <table class="deu-table">
-          <tr class="sec"><td colspan="2">🤖 AI 판단</td></tr>
+          <tr class="sec"><td colspan="2">🌀 더듬이2 · 변동장 시점</td></tr>
+          ${subRows(ai.deudeumi2)}
+          <tr class="sec"><td colspan="2">📈 더듬이3 · 종목 추이</td></tr>
+          ${subRows(ai.deudeumi3)}
+          <tr class="sec"><td colspan="2">🎯 종합 판단</td></tr>
           <tr><td class="k">신호</td><td class="${cls}" style="font-weight:700;">${SIGNAL_LABEL[ai.signal] || ai.signal} <span class="muted">신뢰도 ${ai.confidence}</span></td></tr>
           <tr><td class="k">요약</td><td>${ai.summary || ""}</td></tr>
           <tr><td class="k">매수존</td><td>${ai.buy_zone}</td></tr>
