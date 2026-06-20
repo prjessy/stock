@@ -94,6 +94,24 @@ def get_fundamentals_api(symbol: str) -> JSONResponse:
     return JSONResponse(_registry.fundamentals(symbol))
 
 
+@app.get("/api/feed/{symbol}")
+def get_feed_api(symbol: str) -> JSONResponse:
+    """분석 피드 — hermes(Claude)용 지표 묶음(MA/RSI/볼린저/MACD/스토캐스틱/ATR/거래량/피보/52주/밸류).
+
+    더듬이 2·3가 읽는 엔드포인트. 절대 500 을 내지 않는다.
+    """
+    from app.analysis.feed import compute_feed
+    try:
+        rows = _registry.history(symbol, "1y")
+        quote = next((x for x in _poller.quotes() if x.get("symbol") == symbol), None)
+        if quote is None:
+            quote = _registry.source_for(symbol).get_quote(symbol)
+        fund = _registry.fundamentals(symbol)
+    except Exception as exc:
+        return JSONResponse({"symbol": symbol, "error": f"데이터 조회 실패: {exc}"})
+    return JSONResponse(compute_feed(symbol, rows, quote, fund))
+
+
 @app.get("/api/alerts")
 def get_alerts(limit: int = 50) -> JSONResponse:
     """최근 감지된 가격 알림(최신순). 종목명은 메타로 보강.
