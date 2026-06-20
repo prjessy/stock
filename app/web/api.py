@@ -171,6 +171,40 @@ async def notify_api(request: Request) -> JSONResponse:
         return JSONResponse({"ok": False, "error": str(exc)})
 
 
+_BOT_LINK: dict = {}
+
+
+@app.get("/api/bot-link")
+def bot_link_api() -> JSONResponse:
+    """텔레그램 봇 t.me 링크(받는 사람이 /start 누를 곳). getMe 결과 캐시. 절대 500 금지."""
+    import os
+    if _BOT_LINK.get("link"):
+        return JSONResponse(_BOT_LINK)
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    if not token:
+        try:
+            hpath = os.path.join(os.environ.get("HERMES_HOME", "/root/.hermes"), ".env")
+            with open(hpath, encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("TELEGRAM_BOT_TOKEN="):
+                        token = line.split("=", 1)[1].strip()
+                        break
+        except Exception:
+            pass
+    if not token:
+        return JSONResponse({"link": None, "error": "봇 토큰 미설정"})
+    try:
+        import requests
+        r = requests.get(f"https://api.telegram.org/bot{token}/getMe", timeout=8).json()
+        u = (r.get("result") or {}).get("username")
+        if u:
+            _BOT_LINK.update({"link": f"https://t.me/{u}", "username": u})
+            return JSONResponse(_BOT_LINK)
+        return JSONResponse({"link": None, "error": "getMe 실패"})
+    except Exception as exc:
+        return JSONResponse({"link": None, "error": str(exc)})
+
+
 @app.get("/api/alerts")
 def get_alerts(limit: int = 50) -> JSONResponse:
     """최근 감지된 가격 알림(최신순). 종목명은 메타로 보강.
