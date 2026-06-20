@@ -461,7 +461,7 @@
           <label style="display:block;margin:4px 0;font-size:14px;"><input type="checkbox" class="ch-input" value="telegram"> 텔레그램 메시지</label>
         </div>
         <div class="modal-note">목표가 도달 시 <b>선택한 방식으로</b> 알립니다(복수 가능, localStorage 저장). 자동 더듬이 사이렌은 별도로 항상 텔레그램으로 발송됩니다.</div>
-        <div class="modal-note">📱 <b>텔레그램 받는 법</b>: 알림은 텔레그램 봇(hermes)으로 전달됩니다. ① 텔레그램에서 봇과 1:1 대화를 <b>/start</b> 로 한 번 시작 → 자동 등록 ② 현재 본 계정으로 이미 연결돼 추가 설정 없이 수신 ③ 안 오면 봇 차단 해제·네트워크 확인. (다른 사용자는 본인 봇 토큰을 서버 .env에 설정)</div>
+        <div class="modal-note">📱 <b>텔레그램 받기</b> (유저명 입력 불필요):<br>① 텔레그램 <b>@BotFather</b>로 봇 생성 → 토큰 복사<br>② 서버 <code>.env</code>에 <code>TELEGRAM_BOT_TOKEN=토큰</code><br>③ 내 봇에게 <b>/start</b> → 내 chat_id 자동 등록 → 끝<br>(현재 계정은 이미 연결됨 · 자세히: 레포 <code>TELEGRAM_SETUP.md</code>)</div>
         <div class="modal-row" style="display:block;">
           <div class="modal-k" style="margin-bottom:4px;">🎯 목표가 알림</div>
           <div id="targetList"></div>
