@@ -521,7 +521,7 @@
             <button class="refresh-btn" onclick="placeOrder('sell')" style="border-color:var(--down);color:var(--down);">▼ 매도 1주</button>
           </div>
         </div>
-        <div class="modal-note">⚠️ <b>실제 주문</b>(현재 선택 종목, 1주). <b>지정가</b>를 입력하면 그 가격으로, 비우면 시장가로 나갑니다. 장중에만 체결되며 결과는 카톡·텔레그램으로도 옵니다. VPS <code>.env</code>에 계좌번호(KIS_CANO)·주문권한 필요.</div>
+        <div class="modal-note">⚠️ <b>실제 주문</b>(현재 선택 종목, 1주). <b>지정가 필수</b> — 입력한 가격으로만 주문됩니다(시장가 주문은 막아둠). 장중에만 체결되며 결과는 카톡·텔레그램으로도 옵니다. VPS <code>.env</code>에 계좌번호(KIS_CANO)·주문권한 필요.</div>
       </div>
     </div>
 
@@ -1365,8 +1365,8 @@
       const q = quotesById[sym];
       const nm = q ? q.name : sym;
       const price = parseFloat((document.getElementById("orderPrice") || {}).value) || 0;
-      const kind = price > 0 ? `지정가 ${price.toLocaleString()}원` : "시장가";
-      if (!confirm(`${nm}(${sym})\n${side === "buy" ? "매수 ▲" : "매도 ▼"} 1주 · ${kind}\n실제 주문을 내시겠습니까?`)) return;
+      if (!(price > 0)) { alert("지정가를 입력하세요. (시장가 주문은 막아두었습니다)"); return; }
+      if (!confirm(`${nm}(${sym})\n${side === "buy" ? "매수 ▲" : "매도 ▼"} 1주 · 지정가 ${price.toLocaleString()}원\n실제 주문을 내시겠습니까?`)) return;
       try {
         const r = await (await fetch("/api/order", {
           method: "POST", headers: { "Content-Type": "application/json" },
