@@ -188,6 +188,46 @@ class KisPriceSource(PriceSource):
         # 일봉 이력은 무료 소스(FDR)로 충분 — KIS 호출을 아낀다.
         return self._history.get_history(symbol, period)
 
+    # ---------------- ETF 구성종목 (더듬이4용) ----------------
+    def get_etf_constituents(self, etf_code: str, limit: int = 80) -> list[tuple[str, str]]:
+        """ETF 구성종목 [(종목코드, 종목명)] (KIS ETF 구성종목시세 FHKST121600C0).
+
+        실패/휴장(주말엔 output2 빈값)/미지원 시 []. 응답 필드명은 방어적으로 여러 키를 시도한다.
+        """
+        if not settings.kis_app_key or not settings.kis_app_secret:
+            return []
+        try:
+            token = self._ensure_token()
+            resp = self._session.get(
+                f"{settings.kis_domain}/uapi/etfetn/v1/quotations/inquire-component-stock-price",
+                params={"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": etf_code,
+                        "FID_COND_SCR_DIV_CODE": "11216"},
+                headers={
+                    "authorization": f"Bearer {token}",
+                    "appkey": settings.kis_app_key,
+                    "appsecret": settings.kis_app_secret,
+                    "tr_id": "FHKST121600C0",
+                    "custtype": "P",
+                },
+                timeout=_TIMEOUT,
+            )
+            resp.raise_for_status()
+            body = resp.json()
+            if body.get("rt_cd") != "0":
+                return []
+            out = body.get("output2") or []
+            res: list[tuple[str, str]] = []
+            for r in out[:limit]:
+                code = (r.get("stck_shrn_iscd") or r.get("mksc_shrn_iscd")
+                        or r.get("stck_cd") or r.get("shrn_iscd"))
+                name = (r.get("hts_kor_isnm") or r.get("prdt_abrv_name")
+                        or r.get("prdt_name") or code)
+                if code:
+                    res.append((code, name))
+            return res
+        except Exception:
+            return []
+
     # ---------------- 재무 요약 ----------------
     def get_fundamentals(self, symbol: str) -> dict:
         """현재가 시세(FHKST01010100) 응답에 포함된 재무지표로 요약을 만든다.

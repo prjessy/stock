@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from app.config import settings
 from app.core import alert_config
 from app.core.scheduler import is_market_open
 from app.notify.dispatch import notify_all
@@ -34,6 +36,7 @@ class AlertWatcher:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._sent: dict[str, set] = {}  # {거래일: {(symbol, key)}}
+        self._daily_done: str | None = None  # 더듬이1·4 오늘(9시) 실행한 날짜
 
     def start(self) -> None:
         if self._thread is not None:
@@ -66,6 +69,10 @@ class AlertWatcher:
                 self._check()
             except Exception:
                 logger.exception("alert-watch 틱 실패")
+            try:
+                self._maybe_daily()  # 더듬이1·4 — 오전 9시 1회
+            except Exception:
+                logger.exception("더듬이 일일 작업 실패")
             self._stop.wait(self._interval)
 
     def _check(self) -> None:
@@ -114,3 +121,81 @@ class AlertWatcher:
         side = "▲ 이상" if tg.get("dir") == "up" else "▼ 이하"
         return (f"{q.get('name')}({q.get('symbol')}) 목표가 {side} {_fmt(tg['price'], cur)} 도달\n"
                 f"현재가 {_fmt(q.get('price'), cur)} ({q.get('change_pct'):+.2f}%)")
+
+    # ---------------- 더듬이1·4 (오전 9시 1회) ----------------
+    def _maybe_daily(self) -> None:
+        now = datetime.now(_KST)
+        if now.weekday() >= 5 or now.hour < 9:   # 평일 09시 이후에 1회
+            return
+        today = now.strftime("%Y-%m-%d")
+        if self._daily_done == today:
+            return
+        self._daily_done = today  # 오늘 9시 창 처리 표시(중복 방지)
+        types = alert_config.load().get("types") or []
+        if "deudeumi1" in types:
+            try:
+                self._run_deudeumi1()
+            except Exception:
+                logger.exception("더듬이1 실패")
+        if "deudeumi4" in types:
+            try:
+                self._run_deudeumi4()
+            except Exception:
+                logger.exception("더듬이4 실패")
+
+    def _run_deudeumi1(self) -> None:
+        """워치리스트 종목 중 현재가가 피보나치 레벨에 ±1% 근접한 종목 → 알림."""
+        from app.analysis.feed import compute_feed
+        hits = []
+        for sym in settings.kr_symbols:
+            try:
+                rows = self._registry.history(sym, "1y")
+                quote = next((x for x in self._poller.quotes() if x.get("symbol") == sym), None) \
+                    or self._registry.quote(sym)
+                feed = compute_feed(sym, rows, quote, self._registry.fundamentals(sym),
+                                    self._registry.investor_flow(sym))
+                P = feed.get("price")
+                fib = (feed.get("levels") or {}).get("fib_retracement") or {}
+                if not P or not fib:
+                    continue
+                for label, lv in fib.items():
+                    if lv and abs(P - lv) / P <= 0.01:  # 1% 근접
+                        hits.append(f"{feed.get('name') or sym}({sym}) 현재 {_fmt(P,'KRW')} ≈ 피보 {label} {_fmt(lv,'KRW')}")
+                        break
+            except Exception:
+                continue
+        if hits:
+            notify_all("🟣 더듬이1 · 피보나치 근접",
+                       "오늘 09시 기준 피보나치 지지/저항 근접:\n" + "\n".join(hits))
+
+    def _run_deudeumi4(self) -> None:
+        """KODEX 200 구성종목 중 기관·외국인 매수세가 새로(신규) 들어온 종목 → 알림.
+
+        신규 유입 기준: 당일 순매수>0 인데 직전(5일합−당일)≤0 (최근엔 안 사다 오늘 매수 전환).
+        """
+        constituents = self._registry.etf_constituents("069500")  # KODEX 200
+        if not constituents:
+            logger.info("더듬이4: KODEX200 구성종목 비어있음(휴장/필드 미상) — 스킵")
+            return
+        hits = []
+        for code, name in constituents:
+            try:
+                flow = self._registry.investor_flow(code)
+            except Exception:
+                flow = None
+            time.sleep(0.08)  # KIS 초당 호출 제한 회피
+            if not flow:
+                continue
+            for who, day_key, sum_key in (("외국인", "frgn_ntby_qty", "frgn_ntby_sum"),
+                                          ("기관", "orgn_ntby_qty", "orgn_ntby_sum")):
+                day = flow.get(day_key)
+                tot = flow.get(sum_key)
+                if day and day > 0 and tot is not None and (tot - day) <= 0:
+                    hits.append(f"{name}({code}) {who} 신규 순매수 +{int(day):,}주")
+                    break
+        if hits:
+            notify_all("🟢 더듬이4 · ETF 매수세 신규 유입",
+                       f"KODEX 200 구성종목 중 매수세 신규 유입 {len(hits)}종목 (09시):\n"
+                       + "\n".join(hits[:30]))
+        else:
+            logger.info("더듬이4: 신규 매수 유입 종목 없음")

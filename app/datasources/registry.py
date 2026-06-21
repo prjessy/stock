@@ -109,6 +109,11 @@ class SourceRegistry:
         fn = getattr(self.source_for(symbol), "get_orderbook", None)
         return fn(symbol) if fn is not None else None
 
+    def etf_constituents(self, etf_code: str) -> list[tuple[str, str]]:
+        """ETF 구성종목 [(코드, 이름)]. KIS 소스만 지원(더듬이4), 그 외 []."""
+        fn = getattr(self.source_for(etf_code), "get_etf_constituents", None)
+        return fn(etf_code) if fn is not None else []
+
     def clear_caches(self) -> None:
         """강제 동기화: 모든 소스의 TTL 캐시 비우기(다음 조회는 출처에서 새로 받음)."""
         for src in (self._kr, self._us):
