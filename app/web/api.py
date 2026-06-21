@@ -73,6 +73,10 @@ _eod = EodScheduler(_registry)
 from app.analysis.holdings_care import HoldingsCareScheduler
 _care = HoldingsCareScheduler(_registry)
 
+# 주간 복기 리포트(토요일 09:00, 이번주 매매·적중률 AI 복기). 복기만(주문 안 함).
+from app.analysis.weekly_review import WeeklyReviewScheduler
+_weekly = WeeklyReviewScheduler(_registry)
+
 
 @app.on_event("startup")
 def _start_poller() -> None:
@@ -84,6 +88,7 @@ def _start_poller() -> None:
     _autotrade.start()
     _eod.start()
     _care.start()
+    _weekly.start()
 
 
 def _name_for(symbol: str) -> str:
@@ -386,6 +391,23 @@ def run_eod_report_api() -> JSONResponse:
     """장 마감 AI 리포트 지금 생성(수동 테스트). 카톡·텔레그램으로도 발송. 500 금지."""
     try:
         from app.analysis.eod_report import generate
+        return JSONResponse(generate(_registry, send=True))
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)})
+
+
+@app.get("/api/weekly-review")
+def get_weekly_review_api() -> JSONResponse:
+    """저장된 최신 주간 복기 리포트. 500 금지."""
+    from app.analysis.weekly_review import load
+    return JSONResponse(load())
+
+
+@app.post("/api/weekly-review/run")
+def run_weekly_review_api() -> JSONResponse:
+    """주간 복기 리포트 지금 생성(수동). 카톡·텔레그램 발송. 500 금지."""
+    try:
+        from app.analysis.weekly_review import generate
         return JSONResponse(generate(_registry, send=True))
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc)})

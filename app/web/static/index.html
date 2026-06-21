@@ -416,6 +416,14 @@
       </section>
       <section class="panel" style="margin-bottom:16px;">
         <div class="chart-head">
+          <div class="title">🗓️ 주간 복기 리포트 <span style="color:var(--muted);font-weight:500;font-size:13px;margin-left:6px;">매주 토 09:00 자동 → 카톡·텔레그램</span></div>
+          <div class="periods"><button id="weeklyBtn" onclick="runWeekly(this)">지금 생성</button></div>
+        </div>
+        <div class="sub">이번주 매매 내역·더듬이 적중률·보유 현황을 <b>Claude가 복기</b>(총평·잘한점/아쉬운점·다음주 포인트).</div>
+        <div id="weeklyBody" class="empty-state">불러오는 중…</div>
+      </section>
+      <section class="panel" style="margin-bottom:16px;">
+        <div class="chart-head">
           <div class="title">🐜 더듬이 1 · 종합 매매신호 <span id="deuSub" style="color:var(--muted);font-weight:500;font-size:13px;margin-left:6px;"></span></div>
           <div class="periods" id="deuSymbols"></div>
         </div>
@@ -1463,6 +1471,26 @@
     async function loadEodReport() {
       try { renderEod(await (await fetch("/api/eod-report")).json()); } catch (e) { /* 유지 */ }
     }
+    function renderWeekly(r) {
+      const el = document.getElementById("weeklyBody");
+      if (!el) return;
+      if (r && r.ok && r.report) {
+        el.className = "";
+        el.innerHTML = `<div style="color:var(--muted);font-size:11px;margin-bottom:6px;">${r.ts || ""}</div>
+          <div style="white-space:pre-wrap;font-size:13.5px;line-height:1.6;">${r.report}</div>`;
+      } else { el.className = "empty-state"; el.textContent = "아직 없음. '지금 생성'을 누르거나 토요일을 기다리세요."; }
+    }
+    async function loadWeekly() {
+      try { renderWeekly(await (await fetch("/api/weekly-review")).json()); } catch (e) { /* 유지 */ }
+    }
+    async function runWeekly(btn) {
+      const el = document.getElementById("weeklyBody");
+      if (btn) { btn.disabled = true; btn.textContent = "생성 중…"; }
+      if (el) { el.className = "empty-state"; el.textContent = "🤖 주간 복기 생성 중…"; }
+      try { renderWeekly(await (await fetch("/api/weekly-review/run", { method: "POST" })).json()); }
+      catch (e) { if (el) el.textContent = "요청 실패"; }
+      finally { if (btn) { btn.disabled = false; btn.textContent = "지금 생성"; } }
+    }
     async function runEodReport(btn) {
       const el = document.getElementById("eodBody");
       if (btn) { btn.disabled = true; btn.textContent = "생성 중…"; }
@@ -2008,6 +2036,7 @@
         requestAnimationFrame(resizeCharts);
       } else if (name === "deudeumi") {
         loadEodReport();
+        loadWeekly();
         deuFillSymbols();
         if (!deuSymbol) { const first = Object.keys(quotesById)[0]; if (first) setDeuSymbol(first); }
         else loadDeudeumi(deuSymbol);
