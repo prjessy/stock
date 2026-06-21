@@ -15,7 +15,6 @@ from zoneinfo import ZoneInfo
 
 from app.core import alert_config
 from app.core.scheduler import is_market_open
-from app.core.threshold_engine import crossed_thresholds
 from app.notify.dispatch import notify_all
 
 _KST = ZoneInfo("Asia/Seoul")
@@ -76,18 +75,23 @@ class AlertWatcher:
         types = cfg.get("types") or []
         if not types:
             return
-        pct_th = cfg.get("pct_thresholds") or []
+        step = cfg.get("pct_step") or 0
+        count = int(cfg.get("pct_count") or 3)
         targets = cfg.get("targets") or {}
         for q in self._poller.quotes():
             if q.get("stale"):
                 continue
             symbol = q.get("symbol")
             currency = q.get("currency", "")
-            # ① 증감(±%)
-            if "pct" in types and q.get("change_pct") is not None:
-                for t in crossed_thresholds(q.get("change_pct"), pct_th):
-                    if self._mark(symbol, f"pct{t:+g}"):
-                        notify_all("🔔 등락 알림", self._msg_pct(q, t))
+            # ① 증감(±%) — step 배수마다(±step·±2step·±3step…) 도달 시 단계별 1회씩.
+            cp = q.get("change_pct")
+            if "pct" in types and cp is not None and step > 0:
+                n = min(int(abs(cp) / step), count)  # 도달한 배수 개수(설정 횟수까지만)
+                sign = 1 if cp >= 0 else -1
+                for k in range(1, n + 1):
+                    level = round(sign * step * k, 4)
+                    if self._mark(symbol, f"pct{level:+g}"):
+                        notify_all("🔔 등락 알림", self._msg_pct(q, level))
             # ② 목표금액
             if "target" in types and q.get("price") is not None:
                 tg = targets.get(symbol)
@@ -102,7 +106,7 @@ class AlertWatcher:
         pct = q.get("change_pct")
         arrow = "▲ 상승" if pct >= 0 else "▼ 하락"
         cur = q.get("currency", "")
-        return (f"{q.get('name')}({q.get('symbol')}) {arrow} {pct:+.2f}% · 임계값 {t:+g}% 도달\n"
+        return (f"{q.get('name')}({q.get('symbol')}) {arrow} {pct:+.2f}% · {t:+g}% 단계 돌파\n"
                 f"현재가 {_fmt(q.get('price'), cur)} (전일 {_fmt(q.get('prev_close'), cur)})")
 
     def _msg_tgt(self, q: dict, tg: dict) -> str:

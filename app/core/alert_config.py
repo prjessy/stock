@@ -16,7 +16,8 @@ _FILE = Path(settings.db_path).resolve().parent / "alert_config.json"
 _VALID_TYPES = ("pct", "target", "deudeumi1", "deudeumi4")
 _DEFAULT = {
     "types": ["pct", "target"],          # 활성 알림 종류(멀티)
-    "pct_thresholds": [3.0, -3.0],       # 증감 임계값(기본 +3/-3)
+    "pct_step": 3.0,                     # 증감 단계(%). ±step,±2step,±3step… 배수마다 알림(기본 ±3)
+    "pct_count": 3,                      # 증감 알림 최대 횟수(단계 수). 예: 3 → step·2step·3step 까지
     "targets": {},                       # {symbol: {"price": float, "dir": "up"|"down"}}
 }
 
@@ -25,7 +26,12 @@ def load() -> dict:
     try:
         if _FILE.exists():
             d = json.loads(_FILE.read_text(encoding="utf-8"))
-            return {**_DEFAULT, **d}
+            # 구버전(pct_thresholds) 마이그레이션 → pct_step(첫 양수).
+            if "pct_step" not in d and isinstance(d.get("pct_thresholds"), list):
+                pos = next((abs(float(x)) for x in d["pct_thresholds"] if float(x) > 0), None)
+                if pos:
+                    d["pct_step"] = pos
+            return {**_DEFAULT, **{k: v for k, v in d.items() if k in _DEFAULT}}
     except Exception:
         pass
     return {**_DEFAULT}
@@ -36,9 +42,16 @@ def save(cfg: dict) -> dict:
     cur = load()
     if isinstance(cfg.get("types"), list):
         cur["types"] = [t for t in cfg["types"] if t in _VALID_TYPES]
-    if isinstance(cfg.get("pct_thresholds"), list):
+    if cfg.get("pct_step") is not None:
         try:
-            cur["pct_thresholds"] = [round(float(x), 4) for x in cfg["pct_thresholds"]][:8]
+            step = round(float(cfg["pct_step"]), 4)
+            if step > 0:
+                cur["pct_step"] = step
+        except Exception:
+            pass
+    if cfg.get("pct_count") is not None:
+        try:
+            cur["pct_count"] = max(1, min(20, int(cfg["pct_count"])))
         except Exception:
             pass
     if isinstance(cfg.get("targets"), dict):

@@ -478,10 +478,11 @@
         </div>
         <div class="modal-note">선택한 알림을 <b>서버가 장중(평일 08~20시) 자동 감시</b>해 <b>텔레그램+카카오</b>로 보냅니다 — <b>브라우저를 안 켜도 수신</b>됩니다. 더듬이1·4 발송은 곧 추가됩니다.</div>
         <div class="modal-row">
-          <div class="modal-k">등락률(증감) 임계값</div>
-          <div class="modal-v">±<input class="thr-input" type="number" min="0.5" max="50" step="0.5" value="3">%</div>
+          <div class="modal-k">등락률(증감) 단계 · 횟수</div>
+          <div class="modal-v">±<input class="thr-input" type="number" min="0.5" max="50" step="0.5" value="3">% × 최대 <input class="cnt-input" type="number" min="1" max="20" step="1" value="3" style="width:52px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:4px 6px;font-size:14px;">회</div>
         </div>
-        <div class="modal-note">설정한 ±% 도달 시 <b>종목 카드 🔔 강조</b> + (증감 알림 켜면) <b>서버가 텔레그램·카카오 발송</b>. 이 값이 서버 증감 알림 임계값으로 함께 저장됩니다(기본 ±3%).</div>
+        <div class="modal-note">단계의 <b>배수마다</b> 알림. 증감 알림을 켜면 <b>서버가 텔레그램·카카오로 발송</b>(폰 꺼도 수신). 카드 🔔 강조도 같은 기준.</div>
+        <div class="modal-note" id="pctPreview" style="color:var(--accent);font-weight:600;"></div>
         <div class="modal-row">
           <div class="modal-k">오늘 흐름 간격</div>
           <div class="modal-v"><input class="iv-input" type="number" min="1" max="120" step="1" value="5" style="width:62px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:4px 6px;font-size:14px;font-variant-numeric:tabular-nums;">분</div>
@@ -530,6 +531,9 @@
     // ±% 표시 임계값(클라이언트 전용, localStorage). 서버 .env 알림 임계값과 별개.
     let ALERT_PCT = parseFloat(localStorage.getItem("alertPct"));
     if (!(ALERT_PCT > 0)) ALERT_PCT = 3;
+    // 증감 알림 최대 횟수(단계 수). ±step·±2step…±N step 까지.
+    let ALERT_COUNT = parseInt(localStorage.getItem("alertCount"), 10);
+    if (!(ALERT_COUNT >= 1 && ALERT_COUNT <= 20)) ALERT_COUNT = 3;
     const prevPrice = {};   // 시세 변동 플래시용: 심볼별 직전 가격
 
     // 목표가 알림(클라이언트, localStorage). {symbol: {price, dir:"up"|"down", fired}}
@@ -1120,6 +1124,26 @@
       document.querySelectorAll(".thr-input").forEach((inp) => {
         if (parseFloat(inp.value) !== ALERT_PCT) inp.value = ALERT_PCT;
       });
+      document.querySelectorAll(".cnt-input").forEach((inp) => {
+        if (parseInt(inp.value, 10) !== ALERT_COUNT) inp.value = ALERT_COUNT;
+      });
+      renderPctPreview();
+    }
+    function renderPctPreview() {
+      const el = document.getElementById("pctPreview");
+      if (!el) return;
+      const lv = [];
+      for (let k = 1; k <= ALERT_COUNT; k++) lv.push(Math.round(ALERT_PCT * k * 100) / 100);
+      const s = lv.join("·");
+      el.textContent = `→ 알림: +${s}%  /  -${s}%`;
+    }
+    function setAlertCount(v) {
+      v = parseInt(v, 10);
+      if (!(v >= 1 && v <= 20)) return;
+      ALERT_COUNT = v;
+      localStorage.setItem("alertCount", String(v));
+      renderAlertThreshold();
+      saveServerAlertConfig();   // 서버 동기화
     }
     // ---- 목표가 알림(클라이언트) ----
     function requestNotifyPermission() {
@@ -1198,19 +1222,25 @@
     function checkPctAlerts(quotes) {
       const today = new Date().toISOString().slice(0, 10);
       if (pctFired.date !== today) pctFired = { date: today, syms: {} };  // 날짜 바뀌면 리셋
+      const step = ALERT_PCT;
       quotes.forEach((q) => {
-        if (q.change_pct == null || q.stale) return;  // 휴장·종가(멈춘 값)엔 알림 안 함
-        const hit = Math.abs(q.change_pct) >= ALERT_PCT;
-        if (hit && !pctFired.syms[q.symbol]) {
-          pctFired.syms[q.symbol] = true;
-          try { localStorage.setItem("pctFired", JSON.stringify(pctFired)); } catch (e) {}
-          firePctAlert(q);
+        if (q.change_pct == null || q.stale || !(step > 0)) return;  // 휴장·종가(멈춘 값)엔 알림 안 함
+        const n = Math.min(Math.floor(Math.abs(q.change_pct) / step), ALERT_COUNT);  // 도달한 배수(설정 횟수까지)
+        const sign = q.change_pct >= 0 ? 1 : -1;
+        for (let k = 1; k <= n; k++) {
+          const level = sign * step * k;
+          const key = q.symbol + ":" + level;
+          if (!pctFired.syms[key]) {
+            pctFired.syms[key] = true;
+            try { localStorage.setItem("pctFired", JSON.stringify(pctFired)); } catch (e) {}
+            firePctAlert(q, level);
+          }
         }
       });
     }
-    function firePctAlert(q) {
+    function firePctAlert(q, level) {
       const dir = q.change_pct >= 0 ? "▲ 상승" : "▼ 하락";
-      const msg = `${q.name} ${dir} ${fmtChange(q.change_pct)} · ±${ALERT_PCT}% 도달 — 현재 ${fmtPrice(q)}`;
+      const msg = `${q.name} ${dir} ${fmtChange(q.change_pct)} · ${level >= 0 ? "+" : ""}${level}% 단계 돌파 — 현재 ${fmtPrice(q)}`;
       const ch = getAlertChannels();
       if (ch.includes("popup")) { try { if (window.Notification && Notification.permission === "granted") new Notification("🔔 등락 알림", { body: msg, icon: "/static/icon-192.png?v=7" }); } catch (e) {} }
       if (ch.includes("siren")) beep();
@@ -1277,8 +1307,11 @@
         const c = await (await fetch("/api/alert-config")).json();
         const types = c.types || [];
         document.querySelectorAll(".at-input").forEach((cb) => { cb.checked = types.includes(cb.value); });
-        const pos = (c.pct_thresholds || []).find((x) => x > 0);   // 서버 증감 임계값(양수)로 ±% 동기화
-        if (pos > 0) { ALERT_PCT = pos; localStorage.setItem("alertPct", String(pos)); renderAlertThreshold(); }
+        const step = c.pct_step;   // 서버 증감 단계로 ±% 동기화
+        if (step > 0) { ALERT_PCT = step; localStorage.setItem("alertPct", String(step)); }
+        const cnt = parseInt(c.pct_count, 10);
+        if (cnt >= 1 && cnt <= 20) { ALERT_COUNT = cnt; localStorage.setItem("alertCount", String(cnt)); }
+        renderAlertThreshold();
         if (c.targets) {  // 서버 목표가를 클라에 병합(없던 종목만)
           Object.entries(c.targets).forEach(([sym, t]) => {
             if (!priceTargets[sym]) priceTargets[sym] = { price: t.price, dir: t.dir, fired: false };
@@ -1293,7 +1326,7 @@
       Object.entries(priceTargets).forEach(([sym, t]) => { if (t && t.price > 0) targets[sym] = { price: t.price, dir: t.dir }; });
       fetch("/api/alert-config", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ types, pct_thresholds: [ALERT_PCT, -ALERT_PCT], targets }),
+        body: JSON.stringify({ types, pct_step: ALERT_PCT, pct_count: ALERT_COUNT, targets }),
       }).catch(() => {});
     }
     function openSettings() {
@@ -1316,6 +1349,7 @@
       const t = e.target;
       if (!t.classList) return;
       if (t.classList.contains("thr-input")) setAlertPct(parseFloat(t.value));
+      else if (t.classList.contains("cnt-input")) setAlertCount(t.value);
       else if (t.classList.contains("iv-input")) setIntraMin(parseFloat(t.value));
       else if (t.classList.contains("rtb-input")) setRtBucket(parseFloat(t.value));
       else if (t.classList.contains("tgt-input")) {
