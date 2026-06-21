@@ -253,6 +253,10 @@ async def order_api(request: Request) -> JSONResponse:
         data = await request.json()
     except Exception:
         data = {}
+    # 🔒 주문 비밀번호 검증 — 사이트가 공개돼 있어도 비번 없으면 주문 거부.
+    from app.config import settings as _cfg
+    if (data.get("password") or "") != _cfg.trade_password:
+        return JSONResponse({"ok": False, "error": "비밀번호가 올바르지 않습니다 — 주문 권한 없음"})
     symbol = (data.get("symbol") or "").strip()
     side = data.get("side")
     try:
@@ -288,6 +292,16 @@ def order_status_api() -> JSONResponse:
         "max_qty": _s.trade_max_qty,
         "auto_enabled": _s.trade_enabled,
     })
+
+
+@app.get("/api/order/history")
+def order_history_api(days: int = 7) -> JSONResponse:
+    """최근 N일 체결/미체결 주문 내역(자동매매봇 탭). 500 금지."""
+    from app.trading.kis_order import OrderClient
+    src = _registry.kr_source()
+    if not hasattr(src, "_ensure_token"):
+        return JSONResponse({"ok": False, "error": "KIS 주문 소스 없음(키 미설정)"})
+    return JSONResponse(OrderClient(src).list_orders(days=days))
 
 
 @app.get("/api/alert-config")

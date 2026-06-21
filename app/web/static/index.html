@@ -307,6 +307,7 @@
       <button class="tab-btn" data-tab="marketing" role="tab" aria-selected="false">🍡 찰떡 써머리</button>
       <button class="tab-btn" data-tab="deudeumi" role="tab" aria-selected="false">🐜 더듬이</button>
       <button class="tab-btn" data-tab="alarm" role="tab" aria-selected="false">🔔 알람</button>
+      <button class="tab-btn" data-tab="autotrade" role="tab" aria-selected="false">🤖 자동매매봇 🔒</button>
     </nav>
 
     <!-- ===== 탭 1: 대시보드 (기존 기능 그대로) ===== -->
@@ -460,7 +461,33 @@
       </section>
     </div>
 
-    <!-- 🤖 자동매매봇 탭은 일단 제거(향후 가능성). 계획: docs/AUTO_TRADING_FUTURE.md -->
+    <!-- ===== 탭 6: 🤖 자동매매봇 (비밀번호 보호) ===== -->
+    <div class="tab-panel" id="panel-autotrade" role="tabpanel">
+      <section class="panel">
+        <h2>🧪 주문 테스트 (실거래 · 1주)</h2>
+        <div class="sub">현재 대시보드에서 <b>선택한 종목</b>을 1주만 주문합니다. <b>지정가 필수</b>(시장가 주문은 막아둠) · 장중에만 체결 · 결과는 카톡·텔레그램으로도 옵니다.</div>
+        <div id="orderStatus" style="font-size:12.5px;color:var(--muted);margin:10px 0;">상태 확인 중…</div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+          <span style="font-size:13px;">지정가</span>
+          <input id="orderPrice" type="number" min="0" step="any" placeholder="현재가"
+            style="width:120px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:4px 6px;font-size:14px;font-variant-numeric:tabular-nums;">
+          <span style="font-size:13px;">원</span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="refresh-btn" onclick="placeOrder('buy')" style="border-color:var(--up);color:var(--up);">▲ 매수 1주</button>
+          <button class="refresh-btn" onclick="placeOrder('sell')" style="border-color:var(--down);color:var(--down);">▼ 매도 1주</button>
+        </div>
+        <div class="sub" style="margin-top:12px;">⚠️ <b>실제 주문</b>입니다. 대시보드에서 종목을 먼저 선택하세요. VPS <code>.env</code>에 계좌번호(KIS_CANO)·주문권한이 필요합니다.</div>
+      </section>
+      <section class="panel">
+        <div class="chart-head">
+          <h2 style="font-size:15px;margin:0;">📋 체결 / 미체결 내역 <span style="color:var(--muted);font-weight:500;font-size:12px;margin-left:6px;">최근 7일 · 내 주문</span></h2>
+          <button class="refresh-btn" onclick="loadOrderHistory(this)">🔄 새로고침</button>
+        </div>
+        <div class="sub">주문번호·종목·매수/매도·주문수량/가격·체결수량·미체결잔량·상태. KIS 계좌 기준.</div>
+        <div id="orderHistory" class="empty-state">불러오는 중…</div>
+      </section>
+    </div>
 
     <!-- ===== 설정 모달 (톱니바퀴) ===== -->
     <div class="modal-overlay" id="settingsOverlay" onclick="if(event.target===this)closeSettings()">
@@ -507,21 +534,7 @@
           <div id="targetList"></div>
         </div>
         <div class="modal-note">종목별 목표가 도달 시 <b>카드 강조 + 브라우저 알림 + 소리</b>. 목표가가 현재가보다 높으면 '이상', 낮으면 '이하' 도달 시 발동합니다. 한 번 발동하면 값을 다시 설정할 때까지 반복하지 않습니다. (대시보드가 열려 있을 때 동작 · localStorage 저장)</div>
-        <div class="modal-row" style="display:block;">
-          <div class="modal-k" style="margin-bottom:4px;">🧪 주문 테스트 (실거래 · 1주)</div>
-          <div id="orderStatus" style="font-size:12.5px;color:var(--muted);margin-bottom:6px;">상태 확인 중…</div>
-          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
-            <span style="font-size:13px;">지정가</span>
-            <input id="orderPrice" type="number" min="0" step="any" placeholder="현재가"
-              style="width:120px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:4px 6px;font-size:14px;font-variant-numeric:tabular-nums;">
-            <span style="font-size:13px;">원</span>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button class="refresh-btn" onclick="placeOrder('buy')" style="border-color:var(--up);color:var(--up);">▲ 매수 1주</button>
-            <button class="refresh-btn" onclick="placeOrder('sell')" style="border-color:var(--down);color:var(--down);">▼ 매도 1주</button>
-          </div>
-        </div>
-        <div class="modal-note">⚠️ <b>실제 주문</b>(현재 선택 종목, 1주). <b>지정가 필수</b> — 입력한 가격으로만 주문됩니다(시장가 주문은 막아둠). 장중에만 체결되며 결과는 카톡·텔레그램으로도 옵니다. VPS <code>.env</code>에 계좌번호(KIS_CANO)·주문권한 필요.</div>
+        <div class="modal-note">🧪 <b>주문 테스트(실거래)</b>는 상단 <b>🤖 자동매매봇 🔒</b> 탭으로 이동했습니다(비밀번호 보호).</div>
       </div>
     </div>
 
@@ -1359,6 +1372,54 @@
         }
       } catch (e) { el.textContent = "상태 확인 실패"; }
     }
+    // ===== 체결/미체결 내역 — /api/order/history =====
+    async function loadOrderHistory(btn) {
+      const el = document.getElementById("orderHistory");
+      if (!el) return;
+      if (btn) { btn.disabled = true; btn.textContent = "불러오는 중…"; }
+      try {
+        const r = await (await fetch("/api/order/history?days=7")).json();
+        if (!r.ok) { el.innerHTML = `<span style="color:var(--down)">조회 실패 — ${r.error || ""}</span>`; return; }
+        const list = r.orders || [];
+        if (!list.length) { el.textContent = "최근 7일 주문 내역이 없습니다."; return; }
+        const fmtT = (d, t) => {
+          if (!t) return d || "—";
+          const hh = t.slice(0, 2), mm = t.slice(2, 4), ss = t.slice(4, 6);
+          const md = d ? `${d.slice(4, 6)}/${d.slice(6, 8)} ` : "";
+          return `${md}${hh}:${mm}:${ss}`;
+        };
+        const badge = (s) => {
+          const c = s === "체결" ? "var(--up)" : s === "미체결" ? "var(--down)" : "var(--gold)";
+          return `<b style="color:${c}">${s}</b>`;
+        };
+        const sideCol = (sd) => {
+          const isBuy = (sd || "").includes("매수");
+          return `<span style="color:${isBuy ? "var(--up)" : "var(--down)"}">${sd || "—"}</span>`;
+        };
+        const rows = list.map((o) => `
+          <tr>
+            <td style="white-space:nowrap;">${fmtT(o.date, o.time)}</td>
+            <td>${o.name || o.symbol || "—"}</td>
+            <td style="text-align:center;">${sideCol(o.side)}</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums;">${(o.ord_qty || 0).toLocaleString()}주</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums;">${(o.ord_price || 0).toLocaleString()}</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums;">${(o.ccld_qty || 0).toLocaleString()}주</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--down)">${(o.rmn_qty || 0).toLocaleString()}주</td>
+            <td style="text-align:center;">${badge(o.status)}</td>
+          </tr>`).join("");
+        el.classList.remove("empty-state");
+        el.innerHTML = `<div class="tbl-wrap"><table class="alert-table" style="width:100%;font-size:13px;">
+          <thead><tr>
+            <th style="text-align:left;">시각</th><th style="text-align:left;">종목</th><th>구분</th>
+            <th style="text-align:right;">주문</th><th style="text-align:right;">주문가</th>
+            <th style="text-align:right;">체결</th><th style="text-align:right;">미체결</th><th>상태</th>
+          </tr></thead><tbody>${rows}</tbody></table></div>`;
+      } catch (e) {
+        el.innerHTML = `<span style="color:var(--down)">조회 요청 실패</span>`;
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = "🔄 새로고침"; }
+      }
+    }
     async function placeOrder(side) {
       const sym = selected;
       if (!sym) { alert("종목을 먼저 선택하세요."); return; }
@@ -1370,14 +1431,13 @@
       try {
         const r = await (await fetch("/api/order", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ symbol: sym, side, price }),
+          body: JSON.stringify({ symbol: sym, side, price, password: autotradePw }),
         })).json();
         alert(r.ok ? `✅ 접수됨\n${r.msg || ""}\n주문번호 ${r.order_no || "-"}` : `❌ 실패\n${r.error || ""}`);
       } catch (e) { alert("주문 요청 실패"); }
     }
     function openSettings() {
       renderAlertThreshold();
-      loadOrderStatus();
       syncIvInputs();
       syncRtbInputs();
       syncAlertChannels();
@@ -1595,7 +1655,24 @@
       if (lowerMode !== "none") lowerChart.timeScale().fitContent();
     }
 
+    // 🔒 자동매매봇 탭 비밀번호 보호 (다른 사람 통제용 · 세션 동안 1회만 입력)
+    // 실제 차단은 서버(/api/order)가 비밀번호를 검증해서 함. 여기서 입력받은 값을
+    // 주문 요청에 함께 실어 보냄 — 비번을 모르면 주소를 알아도 주문 불가.
+    let autotradeUnlocked = !!sessionStorage.getItem("autotradePw");
+    let autotradePw = sessionStorage.getItem("autotradePw") || "";
+    function unlockAutotrade() {
+      if (autotradeUnlocked) return true;
+      const pw = prompt("🔒 자동매매봇 — 비밀번호를 입력하세요");
+      if (pw === null) return false;          // 취소
+      if (!pw) { alert("비밀번호를 입력하세요."); return false; }
+      autotradePw = pw;
+      autotradeUnlocked = true;
+      sessionStorage.setItem("autotradePw", pw);
+      return true;
+    }
+
     function activateTab(name) {
+      if (name === "autotrade" && !unlockAutotrade()) return;   // 잠금: 통과 못하면 탭 전환 안 함
       document.querySelectorAll(".tab-btn").forEach((b) => {
         const on = b.dataset.tab === name;
         b.classList.toggle("active", on);
@@ -1617,6 +1694,9 @@
         loadMarketing();
       } else if (name === "alarm" && !alarmLoaded) {
         alarmLoaded = true; loadAlarm();
+      } else if (name === "autotrade") {
+        loadOrderStatus();
+        loadOrderHistory();
       }
     }
 
