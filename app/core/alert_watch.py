@@ -183,7 +183,7 @@ class AlertWatcher:
                 flow = self._registry.investor_flow(code)
             except Exception:
                 flow = None
-            time.sleep(0.08)  # KIS 초당 호출 제한 회피
+            time.sleep(0.15)  # KIS 초당 호출 제한 회피(폴러와 겹쳐도 여유 — 약 6.6건/초)
             if not flow:
                 continue
             for who, day_key, sum_key in (("외국인", "frgn_ntby_qty", "frgn_ntby_sum"),
