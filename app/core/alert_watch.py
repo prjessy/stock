@@ -168,20 +168,20 @@ class AlertWatcher:
                        "오늘 09시 기준 피보나치 지지/저항 근접:\n" + "\n".join(hits))
 
     def _run_deudeumi4(self) -> None:
-        """KODEX 200 구성종목 중 기관·외국인 매수세가 새로(신규) 들어온 종목 → 알림.
+        """테마(조선·방산·원전·반도체·소부장) 대표종목 중 외인·기관 신규 매수 유입 → 알림.
 
         실제 탐지 로직은 analysis.etf_flow.scan_inflow 와 공유(화면/알림 동일 기준).
         """
         from app.analysis.etf_flow import scan_inflow
-        res = scan_inflow(self._registry, "069500", limit=200)
+        res = scan_inflow(self._registry)
         if not res.get("ok"):
             logger.info("더듬이4: %s — 스킵", res.get("note"))
             return
         items = res.get("items") or []
         if items:
-            hits = [f"{i['name']}({i['code']}) {i['who']} 신규 순매수 +{i['qty']:,}주" for i in items]
-            notify_all("🟢 더듬이4 · ETF 매수세 신규 유입",
-                       f"KODEX 200 구성종목 중 매수세 신규 유입 {len(hits)}종목 (09시):\n"
+            hits = [f"[{i['theme']}] {i['name']}({i['code']}) {i['who']} 신규 순매수 +{i['qty']:,}주" for i in items]
+            notify_all("🟢 더듬이4 · 테마 매수세 신규 유입",
+                       f"테마 대표종목 중 매수세 신규 유입 {len(hits)}종목 (09시):\n"
                        + "\n".join(hits[:30]))
         else:
             logger.info("더듬이4: 신규 매수 유입 종목 없음")

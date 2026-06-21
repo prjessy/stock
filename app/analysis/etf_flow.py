@@ -1,43 +1,68 @@
-"""더듬이4 — ETF(기본 KODEX 200) 구성종목 중 '신규 매수세 유입' 종목 탐지.
+"""더듬이4 — 테마별(조선·방산·원전·반도체·반도체 소부장) '신규 매수세 유입' 종목 탐지.
 
 신규 유입 기준: 당일 순매수>0 인데 직전(5일합−당일)≤0 → 최근엔 안 사다 오늘 매수 전환.
 외국인·기관 각각 검사. 알림(alert_watch)·화면(API) 양쪽에서 공유한다.
-예외는 올리지 않고 빈 결과로 처리한다.
+예외는 올리지 않고 빈 결과로 처리한다. 잘못된 코드는 조회 실패→건너뜀(안전).
+
+⚠️ 종목 코드는 사용자 확인 필요 — 틀리거나 빠진 게 있으면 THEMES 만 고치면 된다.
 """
 from __future__ import annotations
 
 import time
 
-_DEFAULT_ETF = "069500"  # KODEX 200
-_THROTTLE = 0.15         # KIS 초당 호출 제한 회피(폴러와 겹쳐도 여유)
+_THROTTLE = 0.15   # KIS 초당 호출 제한 회피
+
+# 테마별 대표 종목 [(코드, 이름)]. 필요 시 여기만 수정.
+THEMES: dict[str, list[tuple[str, str]]] = {
+    "조선": [
+        ("009540", "HD한국조선해양"), ("329180", "HD현대중공업"), ("010140", "삼성중공업"),
+        ("042660", "한화오션"), ("010620", "HD현대미포"),
+    ],
+    "방산": [
+        ("012450", "한화에어로스페이스"), ("047810", "한국항공우주"), ("079550", "LIG넥스원"),
+        ("064350", "현대로템"), ("272210", "한화시스템"),
+    ],
+    "원전": [
+        ("034020", "두산에너빌리티"), ("052690", "한전기술"), ("051600", "한전KPS"),
+        ("015760", "한국전력"), ("100090", "삼강엠앤티"),
+    ],
+    "반도체": [
+        ("005930", "삼성전자"), ("000660", "SK하이닉스"), ("000990", "DB하이텍"),
+    ],
+    "반도체 소부장": [
+        ("042700", "한미반도체"), ("240810", "원익IPS"), ("058470", "리노공업"),
+        ("039030", "이오테크닉스"), ("403870", "HPSP"), ("036930", "주성엔지니어링"),
+        ("005290", "동진쎄미켐"),
+    ],
+}
 
 
-def scan_inflow(registry, etf_code: str = _DEFAULT_ETF, limit: int = 60) -> dict:
-    """구성종목을 훑어 신규 매수세 유입 종목 목록을 반환.
+def scan_inflow(registry, etf_code: str | None = None, limit: int | None = None) -> dict:
+    """테마 대표 종목을 훑어 신규 매수세 유입 종목 목록 반환(테마 태그 포함).
 
-    반환 {ok, etf, scanned, items:[{code,name,who,qty}], note}. items 는 외인/기관 신규 유입.
+    반환 {ok, scanned, items:[{code,name,theme,who,qty}], note}. etf_code/limit 인자는 호환용(무시).
     """
-    constituents = registry.etf_constituents(etf_code)
-    if not constituents:
-        return {"ok": False, "etf": etf_code, "scanned": 0, "items": [],
-                "note": "구성종목 없음(휴장/장개시 전이거나 ETF 코드 미지원)"}
     items = []
     scanned = 0
-    for code, name in constituents[:limit]:
-        scanned += 1
-        try:
-            flow = registry.investor_flow(code)
-        except Exception:
-            flow = None
-        time.sleep(_THROTTLE)
-        if not flow:
-            continue
-        for who, day_key, sum_key in (("외국인", "frgn_ntby_qty", "frgn_ntby_sum"),
-                                      ("기관", "orgn_ntby_qty", "orgn_ntby_sum")):
-            day = flow.get(day_key)
-            tot = flow.get(sum_key)
-            if day and day > 0 and tot is not None and (tot - day) <= 0:
-                items.append({"code": code, "name": name, "who": who, "qty": int(day)})
-                break
+    for theme, stocks in THEMES.items():
+        for code, name in stocks:
+            scanned += 1
+            try:
+                flow = registry.investor_flow(code)
+            except Exception:
+                flow = None
+            time.sleep(_THROTTLE)
+            if not flow:
+                continue
+            for who, day_key, sum_key in (("외국인", "frgn_ntby_qty", "frgn_ntby_sum"),
+                                          ("기관", "orgn_ntby_qty", "orgn_ntby_sum")):
+                day = flow.get(day_key)
+                tot = flow.get(sum_key)
+                if day and day > 0 and tot is not None and (tot - day) <= 0:
+                    items.append({"code": code, "name": name, "theme": theme,
+                                  "who": who, "qty": int(day)})
+                    break
+    if scanned == 0:
+        return {"ok": False, "scanned": 0, "items": [], "note": "테마 종목 없음"}
     items.sort(key=lambda x: x["qty"], reverse=True)
-    return {"ok": True, "etf": etf_code, "scanned": scanned, "items": items, "note": ""}
+    return {"ok": True, "scanned": scanned, "items": items, "note": ""}
