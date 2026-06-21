@@ -11,6 +11,7 @@ from __future__ import annotations
 import time
 
 _THROTTLE = 0.15   # KIS 초당 호출 제한 회피
+_SURGE_MULT = 2.0  # 급증 판정: 당일 순매수 ≥ 직전 4일 일평균 × 이 배수
 
 # 테마별 대표 종목 [(코드, 이름)]. 필요 시 여기만 수정.
 THEMES: dict[str, list[tuple[str, str]]] = {
@@ -40,7 +41,8 @@ THEMES: dict[str, list[tuple[str, str]]] = {
 def scan_inflow(registry, etf_code: str | None = None, limit: int | None = None) -> dict:
     """테마 대표 종목을 훑어 신규 매수세 유입 종목 목록 반환(테마 태그 포함).
 
-    반환 {ok, scanned, items:[{code,name,theme,who,qty}], note}. etf_code/limit 인자는 호환용(무시).
+    반환 {ok, scanned, items:[{code,name,theme,who,qty,reason}], note}. etf_code/limit 인자는 호환용(무시).
+    reason: "신규편입"(안 사다 오늘 매수 전환) | "급증매수"(평소보다 급증).
     """
     items = []
     scanned = 0
@@ -58,10 +60,18 @@ def scan_inflow(registry, etf_code: str | None = None, limit: int | None = None)
                                           ("기관", "orgn_ntby_qty", "orgn_ntby_sum")):
                 day = flow.get(day_key)
                 tot = flow.get(sum_key)
-                if day and day > 0 and tot is not None and (tot - day) <= 0:
-                    items.append({"code": code, "name": name, "theme": theme,
-                                  "who": who, "qty": int(day)})
-                    break
+                if not day or day <= 0 or tot is None:
+                    continue
+                prior4 = tot - day            # 직전 4일 순매수 합
+                if prior4 <= 0:
+                    reason = "신규편입"        # 안 사다 오늘 매수 전환
+                elif day >= _SURGE_MULT * (prior4 / 4):
+                    reason = "급증매수"        # 평소(직전 4일 평균)보다 2배+ 매수
+                else:
+                    continue                  # 평범한 지속 매수 — 제외
+                items.append({"code": code, "name": name, "theme": theme,
+                              "who": who, "qty": int(day), "reason": reason})
+                break
     if scanned == 0:
         return {"ok": False, "scanned": 0, "items": [], "note": "테마 종목 없음"}
     items.sort(key=lambda x: x["qty"], reverse=True)

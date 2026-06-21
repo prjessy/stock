@@ -1445,16 +1445,20 @@
           el.textContent = `신규 매수 유입 종목 없음 (테마종목 ${r.scanned}개 확인).`;
           return;
         }
+        const tag = (rs) => rs === "급증매수"
+          ? '<span style="color:var(--down);font-weight:700;">⚡급증</span>'
+          : '<span style="color:var(--up);font-weight:700;">🆕신규</span>';
         const rows = list.map((o) => `
           <tr>
             <td><span style="color:var(--muted);font-size:11px;">${o.theme || ""}</span><br>${o.name || o.code}</td>
+            <td style="text-align:center;">${tag(o.reason)}</td>
             <td style="text-align:center;"><b style="color:${o.who === "외국인" ? "var(--gold)" : "var(--accent)"}">${o.who}</b></td>
             <td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--up)">+${(o.qty || 0).toLocaleString()}주</td>
           </tr>`).join("");
         el.className = "";
-        el.innerHTML = `<div style="color:var(--muted);font-size:12px;margin-bottom:6px;">테마종목 ${r.scanned}개 중 <b style="color:var(--up)">${list.length}종목</b> 신규 유입</div>
+        el.innerHTML = `<div style="color:var(--muted);font-size:12px;margin-bottom:6px;">테마종목 ${r.scanned}개 중 <b style="color:var(--up)">${list.length}종목</b> 포착 (🆕신규편입 / ⚡급증매수)</div>
           <div class="tbl-wrap"><table class="alert-table" style="width:100%;font-size:13px;">
-          <thead><tr><th style="text-align:left;">테마 · 종목</th><th>주체</th><th style="text-align:right;">오늘 순매수</th></tr></thead>
+          <thead><tr><th style="text-align:left;">테마 · 종목</th><th>구분</th><th>주체</th><th style="text-align:right;">오늘 순매수</th></tr></thead>
           <tbody>${rows}</tbody></table></div>`;
       } catch (e) {
         el.textContent = "조회 요청 실패";

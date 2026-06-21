@@ -179,9 +179,9 @@ class AlertWatcher:
             return
         items = res.get("items") or []
         if items:
-            hits = [f"[{i['theme']}] {i['name']}({i['code']}) {i['who']} 신규 순매수 +{i['qty']:,}주" for i in items]
-            notify_all("🟢 더듬이4 · 테마 매수세 신규 유입",
-                       f"테마 대표종목 중 매수세 신규 유입 {len(hits)}종목 (09시):\n"
+            hits = [f"[{i['theme']}] {i['name']}({i['code']}) {i['who']} {i.get('reason','')} +{i['qty']:,}주" for i in items]
+            notify_all("🟢 더듬이4 · 테마 수급 포착",
+                       f"테마 대표종목 중 신규편입·급증매수 {len(hits)}종목 (09시):\n"
                        + "\n".join(hits[:30]))
         else:
             logger.info("더듬이4: 신규 매수 유입 종목 없음")
