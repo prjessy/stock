@@ -54,6 +54,14 @@ class Settings:
     kis_app_secret: str = ""
     kis_domain: str = "https://openapi.koreainvestment.com:9443"
 
+    # 주문(자동매매)용 계좌 — .env 에서만. 비어 있으면 주문 기능 비활성.
+    kis_cano: str = ""            # 계좌번호 앞 8자리(종합계좌번호)
+    kis_acnt_prdt_cd: str = "01"  # 계좌상품코드 2자리(보통 01)
+    kis_paper: bool = False       # True=모의투자(VTTC TR), False=실전(TTTC TR)
+    # 안전장치: 자동매매 마스터 스위치(기본 OFF) + 1회 주문 최대 수량 하드캡.
+    trade_enabled: bool = False
+    trade_max_qty: int = 1
+
     # Anthropic Claude API (더듬이 2·3 AI 분석). 값은 .env 에서만.
     anthropic_api_key: str = ""
     deudeumi_model: str = "claude-sonnet-4-6"
@@ -91,6 +99,11 @@ def load_settings() -> Settings:
         kis_app_key=os.getenv("KIS_APP_KEY", ""),
         kis_app_secret=os.getenv("KIS_APP_SECRET", ""),
         kis_domain=os.getenv("KIS_DOMAIN", "https://openapi.koreainvestment.com:9443"),
+        kis_cano=os.getenv("KIS_CANO", ""),
+        kis_acnt_prdt_cd=os.getenv("KIS_ACNT_PRDT_CD", "01"),
+        kis_paper=os.getenv("KIS_PAPER", "false").lower() in ("1", "true", "yes"),
+        trade_enabled=os.getenv("TRADE_ENABLED", "false").lower() in ("1", "true", "yes"),
+        trade_max_qty=int(os.getenv("TRADE_MAX_QTY", "1")),
         anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
         deudeumi_model=os.getenv("DEUDEUMI_MODEL", "claude-sonnet-4-6"),
         deudeumi_interval_min=int(os.getenv("DEUDEUMI_INTERVAL_MIN", "0")),

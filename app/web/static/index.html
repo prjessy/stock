@@ -507,6 +507,15 @@
           <div id="targetList"></div>
         </div>
         <div class="modal-note">종목별 목표가 도달 시 <b>카드 강조 + 브라우저 알림 + 소리</b>. 목표가가 현재가보다 높으면 '이상', 낮으면 '이하' 도달 시 발동합니다. 한 번 발동하면 값을 다시 설정할 때까지 반복하지 않습니다. (대시보드가 열려 있을 때 동작 · localStorage 저장)</div>
+        <div class="modal-row" style="display:block;">
+          <div class="modal-k" style="margin-bottom:4px;">🧪 주문 테스트 (실거래 · 1주 시장가)</div>
+          <div id="orderStatus" style="font-size:12.5px;color:var(--muted);margin-bottom:6px;">상태 확인 중…</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="refresh-btn" onclick="placeOrder('buy')" style="border-color:var(--up);color:var(--up);">▲ 매수 1주</button>
+            <button class="refresh-btn" onclick="placeOrder('sell')" style="border-color:var(--down);color:var(--down);">▼ 매도 1주</button>
+          </div>
+        </div>
+        <div class="modal-note">⚠️ <b>실제 주문</b>입니다(현재 선택 종목, 1주 시장가). 장중에만 체결되며 결과는 카톡·텔레그램으로도 옵니다. VPS <code>.env</code>에 계좌번호(KIS_CANO)·주문권한이 있어야 동작합니다.</div>
       </div>
     </div>
 
@@ -1329,8 +1338,33 @@
         body: JSON.stringify({ types, pct_step: ALERT_PCT, pct_count: ALERT_COUNT, targets }),
       }).catch(() => {});
     }
+    // ===== 주문 테스트(실거래 1주) — /api/order =====
+    async function loadOrderStatus() {
+      const el = document.getElementById("orderStatus");
+      if (!el) return;
+      try {
+        const s = await (await fetch("/api/order/status")).json();
+        if (!s.configured) { el.innerHTML = "❌ 미설정 — VPS <code>.env</code>에 <b>KIS_CANO</b>(계좌번호) 추가 필요"; return; }
+        el.innerHTML = `✅ 사용 가능 · ${s.paper ? "모의투자" : "<b style='color:var(--down)'>실전</b>"} · 1회 최대 ${s.max_qty}주`;
+      } catch (e) { el.textContent = "상태 확인 실패"; }
+    }
+    async function placeOrder(side) {
+      const sym = selected;
+      if (!sym) { alert("종목을 먼저 선택하세요."); return; }
+      const q = quotesById[sym];
+      const nm = q ? q.name : sym;
+      if (!confirm(`${nm}(${sym})\n${side === "buy" ? "매수 ▲" : "매도 ▼"} 1주 시장가 — 실제 주문을 내시겠습니까?`)) return;
+      try {
+        const r = await (await fetch("/api/order", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ symbol: sym, side }),
+        })).json();
+        alert(r.ok ? `✅ 접수됨\n${r.msg || ""}\n주문번호 ${r.order_no || "-"}` : `❌ 실패\n${r.error || ""}`);
+      } catch (e) { alert("주문 요청 실패"); }
+    }
     function openSettings() {
       renderAlertThreshold();
+      loadOrderStatus();
       syncIvInputs();
       syncRtbInputs();
       syncAlertChannels();

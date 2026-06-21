@@ -114,6 +114,10 @@ class SourceRegistry:
         fn = getattr(self.source_for(etf_code), "get_etf_constituents", None)
         return fn(etf_code) if fn is not None else []
 
+    def kr_source(self) -> PriceSource:
+        """국내 시세 소스(KIS면 주문·토큰 재사용에 쓰임)."""
+        return self._kr
+
     def clear_caches(self) -> None:
         """강제 동기화: 모든 소스의 TTL 캐시 비우기(다음 조회는 출처에서 새로 받음)."""
         for src in (self._kr, self._us):

@@ -242,6 +242,48 @@ async def notify_api(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True, **notify_all(subject, msg)})
 
 
+@app.post("/api/order")
+async def order_api(request: Request) -> JSONResponse:
+    """수동 테스트 주문(1주 시장가). 실거래 — 1주 하드캡(settings.trade_max_qty). 500 금지.
+
+    side: 'buy'|'sell', symbol: 종목코드. 자동매매가 아니라 사용자가 직접 누르는 단발 주문.
+    """
+    from app.trading.kis_order import OrderClient
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    symbol = (data.get("symbol") or "").strip()
+    side = data.get("side")
+    if not symbol or side not in ("buy", "sell"):
+        return JSONResponse({"ok": False, "error": "symbol/side 필요"})
+    src = _registry.kr_source()
+    if not hasattr(src, "_ensure_token"):
+        return JSONResponse({"ok": False, "error": "KIS 주문 소스 없음(키 미설정)"})
+    res = OrderClient(src).place_order(symbol, side, 1)  # 수동 테스트는 1주 시장가
+    try:  # 주문 접수 결과를 텔레그램+카카오로도 통지
+        from app.notify.dispatch import notify_all
+        tag = "✅ 접수" if res.get("ok") else "❌ 실패"
+        notify_all("🧪 수동 주문 테스트",
+                   f"{tag} · {symbol} {side} 1주\n{res.get('msg') or res.get('error') or ''}")
+    except Exception:
+        pass
+    return JSONResponse(res)
+
+
+@app.get("/api/order/status")
+def order_status_api() -> JSONResponse:
+    """주문 기능 사용 가능 여부(계좌 설정·모의/실전). 500 금지."""
+    src = _registry.kr_source()
+    from app.config import settings as _s
+    return JSONResponse({
+        "configured": bool(_s.kis_cano) and hasattr(src, "_ensure_token"),
+        "paper": _s.kis_paper,
+        "max_qty": _s.trade_max_qty,
+        "auto_enabled": _s.trade_enabled,
+    })
+
+
 @app.get("/api/alert-config")
 def get_alert_config_api() -> JSONResponse:
     """서버 저장 알림 설정(종류·증감 임계값·목표금액). 500 금지."""
