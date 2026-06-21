@@ -260,8 +260,8 @@ async def order_api(request: Request) -> JSONResponse:
         data = {}
     # 🔒 주문 비밀번호 검증 — 사이트가 공개돼 있어도 비번 없으면 주문 거부.
     from app.config import settings as _cfg
-    if (data.get("password") or "") != _cfg.trade_password:
-        return JSONResponse({"ok": False, "error": "비밀번호가 올바르지 않습니다 — 주문 권한 없음"})
+    if not _cfg.trade_password or (data.get("password") or "") != _cfg.trade_password:
+        return JSONResponse({"ok": False, "error": "비밀번호가 올바르지 않습니다 — 주문 권한 없음(.env TRADE_PASSWORD 설정 필요)"})
     symbol = (data.get("symbol") or "").strip()
     side = data.get("side")
     try:
@@ -335,8 +335,8 @@ async def set_autotrade_config_api(request: Request) -> JSONResponse:
         data = await request.json()
     except Exception:
         data = {}
-    if (data.get("password") or "") != _cfg.trade_password:
-        return JSONResponse({"ok": False, "error": "비밀번호가 올바르지 않습니다"})
+    if not _cfg.trade_password or (data.get("password") or "") != _cfg.trade_password:
+        return JSONResponse({"ok": False, "error": "비밀번호가 올바르지 않습니다(.env TRADE_PASSWORD 설정 필요)"})
     saved = autotrade_config.save({k: v for k, v in data.items() if k != "password"})
     return JSONResponse({"ok": True, **saved})
 

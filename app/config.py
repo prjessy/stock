@@ -61,9 +61,9 @@ class Settings:
     # 안전장치: 자동매매 마스터 스위치(기본 OFF) + 1회 주문 최대 수량 하드캡.
     trade_enabled: bool = False
     trade_max_qty: int = 1
-    # 주문 비밀번호 — 사이트가 공개돼 있어도 이 값을 모르면 서버가 주문을 거부.
-    # .env 의 TRADE_PASSWORD 로 바꿀 수 있음(권장). 기본값 1205.
-    trade_password: str = "1205"
+    # 주문 비밀번호 — 공개 레포라 코드에 두지 않는다. .env 의 TRADE_PASSWORD 로만 설정.
+    # 비어 있으면(미설정) 모든 수동/자동 주문을 거부한다(fail-closed, 안전).
+    trade_password: str = ""
 
     # Anthropic Claude API (더듬이 2·3 AI 분석). 값은 .env 에서만.
     anthropic_api_key: str = ""
@@ -107,7 +107,7 @@ def load_settings() -> Settings:
         kis_paper=os.getenv("KIS_PAPER", "false").lower() in ("1", "true", "yes"),
         trade_enabled=os.getenv("TRADE_ENABLED", "false").lower() in ("1", "true", "yes"),
         trade_max_qty=int(os.getenv("TRADE_MAX_QTY", "1")),
-        trade_password=os.getenv("TRADE_PASSWORD", "1205"),
+        trade_password=os.getenv("TRADE_PASSWORD", ""),
         anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
         deudeumi_model=os.getenv("DEUDEUMI_MODEL", "claude-haiku-4-5"),
         deudeumi_interval_min=int(os.getenv("DEUDEUMI_INTERVAL_MIN", "0")),
