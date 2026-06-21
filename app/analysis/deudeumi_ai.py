@@ -180,6 +180,8 @@ def analyze(symbol: str, feed: dict, recent: list[dict] | None = None, accuracy:
             output_config={"format": {"type": "json_schema", "schema": _SCHEMA}},
             messages=[{"role": "user", "content": prompt}],
         )
+        from app.analysis.token_usage import record as _rec_usage
+        _rec_usage(resp, settings.deudeumi_model, "deudeumi")
         text = next((b.text for b in resp.content if b.type == "text"), "{}")
         data = json.loads(text)
     except Exception as exc:

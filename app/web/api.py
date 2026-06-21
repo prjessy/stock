@@ -304,6 +304,26 @@ def order_history_api(days: int = 7) -> JSONResponse:
     return JSONResponse(OrderClient(src).list_orders(days=days))
 
 
+@app.get("/api/deudeumi4")
+def deudeumi4_api(limit: int = 60) -> JSONResponse:
+    """더듬이4 — KODEX200 구성종목 중 외인·기관 신규 매수 유입 종목(온디맨드). 500 금지."""
+    try:
+        from app.analysis.etf_flow import scan_inflow
+        return JSONResponse(scan_inflow(_registry, "069500", limit=limit))
+    except Exception as exc:
+        return JSONResponse({"ok": False, "items": [], "note": str(exc)})
+
+
+@app.get("/api/token-usage")
+def token_usage_api() -> JSONResponse:
+    """앱(API)의 Claude 토큰 사용량·추정비용. Claude Code/채팅은 미포함. 500 금지."""
+    try:
+        from app.analysis.token_usage import summary
+        return JSONResponse({"ok": True, **summary()})
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)})
+
+
 @app.get("/api/alert-config")
 def get_alert_config_api() -> JSONResponse:
     """서버 저장 알림 설정(종류·증감 임계값·목표금액). 500 금지."""

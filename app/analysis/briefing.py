@@ -94,6 +94,8 @@ def _claude(quotes: list[dict], headlines: list[dict], ctx: dict) -> dict | None
             output_config={"format": {"type": "json_schema", "schema": _SCHEMA}},
             messages=[{"role": "user", "content": prompt}],
         )
+        from app.analysis.token_usage import record as _rec_usage
+        _rec_usage(resp, settings.deudeumi_model, "briefing")
         text = next((b.text for b in resp.content if b.type == "text"), "{}")
         return json.loads(text)
     except Exception:

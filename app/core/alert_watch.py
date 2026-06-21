@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -171,29 +170,16 @@ class AlertWatcher:
     def _run_deudeumi4(self) -> None:
         """KODEX 200 구성종목 중 기관·외국인 매수세가 새로(신규) 들어온 종목 → 알림.
 
-        신규 유입 기준: 당일 순매수>0 인데 직전(5일합−당일)≤0 (최근엔 안 사다 오늘 매수 전환).
+        실제 탐지 로직은 analysis.etf_flow.scan_inflow 와 공유(화면/알림 동일 기준).
         """
-        constituents = self._registry.etf_constituents("069500")  # KODEX 200
-        if not constituents:
-            logger.info("더듬이4: KODEX200 구성종목 비어있음(휴장/필드 미상) — 스킵")
+        from app.analysis.etf_flow import scan_inflow
+        res = scan_inflow(self._registry, "069500", limit=200)
+        if not res.get("ok"):
+            logger.info("더듬이4: %s — 스킵", res.get("note"))
             return
-        hits = []
-        for code, name in constituents:
-            try:
-                flow = self._registry.investor_flow(code)
-            except Exception:
-                flow = None
-            time.sleep(0.15)  # KIS 초당 호출 제한 회피(폴러와 겹쳐도 여유 — 약 6.6건/초)
-            if not flow:
-                continue
-            for who, day_key, sum_key in (("외국인", "frgn_ntby_qty", "frgn_ntby_sum"),
-                                          ("기관", "orgn_ntby_qty", "orgn_ntby_sum")):
-                day = flow.get(day_key)
-                tot = flow.get(sum_key)
-                if day and day > 0 and tot is not None and (tot - day) <= 0:
-                    hits.append(f"{name}({code}) {who} 신규 순매수 +{int(day):,}주")
-                    break
-        if hits:
+        items = res.get("items") or []
+        if items:
+            hits = [f"{i['name']}({i['code']}) {i['who']} 신규 순매수 +{i['qty']:,}주" for i in items]
             notify_all("🟢 더듬이4 · ETF 매수세 신규 유입",
                        f"KODEX 200 구성종목 중 매수세 신규 유입 {len(hits)}종목 (09시):\n"
                        + "\n".join(hits[:30]))
