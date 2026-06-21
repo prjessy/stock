@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 _ORDER_PATH = "/uapi/domestic-stock/v1/trading/order-cash"
 _CCLD_PATH = "/uapi/domestic-stock/v1/trading/inquire-daily-ccld"
+_BALANCE_PATH = "/uapi/domestic-stock/v1/trading/inquire-balance"
 _HASH_PATH = "/uapi/hashkey"
 _TIMEOUT = 8.0
 
@@ -41,17 +42,21 @@ class OrderClient:
         resp.raise_for_status()
         return resp.json()["HASH"]
 
-    def place_order(self, symbol: str, side: str, qty: int, price: float = 0) -> dict:
+    def place_order(self, symbol: str, side: str, qty: int, price: float = 0,
+                    cap: int | None = None) -> dict:
         """현금주문. side='buy'|'sell'. price=0 이면 시장가(ORD_DVSN=01).
 
+        cap: 1회 주문 수량 상한. None이면 settings.trade_max_qty(수동 테스트=1).
+             자동 매도는 보유분 이상 못 팔기에 규칙별 max_qty 를 cap 으로 넘긴다.
         성공 {ok:True, order_no, msg}, 실패 {ok:False, error}. 절대 raise 안 함.
         """
         if not self.configured():
             return {"ok": False, "error": "주문 계좌 미설정(.env KIS_CANO/KIS_APP_KEY)"}
         if side not in ("buy", "sell"):
             return {"ok": False, "error": f"잘못된 side: {side}"}
-        # 안전 하드캡: 설정 최대 수량을 넘지 못한다.
-        qty = min(int(qty), int(settings.trade_max_qty))
+        # 안전 하드캡: 지정한 cap(없으면 설정 최대 수량)을 넘지 못한다.
+        cap = int(settings.trade_max_qty) if cap is None else int(cap)
+        qty = min(int(qty), cap)
         if qty < 1:
             return {"ok": False, "error": "수량이 0"}
         try:
@@ -167,6 +172,70 @@ class OrderClient:
         except Exception as exc:
             logger.exception("주문 내역 조회 실패")
             return {"ok": False, "error": f"조회 예외: {exc}"}
+
+    def get_balance(self) -> dict:
+        """주식 잔고조회(TTTC8434R/VTTC8434R) — 보유 종목·수량·평균단가·현재가·손익률.
+
+        성공 {ok:True, holdings:[{symbol,name,qty,avg_price,cur_price,pnl_pct}]}.
+        자동 매도(손절) 판정과 화면 표시 양쪽에서 쓴다. 절대 raise 안 함.
+        """
+        if not self.configured():
+            return {"ok": False, "error": "주문 계좌 미설정(.env KIS_CANO/KIS_APP_KEY)"}
+        try:
+            token = self._ps._ensure_token()
+            tr = ("VTTC" if settings.kis_paper else "TTTC") + "8434R"
+            resp = self._ps._session.get(
+                f"{settings.kis_domain}{_BALANCE_PATH}",
+                params={
+                    "CANO": settings.kis_cano,
+                    "ACNT_PRDT_CD": settings.kis_acnt_prdt_cd,
+                    "AFHR_FLPR_YN": "N",
+                    "OFL_YN": "",
+                    "INQR_DVSN": "02",         # 02=종목별
+                    "UNPR_DVSN": "01",
+                    "FUND_STTL_ICLD_YN": "N",
+                    "FNCG_AMT_AUTO_RDPT_YN": "N",
+                    "PRCS_DVSN": "00",
+                    "CTX_AREA_FK100": "",
+                    "CTX_AREA_NK100": "",
+                },
+                headers={
+                    "authorization": f"Bearer {token}",
+                    "appkey": settings.kis_app_key,
+                    "appsecret": settings.kis_app_secret,
+                    "tr_id": tr,
+                    "custtype": "P",
+                },
+                timeout=_TIMEOUT,
+            )
+            resp.raise_for_status()
+            j = resp.json()
+            if j.get("rt_cd") != "0":
+                return {"ok": False, "error": j.get("msg1", "잔고 조회 실패")}
+            holdings = []
+            for r in (j.get("output1") or []):
+                qty = _i(r.get("hldg_qty"))
+                if qty <= 0:
+                    continue
+                holdings.append({
+                    "symbol": r.get("pdno"),
+                    "name": r.get("prdt_name"),
+                    "qty": qty,
+                    "avg_price": _f(r.get("pchs_avg_pric")),
+                    "cur_price": _i(r.get("prpr")),
+                    "pnl_pct": _f(r.get("evlu_pfls_rt")),
+                })
+            return {"ok": True, "holdings": holdings, "paper": settings.kis_paper}
+        except Exception as exc:
+            logger.exception("잔고 조회 실패")
+            return {"ok": False, "error": f"조회 예외: {exc}"}
+
+
+def _f(value) -> float:
+    try:
+        return float(str(value).replace(",", ""))
+    except Exception:
+        return 0.0
 
 
 def _i(value) -> int:

@@ -61,6 +61,10 @@ _marketing = MarketingScheduler()
 from app.analysis.briefing_scheduler import BriefingScheduler
 _briefing = BriefingScheduler(_registry)
 
+# 자동 매도 감시(손절·스케줄). 마스터 스위치 OFF면 아무것도 안 함(기본 OFF, 안전).
+from app.trading.autosell_watch import AutoSellWatcher
+_autosell = AutoSellWatcher(_registry)
+
 
 @app.on_event("startup")
 def _start_poller() -> None:
@@ -69,6 +73,7 @@ def _start_poller() -> None:
     _deudeumi.start()
     _marketing.start()
     _briefing.start()
+    _autosell.start()
 
 
 def _name_for(symbol: str) -> str:
@@ -302,6 +307,38 @@ def order_history_api(days: int = 7) -> JSONResponse:
     if not hasattr(src, "_ensure_token"):
         return JSONResponse({"ok": False, "error": "KIS 주문 소스 없음(키 미설정)"})
     return JSONResponse(OrderClient(src).list_orders(days=days))
+
+
+@app.get("/api/balance")
+def balance_api() -> JSONResponse:
+    """현재 보유 종목(수량·평균단가·현재가·손익률). 자동매매봇 탭 표시·손절 기준. 500 금지."""
+    from app.trading.kis_order import OrderClient
+    src = _registry.kr_source()
+    if not hasattr(src, "_ensure_token"):
+        return JSONResponse({"ok": False, "error": "KIS 주문 소스 없음(키 미설정)"})
+    return JSONResponse(OrderClient(src).get_balance())
+
+
+@app.get("/api/autosell/config")
+def get_autosell_config_api() -> JSONResponse:
+    """자동 매도(손절·스케줄) 설정 조회. 500 금지."""
+    from app.trading import autosell_config
+    return JSONResponse({"ok": True, **autosell_config.load()})
+
+
+@app.post("/api/autosell/config")
+async def set_autosell_config_api(request: Request) -> JSONResponse:
+    """자동 매도 설정 저장. 실거래 자동화라 비밀번호 필수. 500 금지."""
+    from app.config import settings as _cfg
+    from app.trading import autosell_config
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    if (data.get("password") or "") != _cfg.trade_password:
+        return JSONResponse({"ok": False, "error": "비밀번호가 올바르지 않습니다"})
+    saved = autosell_config.save({k: v for k, v in data.items() if k != "password"})
+    return JSONResponse({"ok": True, **saved})
 
 
 @app.get("/api/deudeumi4")
