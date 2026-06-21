@@ -8,7 +8,10 @@
 """
 from __future__ import annotations
 
+import os
 import time
+
+from app.config import settings
 
 _THROTTLE = 0.15   # KIS 초당 호출 제한 회피
 _SURGE_MULT = 2.0  # 급증 판정: 당일 순매수 ≥ 직전 4일 일평균 × 이 배수
@@ -76,3 +79,36 @@ def scan_inflow(registry, etf_code: str | None = None, limit: int | None = None)
         return {"ok": False, "scanned": 0, "items": [], "note": "테마 종목 없음"}
     items.sort(key=lambda x: x["qty"], reverse=True)
     return {"ok": True, "scanned": scanned, "items": items, "note": ""}
+
+
+def ai_comment(items: list[dict]) -> str:
+    """포착된 종목 수급 흐름을 Claude가 한두 줄로 코멘트. 종목 없거나 키 없으면 ''. 절대 raise 안 함."""
+    if not items:
+        return ""
+    key = settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
+        return ""
+    try:
+        import anthropic
+    except Exception:
+        return ""
+    lines = [f"[{i['theme']}] {i['name']} {i['who']} {i.get('reason', '')} +{i['qty']:,}주"
+             for i in items[:15]]
+    prompt = ("오늘 외국인·기관이 신규편입/급증 매수한 테마 종목:\n" + "\n".join(lines) +
+              "\n\n위 수급 흐름을 한국 주식 '판단 보조' 분석가로서 한두 문장(80자 이내)으로 코멘트해라. "
+              "어느 테마·주체에 매수가 쏠렸는지 중심으로. 단정·예측·투자권유 금지.")
+    try:
+        client = anthropic.Anthropic(api_key=key)
+        resp = client.messages.create(
+            model=settings.deudeumi_model, max_tokens=200,
+            system="간결한 한국 주식 수급 코멘트. 1~2문장, 과신 금지.",
+            messages=[{"role": "user", "content": prompt}],
+        )
+        try:
+            from app.analysis.token_usage import record
+            record(resp, settings.deudeumi_model, "deudeumi4")
+        except Exception:
+            pass
+        return next((b.text for b in resp.content if b.type == "text"), "").strip()
+    except Exception:
+        return ""

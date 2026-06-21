@@ -352,11 +352,14 @@ def bottom_scan_api(min_score: int = 2) -> JSONResponse:
 
 
 @app.get("/api/deudeumi4")
-def deudeumi4_api(limit: int = 60) -> JSONResponse:
-    """더듬이4 — KODEX200 구성종목 중 외인·기관 신규 매수 유입 종목(온디맨드). 500 금지."""
+def deudeumi4_api(limit: int = 60, comment: int = 0) -> JSONResponse:
+    """더듬이4 — 5개 테마 대표종목 중 외인·기관 신규/급증 매수(온디맨드). comment=1이면 AI 한줄. 500 금지."""
     try:
-        from app.analysis.etf_flow import scan_inflow
-        return JSONResponse(scan_inflow(_registry, "069500", limit=limit))
+        from app.analysis.etf_flow import ai_comment, scan_inflow
+        res = scan_inflow(_registry)
+        if comment and res.get("ok") and res.get("items"):
+            res["comment"] = ai_comment(res["items"])
+        return JSONResponse(res)
     except Exception as exc:
         return JSONResponse({"ok": False, "items": [], "note": str(exc)})
 

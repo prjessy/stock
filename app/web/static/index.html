@@ -1438,13 +1438,16 @@
       el.className = "empty-state";
       el.textContent = "테마 대표종목 수급 분석 중…";
       try {
-        const r = await (await fetch("/api/deudeumi4")).json();
+        const r = await (await fetch("/api/deudeumi4?comment=1")).json();
         if (!r.ok) { el.textContent = r.note || "조회 실패"; return; }
         const list = r.items || [];
         if (!list.length) {
           el.textContent = `신규 매수 유입 종목 없음 (테마종목 ${r.scanned}개 확인).`;
           return;
         }
+        const aiBox = r.comment
+          ? `<div style="margin-bottom:8px;padding:8px 10px;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;font-size:13px;"><b>🤖 AI 코멘트</b> <span style="color:var(--muted);font-size:11px;">(Haiku)</span><br>${r.comment}</div>`
+          : "";
         const tag = (rs) => rs === "급증매수"
           ? '<span style="color:var(--down);font-weight:700;">⚡급증</span>'
           : '<span style="color:var(--up);font-weight:700;">🆕신규</span>';
@@ -1456,7 +1459,7 @@
             <td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--up)">+${(o.qty || 0).toLocaleString()}주</td>
           </tr>`).join("");
         el.className = "";
-        el.innerHTML = `<div style="color:var(--muted);font-size:12px;margin-bottom:6px;">테마종목 ${r.scanned}개 중 <b style="color:var(--up)">${list.length}종목</b> 포착 (🆕신규편입 / ⚡급증매수)</div>
+        el.innerHTML = aiBox + `<div style="color:var(--muted);font-size:12px;margin-bottom:6px;">테마종목 ${r.scanned}개 중 <b style="color:var(--up)">${list.length}종목</b> 포착 (🆕신규편입 / ⚡급증매수)</div>
           <div class="tbl-wrap"><table class="alert-table" style="width:100%;font-size:13px;">
           <thead><tr><th style="text-align:left;">테마 · 종목</th><th>구분</th><th>주체</th><th style="text-align:right;">오늘 순매수</th></tr></thead>
           <tbody>${rows}</tbody></table></div>`;
