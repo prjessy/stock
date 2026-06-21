@@ -489,8 +489,13 @@
     <div class="tab-panel" id="panel-autotrade" role="tabpanel">
       <section class="panel">
         <h2>🧪 주문 테스트 (실거래 · 1주)</h2>
-        <div class="sub">현재 대시보드에서 <b>선택한 종목</b>을 1주만 주문합니다. <b>지정가 필수</b>(시장가 주문은 막아둠) · 장중에만 체결 · 결과는 카톡·텔레그램으로도 옵니다.</div>
+        <div class="sub">아래에서 <b>종목을 직접 선택</b>해 1주만 주문합니다. <b>지정가 필수</b>(시장가 주문은 막아둠) · 장중에만 체결 · 결과는 카톡·텔레그램으로도 옵니다.</div>
         <div id="orderStatus" style="font-size:12.5px;color:var(--muted);margin:10px 0;">상태 확인 중…</div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+          <span style="font-size:13px;">종목</span>
+          <select id="orderSym" onchange="onOrderSymChange()"
+            style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:4px 8px;font-size:14px;max-width:220px;"></select>
+        </div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
           <span style="font-size:13px;">지정가</span>
           <input id="orderPrice" type="number" min="0" step="any" placeholder="현재가"
@@ -501,7 +506,7 @@
           <button class="refresh-btn" onclick="placeOrder('buy')" style="border-color:var(--up);color:var(--up);">▲ 매수 1주</button>
           <button class="refresh-btn" onclick="placeOrder('sell')" style="border-color:var(--down);color:var(--down);">▼ 매도 1주</button>
         </div>
-        <div class="sub" style="margin-top:12px;">⚠️ <b>실제 주문</b>입니다. 대시보드에서 종목을 먼저 선택하세요. VPS <code>.env</code>에 계좌번호(KIS_CANO)·주문권한이 필요합니다.</div>
+        <div class="sub" style="margin-top:12px;">⚠️ <b>실제 주문</b>입니다. 위에서 종목을 고르고 지정가를 확인하세요. 종목이 없으면 ⚙️설정 → 📋종목 관리에서 추가. VPS <code>.env</code>에 계좌번호(KIS_CANO)·주문권한 필요.</div>
       </section>
       <section class="panel">
         <div class="chart-head">
@@ -1451,18 +1456,32 @@
       }).catch(() => {});
     }
     // ===== 주문 테스트(실거래 1주) — /api/order =====
+    // 주문 종목 드롭다운 채우기(국내 워치리스트). 선택값 유지, 없으면 selected/첫 종목.
+    function fillOrderSym() {
+      const sel = document.getElementById("orderSym");
+      if (!sel) return;
+      const syms = Object.values(quotesById).filter((q) => q.currency === "KRW");
+      if (!syms.length) return;
+      const cur = sel.value || selected || syms[0].symbol;
+      sel.innerHTML = syms.map((q) =>
+        `<option value="${q.symbol}" ${q.symbol === cur ? "selected" : ""}>${q.name} (${q.symbol})</option>`).join("");
+      onOrderSymChange();
+    }
+    function onOrderSymChange() {
+      const sel = document.getElementById("orderSym");
+      const pi = document.getElementById("orderPrice");
+      if (!sel || !pi) return;
+      const q = quotesById[sel.value];
+      if (q && q.price != null) pi.value = Math.round(q.price);  // 종목 바꾸면 현재가로 갱신
+    }
     async function loadOrderStatus() {
       const el = document.getElementById("orderStatus");
       if (!el) return;
+      fillOrderSym();
       try {
         const s = await (await fetch("/api/order/status")).json();
         if (!s.configured) { el.innerHTML = "❌ 미설정 — VPS <code>.env</code>에 <b>KIS_CANO</b>(계좌번호) 추가 필요"; return; }
         el.innerHTML = `✅ 사용 가능 · ${s.paper ? "모의투자" : "<b style='color:var(--down)'>실전</b>"} · 1회 최대 ${s.max_qty}주`;
-        // 지정가 입력칸을 현재가로 자동 채움(비워져 있을 때만).
-        const pi = document.getElementById("orderPrice");
-        if (pi && !pi.value && selected && quotesById[selected] && quotesById[selected].price != null) {
-          pi.value = Math.round(quotesById[selected].price);
-        }
       } catch (e) { el.textContent = "상태 확인 실패"; }
     }
     // ===== 더듬이4 · ETF 수급 신규 유입 — /api/deudeumi4 =====
@@ -1824,7 +1843,8 @@
       }
     }
     async function placeOrder(side) {
-      const sym = selected;
+      const sel = document.getElementById("orderSym");
+      const sym = (sel && sel.value) || selected;
       if (!sym) { alert("종목을 먼저 선택하세요."); return; }
       const q = quotesById[sym];
       const nm = q ? q.name : sym;
