@@ -142,14 +142,40 @@ class AutoTradeWatcher:
                 q = quotes.get(sym)
                 price = int((q.get("price") if q else None) or d["price"])
                 qty = int(balmok.get("qty") or 1)
+                # ②-1 AI 판단(옵션): 더듬이2·3가 매수 신호일 때만 매수
+                if balmok.get("ai_judge"):
+                    ok, sig = self._ai_approves_buy(sym, q)
+                    if not ok:
+                        notify_all("🦶 발목 감지 · AI 보류",
+                                   f"{name}({sym}) 발목 {d['score']}개지만 AI 판단='{sig}' → 매수 안 함")
+                        continue
+                    tag = f"발목 {d['score']}개 + AI '{sig}' 승인"
+                else:
+                    tag = f"발목 {d['score']}개"
                 r = client.place_order(sym, "buy", qty, price=price, cap=qty)
                 if r.get("ok"):
                     notify_all("🤖 발목 자동 매수 실행",
-                               f"{name}({sym}) {qty}주 매수 접수\n사유: 발목 {d['score']}개\n"
+                               f"{name}({sym}) {qty}주 매수 접수\n사유: {tag}\n"
                                f"지정가 {price:,}원 · 주문번호 {r.get('order_no','-')}")
                 else:
                     notify_all("⚠️ 발목 자동 매수 실패",
                                f"{name}({sym}) 매수 실패\n오류: {r.get('error','')}")
+
+    def _ai_approves_buy(self, sym: str, q: dict | None) -> tuple[bool, str]:
+        """더듬이2·3 AI 판단 → 매수 신호(buy/strong_buy)면 (True, 라벨). 실패 시 보수적으로 (False, ...)."""
+        try:
+            from app.analysis.deudeumi_ai import analyze, evaluate_signals, recent_signals
+            from app.analysis.feed import compute_feed
+            rows = self._registry.history(sym, "1y")
+            quote = q or self._registry.quote(sym)
+            feed = compute_feed(sym, rows, quote,
+                                self._registry.fundamentals(sym), self._registry.investor_flow(sym))
+            ai = analyze(sym, feed, recent_signals(sym), evaluate_signals(sym, self._registry))
+            sig = ai.get("signal") or "?"
+            return (sig in ("buy", "strong_buy"), sig)
+        except Exception as exc:
+            logger.exception("발목 AI 판단 실패")
+            return (False, f"판단실패:{exc}")
 
     def _sell_reason(self, rule, cp, price, avg, hhmm) -> str | None:
         sp = rule.get("sell_pct")

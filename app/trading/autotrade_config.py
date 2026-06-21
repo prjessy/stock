@@ -28,6 +28,7 @@ _SELL_KEYS = ("sell_pct", "stop_price", "stop_pct", "sell_time")
 _BALMOK_DEFAULT = {
     "alert": False,      # 발목 감지 시 텔레그램·카톡 알람 (master 무관)
     "auto_buy": False,   # 발목 감지 시 자동 매수 (옵션 · master ON 도 필요)
+    "ai_judge": False,   # 자동 매수 전 AI(더듬이2·3) 판단 — 매수 신호일 때만 매수
     "min_score": 2,      # 발목 판정: 신호 N개 이상 겹침
     "qty": 1,            # 자동 매수 수량
 }
@@ -41,6 +42,7 @@ def _clean_balmok(b) -> dict:
     return {
         "alert": bool(b.get("alert", False)),
         "auto_buy": bool(b.get("auto_buy", False)),
+        "ai_judge": bool(b.get("ai_judge", False)),
         "min_score": int(ms) if ms and ms >= 1 else 2,
         "qty": int(q) if q and q >= 1 else 1,
     }

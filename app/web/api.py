@@ -69,6 +69,10 @@ _autotrade = AutoTradeWatcher(_registry, _poller)
 from app.analysis.eod_report import EodScheduler
 _eod = EodScheduler(_registry)
 
+# 보유종목 데일리 케어(평일 09:30, AI 홀딩/손절/익절 추천). 추천만(주문 안 함).
+from app.analysis.holdings_care import HoldingsCareScheduler
+_care = HoldingsCareScheduler(_registry)
+
 
 @app.on_event("startup")
 def _start_poller() -> None:
@@ -79,6 +83,7 @@ def _start_poller() -> None:
     _briefing.start()
     _autotrade.start()
     _eod.start()
+    _care.start()
 
 
 def _name_for(symbol: str) -> str:
@@ -381,6 +386,23 @@ def run_eod_report_api() -> JSONResponse:
     """장 마감 AI 리포트 지금 생성(수동 테스트). 카톡·텔레그램으로도 발송. 500 금지."""
     try:
         from app.analysis.eod_report import generate
+        return JSONResponse(generate(_registry, send=True))
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)})
+
+
+@app.get("/api/holdings-care")
+def get_holdings_care_api() -> JSONResponse:
+    """저장된 최신 보유종목 케어 리포트. 500 금지."""
+    from app.analysis.holdings_care import load
+    return JSONResponse(load())
+
+
+@app.post("/api/holdings-care/run")
+def run_holdings_care_api() -> JSONResponse:
+    """보유종목 케어 리포트 지금 생성(수동). 카톡·텔레그램 발송. 500 금지."""
+    try:
+        from app.analysis.holdings_care import generate
         return JSONResponse(generate(_registry, send=True))
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc)})

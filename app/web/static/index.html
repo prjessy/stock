@@ -502,6 +502,14 @@
         </div>
         <div class="sub">실제 KIS 계좌 보유 종목. 자동 매도(손절)는 이 보유분을 기준으로 동작합니다.</div>
         <div id="balanceBody" class="empty-state">불러오는 중…</div>
+        <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+            <div class="modal-k" style="font-weight:700;font-size:14px;">💼 보유종목 데일리 케어 <span style="color:var(--muted);font-weight:500;font-size:11px;">매일 09:30 자동 → 카톡·텔레그램</span></div>
+            <button class="refresh-btn" onclick="runHoldingsCare(this)">지금 생성</button>
+          </div>
+          <div class="sub" style="margin:4px 0;">보유종목 손익·지표를 <b>Claude가 홀딩/손절/익절 추천</b>(추천만, 자동매도 아님).</div>
+          <div id="careBody" class="empty-state" style="font-size:13px;">불러오는 중…</div>
+        </div>
       </section>
       <section class="panel">
         <div class="chart-head">
@@ -524,7 +532,8 @@
           <label style="display:block;margin:6px 0;font-size:14px;"><input type="checkbox" id="balmokAlert"> 🔔 발목 알람 받기 (텔레그램·카톡)</label>
           <label style="display:flex;align-items:center;gap:6px;margin:6px 0;font-size:14px;"><input type="checkbox" id="balmokAutoBuy"> 🤖 발목 감지 시 <b>자동 매수</b> (옵션) · 수량
             <input id="balmokQty" type="number" min="1" step="1" value="1" style="width:50px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:3px 5px;font-size:14px;"></label>
-          <div class="sub" style="margin-top:2px;">⚠️ 자동 매수는 위 <b>'자동매매 전체 ON'</b>도 켜야 동작합니다(알람만은 OFF여도 동작). 종목당 하루 1회.</div>
+          <label style="display:block;margin:6px 0 6px 22px;font-size:14px;"><input type="checkbox" id="balmokAiJudge"> 🧠 매수 전 <b>AI 판단</b> 거치기 (더듬이2·3가 '매수' 신호일 때만 매수)</label>
+          <div class="sub" style="margin-top:2px;">⚠️ 자동 매수는 위 <b>'자동매매 전체 ON'</b>도 켜야 동작(알람만은 OFF여도 동작). 종목당 하루 1회. AI 판단 켜면 발목이어도 AI가 보류하면 안 삼(Claude 호출).</div>
           <div style="margin-top:8px;"><button class="refresh-btn" onclick="scanBalmok(this)">🦶 발목 지금 스캔</button></div>
           <div id="balmokBody" class="sub" style="margin-top:8px;">버튼을 눌러 현재 저점권 종목을 확인하세요.</div>
         </div>
@@ -1557,6 +1566,32 @@
       finally { if (btn) { btn.disabled = false; btn.textContent = "🔄 새로고침"; } }
     }
 
+    // ===== 보유종목 데일리 케어 — /api/holdings-care =====
+    function renderCare(r) {
+      const el = document.getElementById("careBody");
+      if (!el) return;
+      if (r && r.ok && r.report) {
+        el.className = "";
+        el.innerHTML = `<div style="color:var(--muted);font-size:11px;margin-bottom:4px;">${r.ts || ""}</div>
+          <div style="white-space:pre-wrap;line-height:1.6;">${r.report}</div>`;
+      } else {
+        el.className = "empty-state";
+        el.textContent = (r && r.error) ? r.error : "아직 없음. '지금 생성'을 누르거나 09:30을 기다리세요.";
+      }
+    }
+    async function loadHoldingsCare() {
+      try { renderCare(await (await fetch("/api/holdings-care")).json()); } catch (e) { /* 유지 */ }
+    }
+    async function runHoldingsCare(btn) {
+      const el = document.getElementById("careBody");
+      if (btn) { btn.disabled = true; btn.textContent = "생성 중…"; }
+      if (el) { el.className = "empty-state"; el.textContent = "🤖 케어 리포트 생성 중…"; }
+      try {
+        renderCare(await (await fetch("/api/holdings-care/run", { method: "POST" })).json());
+      } catch (e) { if (el) el.textContent = "요청 실패"; }
+      finally { if (btn) { btn.disabled = false; btn.textContent = "지금 생성"; } }
+    }
+
     // ===== 자동매매(등락률 밴드·손절·예약) — /api/autotrade/config =====
     let autotradeCfg = { enabled: false, rules: {}, balmok: {} };
     async function loadAutotrade() {
@@ -1568,7 +1603,7 @@
       if (en) en.checked = autotradeCfg.enabled;
       const b = autotradeCfg.balmok || {};
       const set = (id, v) => { const el = document.getElementById(id); if (el) { if (el.type === "checkbox") el.checked = !!v; else el.value = v; } };
-      set("balmokAlert", b.alert); set("balmokAutoBuy", b.auto_buy);
+      set("balmokAlert", b.alert); set("balmokAutoBuy", b.auto_buy); set("balmokAiJudge", b.ai_judge);
       set("balmokScore", b.min_score ?? 2); set("balmokQty", b.qty ?? 1);
       renderAutotradeRules();
     }
@@ -1615,6 +1650,7 @@
       const balmok = {
         alert: document.getElementById("balmokAlert").checked,
         auto_buy: document.getElementById("balmokAutoBuy").checked,
+        ai_judge: document.getElementById("balmokAiJudge").checked,
         min_score: document.getElementById("balmokScore").value || 2,
         qty: document.getElementById("balmokQty").value || 1,
       };
@@ -1984,6 +2020,7 @@
       } else if (name === "autotrade") {
         loadOrderStatus();
         loadBalance();
+        loadHoldingsCare();
         loadAutotrade();
         loadOrderHistory();
       }
