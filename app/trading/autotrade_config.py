@@ -1,14 +1,16 @@
-"""자동 매도(손절 + 스케줄 매도) 설정 저장(data/autosell_config.json).
+"""자동매매 설정 저장(data/autotrade_config.json).
 
-서버에 저장해야 브라우저를 안 켜도 서버가 장중 감시·자동 매도한다.
-안전: enabled 기본 False(마스터 스위치 OFF). 매도 전용이라 보유분 이상은 못 판다.
+등락률(전일대비 ±%) 밴드 자동매매 + 손절 + 예약 매도. 서버에 저장해야 브라우저를 안 켜도
+서버가 장중 자동 실행한다. 안전: enabled 기본 False(마스터 OFF).
 예외는 올리지 않는다(실패 시 기본값/직전값 유지).
 
 rules = { 종목코드: {
-    "stop_pct":   평균단가 대비 손절 % (음수, 예 -3.0). null=미사용
+    "buy_pct":    등락률 ≤ 이 값(보통 음수, 예 -2)이면 매수. null=미사용  ★실거래 매수★
+    "sell_pct":   등락률 ≥ 이 값(보통 양수, 예 +2)이면 매도. null=미사용
     "stop_price": 절대 손절가(원). 현재가 ≤ 이 값이면 매도. null=미사용
-    "sell_time":  "HH:MM"(KST) 이 시각 지나면 전량 매도. null=미사용
-    "max_qty":    1회 매도 최대 수량(안전 상한). 기본 1
+    "stop_pct":   평균단가 대비 손절 %(음수, 예 -3)면 매도. null=미사용
+    "sell_time":  "HH:MM"(KST) 이 시각 지나면 매도. null=미사용
+    "qty":        1회 매수/매도 수량(안전 상한). 기본 1
 }}
 """
 from __future__ import annotations
@@ -18,12 +20,9 @@ from pathlib import Path
 
 from app.config import settings
 
-_FILE = Path(settings.db_path).resolve().parent / "autosell_config.json"
+_FILE = Path(settings.db_path).resolve().parent / "autotrade_config.json"
 
-_DEFAULT = {
-    "enabled": False,   # 마스터 스위치(기본 OFF — 안전)
-    "rules": {},
-}
+_SELL_KEYS = ("sell_pct", "stop_price", "stop_pct", "sell_time")
 
 
 def load() -> dict:
@@ -46,14 +45,17 @@ def _clean_rules(rules: dict) -> dict:
     for sym, r in rules.items():
         if not isinstance(r, dict):
             continue
-        clean = {}
-        clean["stop_pct"] = _num(r.get("stop_pct"))
-        clean["stop_price"] = _pos(r.get("stop_price"))
-        clean["sell_time"] = _hhmm(r.get("sell_time"))
-        mq = _pos(r.get("max_qty"))
-        clean["max_qty"] = int(mq) if mq and mq >= 1 else 1
-        # 모든 조건이 비어있는 규칙은 저장 안 함
-        if clean["stop_pct"] is None and clean["stop_price"] is None and clean["sell_time"] is None:
+        clean = {
+            "buy_pct": _num(r.get("buy_pct")),
+            "sell_pct": _num(r.get("sell_pct")),
+            "stop_price": _pos(r.get("stop_price")),
+            "stop_pct": _num(r.get("stop_pct")),
+            "sell_time": _hhmm(r.get("sell_time")),
+        }
+        q = _pos(r.get("qty"))
+        clean["qty"] = int(q) if q and q >= 1 else 1
+        # 매수/매도 조건이 하나도 없으면 저장 안 함
+        if clean["buy_pct"] is None and all(clean[k] is None for k in _SELL_KEYS):
             continue
         out[str(sym)] = clean
     return out
@@ -74,8 +76,7 @@ def _pos(v):
 def _hhmm(v):
     if not v or not isinstance(v, str):
         return None
-    s = v.strip()
-    parts = s.split(":")
+    parts = v.strip().split(":")
     try:
         if len(parts) == 2 and 0 <= int(parts[0]) <= 23 and 0 <= int(parts[1]) <= 59:
             return f"{int(parts[0]):02d}:{int(parts[1]):02d}"

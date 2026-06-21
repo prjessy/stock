@@ -61,9 +61,9 @@ _marketing = MarketingScheduler()
 from app.analysis.briefing_scheduler import BriefingScheduler
 _briefing = BriefingScheduler(_registry)
 
-# 자동 매도 감시(손절·스케줄). 마스터 스위치 OFF면 아무것도 안 함(기본 OFF, 안전).
-from app.trading.autosell_watch import AutoSellWatcher
-_autosell = AutoSellWatcher(_registry)
+# 자동매매 감시(등락률 밴드 매수/매도 + 손절·예약). 마스터 OFF면 아무것도 안 함(기본 OFF).
+from app.trading.autotrade_watch import AutoTradeWatcher
+_autotrade = AutoTradeWatcher(_registry, _poller)
 
 
 @app.on_event("startup")
@@ -73,7 +73,7 @@ def _start_poller() -> None:
     _deudeumi.start()
     _marketing.start()
     _briefing.start()
-    _autosell.start()
+    _autotrade.start()
 
 
 def _name_for(symbol: str) -> str:
@@ -319,25 +319,25 @@ def balance_api() -> JSONResponse:
     return JSONResponse(OrderClient(src).get_balance())
 
 
-@app.get("/api/autosell/config")
-def get_autosell_config_api() -> JSONResponse:
-    """자동 매도(손절·스케줄) 설정 조회. 500 금지."""
-    from app.trading import autosell_config
-    return JSONResponse({"ok": True, **autosell_config.load()})
+@app.get("/api/autotrade/config")
+def get_autotrade_config_api() -> JSONResponse:
+    """자동매매(등락률 밴드·손절·예약) 설정 조회. 500 금지."""
+    from app.trading import autotrade_config
+    return JSONResponse({"ok": True, **autotrade_config.load()})
 
 
-@app.post("/api/autosell/config")
-async def set_autosell_config_api(request: Request) -> JSONResponse:
-    """자동 매도 설정 저장. 실거래 자동화라 비밀번호 필수. 500 금지."""
+@app.post("/api/autotrade/config")
+async def set_autotrade_config_api(request: Request) -> JSONResponse:
+    """자동매매 설정 저장. 실거래 자동화라 비밀번호 필수. 500 금지."""
     from app.config import settings as _cfg
-    from app.trading import autosell_config
+    from app.trading import autotrade_config
     try:
         data = await request.json()
     except Exception:
         data = {}
     if (data.get("password") or "") != _cfg.trade_password:
         return JSONResponse({"ok": False, "error": "비밀번호가 올바르지 않습니다"})
-    saved = autosell_config.save({k: v for k, v in data.items() if k != "password"})
+    saved = autotrade_config.save({k: v for k, v in data.items() if k != "password"})
     return JSONResponse({"ok": True, **saved})
 
 
