@@ -1966,8 +1966,8 @@
       document.querySelectorAll("#deuSymbols button").forEach((b) => b.classList.toggle("active", b.dataset.sym === sym));
       loadDeudeumi(sym);
       const ab = document.getElementById("deuAiBody"); if (ab) { ab.className = "empty-state"; ab.textContent = "'AI 분석 실행'을 누르세요."; }
-      const as = document.getElementById("deuAiSignals"); if (as) as.innerHTML = "";
       const sub = document.getElementById("deuAiSub"); if (sub) sub.textContent = "";
+      loadDeuSignals(sym);  // 진화 기록은 토큰 없이 바로 표시(과거 누적분)
     }
     document.getElementById("deuSymbols").addEventListener("click", (e) => {
       const b = e.target.closest("button[data-sym]"); if (b) setDeuSymbol(b.dataset.sym);
@@ -2023,15 +2023,26 @@
           ${kf}
         </table>
         <div class="fin-note" style="margin-top:8px;">⚠️ Claude(sonnet) 판단 보조 · 예측 아님 · 책임 본인.</div>`;
+      renderDeuSignals(sg);
+    }
+    // 진화 기록(신호 히스토리 + 적중률) — Claude 호출 없이 표시(무료). jsonl 누적분을 읽음.
+    function renderDeuSignals(sg) {
       const el = document.getElementById("deuAiSignals");
+      if (!el) return;
       if (sg && !sg.error) {
         const acc = sg.accuracy_pct != null ? `${sg.accuracy_pct}% (${sg.evaluated}건·${sg.window_days}일)` : "평가 대기(신호 누적 중)";
         const rows = (sg.recent || []).slice().reverse().map((r) => {
           const oc = r.outcome === "hit" ? "✅" : r.outcome === "miss" ? "❌" : "⏳";
           return `<tr><td class="k">${(r.ts || "").slice(0, 16).replace("T", " ")}</td><td>${SIGNAL_LABEL[r.signal] || r.signal} ${oc} <span class="muted">@${r.price}</span></td></tr>`;
         }).join("");
-        el.innerHTML = `<table class="deu-table" style="margin-top:12px;"><tr class="sec"><td colspan="2">📒 신호 기록 · 적중률 ${acc}</td></tr>${rows || '<tr><td colspan="2" class="muted">기록 없음</td></tr>'}</table>`;
+        el.innerHTML = `<table class="deu-table" style="margin-top:12px;"><tr class="sec"><td colspan="2">📒 신호 변천 · 적중률 ${acc}</td></tr>${rows || '<tr><td colspan="2" class="muted">아직 기록 없음 — AI 분석을 실행하면 신호가 쌓입니다</td></tr>'}</table>`;
       } else el.innerHTML = "";
+    }
+    async function loadDeuSignals(sym) {
+      try {
+        const sg = await (await fetch(`/api/deudeumi-signals/${encodeURIComponent(sym)}`)).json();
+        renderDeuSignals(sg);
+      } catch (e) { /* 무시 */ }
     }
 
     async function loadDeudeumi(sym) {
