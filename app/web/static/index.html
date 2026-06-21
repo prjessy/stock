@@ -574,6 +574,17 @@
           <button class="modal-x" onclick="closeSettings()" aria-label="닫기">✕</button>
         </div>
         <div class="modal-row" style="display:block;">
+          <div class="modal-k" style="margin-bottom:6px;">📋 종목 관리 (대시보드 추가/삭제)</div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">
+            <input id="wlCode" type="text" inputmode="numeric" maxlength="6" placeholder="6자리 코드 (예 042660)"
+              style="width:150px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:4px 6px;font-size:14px;">
+            <button class="refresh-btn" onclick="addWatchlist(this)" style="border-color:var(--up);color:var(--up);">＋ 추가</button>
+            <span id="wlMsg" style="font-size:12.5px;color:var(--muted);"></span>
+          </div>
+          <div id="wlList" style="font-size:13px;"></div>
+        </div>
+        <div class="modal-note">6자리 종목코드로 대시보드에 종목을 <b>바로 추가</b>(재시작 불필요). 추가한 종목만 ✕로 삭제 가능(기본 종목은 고정). 코드는 네이버금융/증권사에서 확인.</div>
+        <div class="modal-row" style="display:block;">
           <div class="modal-k" style="margin-bottom:6px;">📡 서버 알림 종류 (복수 선택 · 폰 꺼도 수신)</div>
           <label style="display:block;margin:4px 0;font-size:14px;"><input type="checkbox" class="at-input" value="pct"> 증감(±%) 도달</label>
           <label style="display:block;margin:4px 0;font-size:14px;"><input type="checkbox" class="at-input" value="target"> 목표금액 도달</label>
@@ -1543,6 +1554,49 @@
       }
     }
 
+    // ===== 종목 관리 — /api/watchlist =====
+    async function loadWatchlist() {
+      const el = document.getElementById("wlList");
+      if (!el) return;
+      try {
+        const r = await (await fetch("/api/watchlist")).json();
+        if (!r.ok) { el.textContent = "불러오기 실패"; return; }
+        el.innerHTML = (r.items || []).map((it) =>
+          `<span style="display:inline-flex;align-items:center;gap:4px;margin:3px 5px 3px 0;padding:3px 8px;background:var(--panel);border:1px solid var(--border);border-radius:14px;">
+            ${it.name || it.symbol} <span style="color:var(--muted);font-size:11px;">${it.symbol}</span>
+            ${it.removable ? `<b style="cursor:pointer;color:var(--down);margin-left:2px;" onclick="removeWatchlist('${it.symbol}')">✕</b>` : ""}
+          </span>`).join("");
+      } catch (e) { el.textContent = "불러오기 실패"; }
+    }
+    async function addWatchlist(btn) {
+      const inp = document.getElementById("wlCode");
+      const msg = document.getElementById("wlMsg");
+      const code = (inp.value || "").trim();
+      if (!/^\d{6}$/.test(code)) { msg.textContent = "6자리 숫자 코드를 입력하세요"; msg.style.color = "var(--down)"; return; }
+      if (btn) btn.disabled = true;
+      msg.textContent = "확인 중…"; msg.style.color = "var(--muted)";
+      try {
+        const r = await (await fetch("/api/watchlist", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "add", symbol: code }),
+        })).json();
+        if (r.ok) { msg.textContent = `✅ ${r.name || code} 추가됨`; msg.style.color = "var(--up)"; inp.value = ""; loadWatchlist(); }
+        else { msg.textContent = "❌ " + (r.error || "추가 실패"); msg.style.color = "var(--down)"; }
+      } catch (e) { msg.textContent = "요청 실패"; msg.style.color = "var(--down)"; }
+      finally { if (btn) btn.disabled = false; }
+    }
+    async function removeWatchlist(code) {
+      const msg = document.getElementById("wlMsg");
+      try {
+        const r = await (await fetch("/api/watchlist", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "remove", symbol: code }),
+        })).json();
+        if (r.ok) { msg.textContent = "🗑️ 삭제됨"; msg.style.color = "var(--muted)"; loadWatchlist(); }
+        else { msg.textContent = "❌ " + (r.error || "삭제 실패"); msg.style.color = "var(--down)"; }
+      } catch (e) { msg.textContent = "요청 실패"; msg.style.color = "var(--down)"; }
+    }
+
     // ===== 토큰 사용량(이 앱) — /api/token-usage =====
     async function loadTokenUsage() {
       const el = document.getElementById("tokenUsage");
@@ -1795,6 +1849,7 @@
       loadBotLink();
       loadKakaoStatus();
       loadTokenUsage();
+      loadWatchlist();
       document.getElementById("settingsOverlay").classList.add("open");
     }
     function closeSettings() {

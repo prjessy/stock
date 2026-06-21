@@ -39,6 +39,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 사용자 추가 종목(watchlist.json)을 기본 .env 종목 위에 병합 — registry/poller 생성 전에.
+from app.core import watchlist as _watchlist
+for _xc in _watchlist.load_extra():
+    if _xc not in settings.kr_symbols:
+        settings.kr_symbols.append(_xc)
+
 # 출처 디스패처 (각 소스의 TTL 캐시 내장) — 앱 수명 동안 재사용.
 _registry = SourceRegistry()
 
@@ -394,6 +400,57 @@ def run_eod_report_api() -> JSONResponse:
         return JSONResponse(generate(_registry, send=True))
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc)})
+
+
+@app.get("/api/watchlist")
+def get_watchlist_api() -> JSONResponse:
+    """현재 국내 워치리스트(기본+추가). removable=사용자 추가분만. 500 금지."""
+    from app.core import watchlist
+    extra = set(watchlist.load_extra())
+    items = []
+    for code in settings.kr_symbols:
+        snap = _poller._snapshot.get(code) or {}
+        items.append({"symbol": code, "name": snap.get("name") or _name_for(code),
+                      "removable": code in extra})
+    return JSONResponse({"ok": True, "items": items})
+
+
+@app.post("/api/watchlist")
+async def set_watchlist_api(request: Request) -> JSONResponse:
+    """국내 종목 추가/삭제(런타임, 재시작 불필요). action: add|remove, symbol: 6자리. 500 금지."""
+    from app.core import watchlist
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    action = data.get("action")
+    code = (data.get("symbol") or "").strip()
+    if not (code.isdigit() and len(code) == 6):
+        return JSONResponse({"ok": False, "error": "6자리 숫자 종목코드를 입력하세요"})
+    if action == "add":
+        if code in settings.kr_symbols:
+            return JSONResponse({"ok": False, "error": "이미 있는 종목입니다"})
+        try:
+            q = _registry.quote(code)
+        except Exception:
+            q = None
+        if not q or q.get("price") in (None, 0):
+            return JSONResponse({"ok": False, "error": "시세 조회 실패 — 코드를 확인하세요(상장 종목 6자리)"})
+        watchlist.add(code)
+        settings.kr_symbols.append(code)
+        if code not in _poller._kr:
+            _poller._kr.append(code)
+        return JSONResponse({"ok": True, "added": code, "name": q.get("name"), "price": q.get("price")})
+    if action == "remove":
+        if code not in watchlist.load_extra():
+            return JSONResponse({"ok": False, "error": "기본 종목은 삭제 불가(.env에서 관리)"})
+        watchlist.remove(code)
+        if code in settings.kr_symbols:
+            settings.kr_symbols.remove(code)
+        if code in _poller._kr:
+            _poller._kr.remove(code)
+        return JSONResponse({"ok": True, "removed": code})
+    return JSONResponse({"ok": False, "error": "action=add|remove 필요"})
 
 
 @app.get("/api/weekly-review")
