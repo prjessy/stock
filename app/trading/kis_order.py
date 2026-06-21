@@ -10,6 +10,7 @@ KisPriceSource 의 토큰·세션을 재사용한다(같은 appkey). 주문 API 
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timedelta
 
 from app.config import settings
@@ -21,6 +22,17 @@ _CCLD_PATH = "/uapi/domestic-stock/v1/trading/inquire-daily-ccld"
 _BALANCE_PATH = "/uapi/domestic-stock/v1/trading/inquire-balance"
 _HASH_PATH = "/uapi/hashkey"
 _TIMEOUT = 8.0
+
+
+def _get_retry(session, url, params, headers, tries: int = 3):
+    """GET with retry on 5xx — KIS는 폴러와 동시호출 시 일시적 500(유량초과)을 냄. 마지막 응답 반환."""
+    resp = None
+    for i in range(tries):
+        resp = session.get(url, params=params, headers=headers, timeout=_TIMEOUT)
+        if resp.status_code < 500:
+            return resp
+        time.sleep(0.4 * (i + 1))
+    return resp
 
 
 class OrderClient:
@@ -110,8 +122,8 @@ class OrderClient:
             today = datetime.now()
             start = today - timedelta(days=max(0, int(days)))
             tr = ("VTTC" if settings.kis_paper else "TTTC") + "8001R"
-            resp = self._ps._session.get(
-                f"{settings.kis_domain}{_CCLD_PATH}",
+            resp = _get_retry(
+                self._ps._session, f"{settings.kis_domain}{_CCLD_PATH}",
                 params={
                     "CANO": settings.kis_cano,
                     "ACNT_PRDT_CD": settings.kis_acnt_prdt_cd,
@@ -135,9 +147,9 @@ class OrderClient:
                     "tr_id": tr,
                     "custtype": "P",
                 },
-                timeout=_TIMEOUT,
             )
-            resp.raise_for_status()
+            if resp.status_code != 200:
+                return {"ok": False, "error": f"KIS {resp.status_code}(재시도 후): {resp.text[:120]}"}
             j = resp.json()
             if j.get("rt_cd") != "0":
                 return {"ok": False, "error": j.get("msg1", "조회 실패")}
@@ -184,8 +196,8 @@ class OrderClient:
         try:
             token = self._ps._ensure_token()
             tr = ("VTTC" if settings.kis_paper else "TTTC") + "8434R"
-            resp = self._ps._session.get(
-                f"{settings.kis_domain}{_BALANCE_PATH}",
+            resp = _get_retry(
+                self._ps._session, f"{settings.kis_domain}{_BALANCE_PATH}",
                 params={
                     "CANO": settings.kis_cano,
                     "ACNT_PRDT_CD": settings.kis_acnt_prdt_cd,
@@ -206,9 +218,9 @@ class OrderClient:
                     "tr_id": tr,
                     "custtype": "P",
                 },
-                timeout=_TIMEOUT,
             )
-            resp.raise_for_status()
+            if resp.status_code != 200:
+                return {"ok": False, "error": f"KIS {resp.status_code}(재시도 후): {resp.text[:120]}"}
             j = resp.json()
             if j.get("rt_cd") != "0":
                 return {"ok": False, "error": j.get("msg1", "잔고 조회 실패")}
