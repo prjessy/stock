@@ -255,12 +255,16 @@ async def order_api(request: Request) -> JSONResponse:
         data = {}
     symbol = (data.get("symbol") or "").strip()
     side = data.get("side")
+    try:
+        price = float(data.get("price") or 0)  # >0=지정가, 0/없음=시장가
+    except Exception:
+        price = 0
     if not symbol or side not in ("buy", "sell"):
         return JSONResponse({"ok": False, "error": "symbol/side 필요"})
     src = _registry.kr_source()
     if not hasattr(src, "_ensure_token"):
         return JSONResponse({"ok": False, "error": "KIS 주문 소스 없음(키 미설정)"})
-    res = OrderClient(src).place_order(symbol, side, 1)  # 수동 테스트는 1주 시장가
+    res = OrderClient(src).place_order(symbol, side, 1, price)  # 수동 테스트 1주(지정가/시장가)
     try:  # 주문 접수 결과를 텔레그램+카카오로도 통지
         from app.notify.dispatch import notify_all
         tag = "✅ 접수" if res.get("ok") else "❌ 실패"
