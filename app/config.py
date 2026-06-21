@@ -67,7 +67,7 @@ class Settings:
 
     # Anthropic Claude API (더듬이 2·3 AI 분석). 값은 .env 에서만.
     anthropic_api_key: str = ""
-    deudeumi_model: str = "claude-sonnet-4-6"
+    deudeumi_model: str = "claude-haiku-4-5"
     # 더듬이2·3 자동 감시 주기(분). 0=비활성(기본). 본장(09:00~15:30)에만 동작.
     deudeumi_interval_min: int = 0
 
@@ -109,7 +109,7 @@ def load_settings() -> Settings:
         trade_max_qty=int(os.getenv("TRADE_MAX_QTY", "1")),
         trade_password=os.getenv("TRADE_PASSWORD", "1205"),
         anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
-        deudeumi_model=os.getenv("DEUDEUMI_MODEL", "claude-sonnet-4-6"),
+        deudeumi_model=os.getenv("DEUDEUMI_MODEL", "claude-haiku-4-5"),
         deudeumi_interval_min=int(os.getenv("DEUDEUMI_INTERVAL_MIN", "0")),
         kakao_rest_api_key=os.getenv("KAKAO_REST_API_KEY", ""),
         kakao_redirect_uri=os.getenv("KAKAO_REDIRECT_URI", "https://jessystock.com/api/kakao/callback"),
