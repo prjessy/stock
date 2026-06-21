@@ -1518,9 +1518,9 @@
       const el = document.getElementById("deu4Body");
       const btn = document.getElementById("deu4Btn");
       if (!el) return;
-      if (btn) { btn.disabled = true; btn.textContent = "분석 중… (5~10초)"; }
+      if (btn) { btn.disabled = true; btn.textContent = "분석 중… (최대 15초)"; }
       el.className = "empty-state";
-      el.textContent = "테마 대표종목 수급 분석 중…";
+      el.textContent = "테마 25종목 수급 분석 중… (10~15초 걸려요, 기다려 주세요)";
       try {
         const r = await (await fetch("/api/deudeumi4?comment=1")).json();
         if (!r.ok) { el.textContent = r.note || "조회 실패"; return; }
