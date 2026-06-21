@@ -341,6 +341,16 @@ async def set_autotrade_config_api(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True, **saved})
 
 
+@app.get("/api/bottom-scan")
+def bottom_scan_api(min_score: int = 2) -> JSONResponse:
+    """발목(저점권) 감지 — 워치리스트 국내종목 스캔(온디맨드). 500 금지."""
+    try:
+        from app.analysis.bottom_detect import scan
+        return JSONResponse(scan(_registry, min_score))
+    except Exception as exc:
+        return JSONResponse({"ok": False, "items": [], "error": str(exc)})
+
+
 @app.get("/api/deudeumi4")
 def deudeumi4_api(limit: int = 60) -> JSONResponse:
     """더듬이4 — KODEX200 구성종목 중 외인·기관 신규 매수 유입 종목(온디맨드). 500 금지."""

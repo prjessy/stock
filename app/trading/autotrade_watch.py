@@ -36,6 +36,7 @@ class AutoTradeWatcher:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._done: dict[str, set] = {}   # {거래일: {"종목:행위"}} — 발동 완료
+        self._last_balmok = None           # 발목 스캔 throttle(10분)
 
     def start(self) -> None:
         if self._thread is not None:
@@ -73,16 +74,23 @@ class AutoTradeWatcher:
         if not is_market_open(now):
             return
         cfg = autotrade_config.load()
-        if not cfg.get("enabled"):
-            return
+        enabled = cfg.get("enabled")
         rules = cfg.get("rules") or {}
-        if not rules:
-            return
+        balmok = cfg.get("balmok") or {}
+        run_balmok = balmok.get("alert") or (balmok.get("auto_buy") and enabled)
+        if not enabled and not run_balmok:
+            return   # 아무것도 안 켜짐
         src = self._registry.kr_source()
         if not hasattr(src, "_ensure_token"):
             return
         client = OrderClient(src)
         quotes = {q.get("symbol"): q for q in self._poller.quotes() if not q.get("stale")}
+        # 🦶 발목 감지(알람·옵션 자동매수) — master 무관하게 알람은 동작
+        if run_balmok:
+            self._maybe_balmok(now, balmok, enabled, client, quotes)
+        # 등락률 밴드·손절·예약 주문은 master ON + 규칙 있을 때만
+        if not (enabled and rules):
+            return
         bal = client.get_balance()
         held = {h["symbol"]: h for h in (bal.get("holdings") or [])} if bal.get("ok") else {}
         hhmm = now.strftime("%H:%M")
@@ -111,6 +119,37 @@ class AutoTradeWatcher:
             if reason:
                 self._mark(sym, "sell")
                 self._sell(client, sym, name, h, rule, price or h.get("cur_price") or 0, reason)
+
+    def _maybe_balmok(self, now, balmok, master_on, client, quotes) -> None:
+        """발목(저점권) 스캔 → 알람(텔레그램·카톡) + 옵션 자동매수. 10분 throttle, 종목당 하루 1회."""
+        if self._last_balmok and (now - self._last_balmok).total_seconds() < 600:
+            return
+        self._last_balmok = now
+        from app.analysis.bottom_detect import scan
+        res = scan(self._registry, int(balmok.get("min_score") or 2))
+        for d in (res.get("items") or []):
+            sym, name = d["symbol"], (d.get("name") or d["symbol"])
+            body = (f"{name}({sym}) 발목 신호 {d['score']}개\n"
+                    f"{' · '.join(d['signals'])}\n"
+                    f"현재가 {int(d['price']):,}원 ({(d.get('change_pct') or 0):+.2f}%)")
+            # ① 알람 (master 무관)
+            if balmok.get("alert") and not self._done_action(sym, "balmok-alert"):
+                self._mark(sym, "balmok-alert")
+                notify_all("🦶 발목(저점권) 감지", body)
+            # ② 자동 매수 (옵션 · master ON 필요)
+            if balmok.get("auto_buy") and master_on and not self._done_action(sym, "balmok-buy"):
+                self._mark(sym, "balmok-buy")
+                q = quotes.get(sym)
+                price = int((q.get("price") if q else None) or d["price"])
+                qty = int(balmok.get("qty") or 1)
+                r = client.place_order(sym, "buy", qty, price=price, cap=qty)
+                if r.get("ok"):
+                    notify_all("🤖 발목 자동 매수 실행",
+                               f"{name}({sym}) {qty}주 매수 접수\n사유: 발목 {d['score']}개\n"
+                               f"지정가 {price:,}원 · 주문번호 {r.get('order_no','-')}")
+                else:
+                    notify_all("⚠️ 발목 자동 매수 실패",
+                               f"{name}({sym}) 매수 실패\n오류: {r.get('error','')}")
 
     def _sell_reason(self, rule, cp, price, avg, hhmm) -> str | None:
         sp = rule.get("sell_pct")

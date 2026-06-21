@@ -504,6 +504,22 @@
           <input type="checkbox" id="autotradeEnabled" style="width:18px;height:18px;"> 자동매매 전체 ON
         </label>
         <div id="autotradeRules"></div>
+        <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:12px;">
+          <div class="modal-k" style="font-weight:700;font-size:14px;margin-bottom:6px;">🦶 발목(저점권) 감지</div>
+          <div class="sub" style="margin-bottom:8px;">RSI 과매도·52주 하위권·볼린저 하단·스토캐스틱·피보 지지 중 <b>여러 개 겹치면</b> 저점권으로 봅니다. <b>바닥(최저점)은 아무도 못 맞춥니다 — 저점권 추정</b>입니다.</div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+            <span style="font-size:13px;">민감도: 신호</span>
+            <input id="balmokScore" type="number" min="1" max="5" step="1" value="2"
+              style="width:50px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:3px 5px;font-size:14px;">
+            <span style="font-size:13px;">개 이상 겹치면 발목 (적을수록 민감)</span>
+          </div>
+          <label style="display:block;margin:6px 0;font-size:14px;"><input type="checkbox" id="balmokAlert"> 🔔 발목 알람 받기 (텔레그램·카톡)</label>
+          <label style="display:flex;align-items:center;gap:6px;margin:6px 0;font-size:14px;"><input type="checkbox" id="balmokAutoBuy"> 🤖 발목 감지 시 <b>자동 매수</b> (옵션) · 수량
+            <input id="balmokQty" type="number" min="1" step="1" value="1" style="width:50px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:3px 5px;font-size:14px;"></label>
+          <div class="sub" style="margin-top:2px;">⚠️ 자동 매수는 위 <b>'자동매매 전체 ON'</b>도 켜야 동작합니다(알람만은 OFF여도 동작). 종목당 하루 1회.</div>
+          <div style="margin-top:8px;"><button class="refresh-btn" onclick="scanBalmok(this)">🦶 발목 지금 스캔</button></div>
+          <div id="balmokBody" class="sub" style="margin-top:8px;">버튼을 눌러 현재 저점권 종목을 확인하세요.</div>
+        </div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:12px;">
           <span style="font-size:13px;">비밀번호</span>
           <input id="autotradePw" type="password" placeholder="1205"
@@ -1499,14 +1515,18 @@
     }
 
     // ===== 자동매매(등락률 밴드·손절·예약) — /api/autotrade/config =====
-    let autotradeCfg = { enabled: false, rules: {} };
+    let autotradeCfg = { enabled: false, rules: {}, balmok: {} };
     async function loadAutotrade() {
       try {
         const r = await (await fetch("/api/autotrade/config")).json();
-        if (r.ok) autotradeCfg = { enabled: !!r.enabled, rules: r.rules || {} };
+        if (r.ok) autotradeCfg = { enabled: !!r.enabled, rules: r.rules || {}, balmok: r.balmok || {} };
       } catch (e) { /* keep defaults */ }
       const en = document.getElementById("autotradeEnabled");
       if (en) en.checked = autotradeCfg.enabled;
+      const b = autotradeCfg.balmok || {};
+      const set = (id, v) => { const el = document.getElementById(id); if (el) { if (el.type === "checkbox") el.checked = !!v; else el.value = v; } };
+      set("balmokAlert", b.alert); set("balmokAutoBuy", b.auto_buy);
+      set("balmokScore", b.min_score ?? 2); set("balmokQty", b.qty ?? 1);
       renderAutotradeRules();
     }
     function renderAutotradeRules() {
@@ -1549,16 +1569,22 @@
         };
       });
       const enabled = document.getElementById("autotradeEnabled").checked;
+      const balmok = {
+        alert: document.getElementById("balmokAlert").checked,
+        auto_buy: document.getElementById("balmokAutoBuy").checked,
+        min_score: document.getElementById("balmokScore").value || 2,
+        qty: document.getElementById("balmokQty").value || 1,
+      };
       const msg = document.getElementById("autotradeMsg");
       if (btn) btn.disabled = true;
       msg.textContent = "저장 중…"; msg.style.color = "var(--muted)";
       try {
         const r = await (await fetch("/api/autotrade/config", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ enabled, rules, password: pw }),
+          body: JSON.stringify({ enabled, rules, balmok, password: pw }),
         })).json();
         if (r.ok) {
-          autotradeCfg = { enabled: !!r.enabled, rules: r.rules || {} };
+          autotradeCfg = { enabled: !!r.enabled, rules: r.rules || {}, balmok: r.balmok || {} };
           document.getElementById("autotradeEnabled").checked = autotradeCfg.enabled;
           renderAutotradeRules();
           msg.textContent = "✅ 저장됨" + (autotradeCfg.enabled ? " · 자동매매 ON" : " · OFF");
@@ -1566,6 +1592,26 @@
         } else { msg.textContent = "❌ " + (r.error || "저장 실패"); msg.style.color = "var(--down)"; }
       } catch (e) { msg.textContent = "요청 실패"; msg.style.color = "var(--down)"; }
       finally { if (btn) btn.disabled = false; }
+    }
+    async function scanBalmok(btn) {
+      const el = document.getElementById("balmokBody");
+      if (!el) return;
+      const score = document.getElementById("balmokScore").value || 2;
+      if (btn) { btn.disabled = true; btn.textContent = "스캔 중…"; }
+      el.textContent = "저점권 스캔 중…";
+      try {
+        const r = await (await fetch("/api/bottom-scan?min_score=" + score)).json();
+        if (!r.ok) { el.innerHTML = `<span style="color:var(--down)">스캔 실패 — ${r.error || ""}</span>`; return; }
+        const list = r.items || [];
+        if (!list.length) { el.textContent = `발목(저점권) 종목 없음 (신호 ${score}개 이상 기준).`; return; }
+        el.innerHTML = list.map((d) =>
+          `<div style="margin:6px 0;padding:6px 8px;background:var(--panel);border:1px solid var(--border);border-radius:8px;">
+            <b>${d.name}</b> <span style="color:var(--muted)">${(d.change_pct ?? 0) >= 0 ? "+" : ""}${(d.change_pct ?? 0).toFixed(2)}%</span>
+            · 발목 신호 <b style="color:var(--up)">${d.score}개</b><br>
+            <span style="font-size:12px;color:var(--muted)">${(d.signals || []).join(" · ")}</span>
+          </div>`).join("");
+      } catch (e) { el.innerHTML = '<span style="color:var(--down)">스캔 요청 실패</span>'; }
+      finally { if (btn) { btn.disabled = false; btn.textContent = "🦶 발목 지금 스캔"; } }
     }
 
     // ===== 체결/미체결 내역 — /api/order/history =====

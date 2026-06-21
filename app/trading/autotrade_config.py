@@ -25,6 +25,27 @@ _FILE = Path(settings.db_path).resolve().parent / "autotrade_config.json"
 _SELL_KEYS = ("sell_pct", "stop_price", "stop_pct", "sell_time")
 
 
+_BALMOK_DEFAULT = {
+    "alert": False,      # 발목 감지 시 텔레그램·카톡 알람 (master 무관)
+    "auto_buy": False,   # 발목 감지 시 자동 매수 (옵션 · master ON 도 필요)
+    "min_score": 2,      # 발목 판정: 신호 N개 이상 겹침
+    "qty": 1,            # 자동 매수 수량
+}
+
+
+def _clean_balmok(b) -> dict:
+    if not isinstance(b, dict):
+        return dict(_BALMOK_DEFAULT)
+    ms = _pos(b.get("min_score"))
+    q = _pos(b.get("qty"))
+    return {
+        "alert": bool(b.get("alert", False)),
+        "auto_buy": bool(b.get("auto_buy", False)),
+        "min_score": int(ms) if ms and ms >= 1 else 2,
+        "qty": int(q) if q and q >= 1 else 1,
+    }
+
+
 def load() -> dict:
     try:
         if _FILE.exists():
@@ -32,10 +53,11 @@ def load() -> dict:
             return {
                 "enabled": bool(d.get("enabled", False)),
                 "rules": _clean_rules(d.get("rules") or {}),
+                "balmok": _clean_balmok(d.get("balmok")),
             }
     except Exception:
         pass
-    return {"enabled": False, "rules": {}}
+    return {"enabled": False, "rules": {}, "balmok": dict(_BALMOK_DEFAULT)}
 
 
 def _clean_rules(rules: dict) -> dict:
@@ -92,6 +114,8 @@ def save(cfg: dict) -> dict:
         cur["enabled"] = bool(cfg.get("enabled"))
     if isinstance(cfg.get("rules"), dict):
         cur["rules"] = _clean_rules(cfg["rules"])
+    if isinstance(cfg.get("balmok"), dict):
+        cur["balmok"] = _clean_balmok(cfg["balmok"])
     try:
         _FILE.parent.mkdir(parents=True, exist_ok=True)
         _FILE.write_text(json.dumps(cur, ensure_ascii=False, indent=2), encoding="utf-8")
