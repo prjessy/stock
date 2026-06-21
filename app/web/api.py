@@ -65,6 +65,10 @@ _briefing = BriefingScheduler(_registry)
 from app.trading.autotrade_watch import AutoTradeWatcher
 _autotrade = AutoTradeWatcher(_registry, _poller)
 
+# 장 마감 AI 리포트(평일 15:40 자동 발송). 위험 0(주문 안 함).
+from app.analysis.eod_report import EodScheduler
+_eod = EodScheduler(_registry)
+
 
 @app.on_event("startup")
 def _start_poller() -> None:
@@ -74,6 +78,7 @@ def _start_poller() -> None:
     _marketing.start()
     _briefing.start()
     _autotrade.start()
+    _eod.start()
 
 
 def _name_for(symbol: str) -> str:
@@ -362,6 +367,23 @@ def deudeumi4_api(limit: int = 60, comment: int = 0) -> JSONResponse:
         return JSONResponse(res)
     except Exception as exc:
         return JSONResponse({"ok": False, "items": [], "note": str(exc)})
+
+
+@app.get("/api/eod-report")
+def get_eod_report_api() -> JSONResponse:
+    """저장된 최신 장 마감 AI 리포트. 500 금지."""
+    from app.analysis.eod_report import load
+    return JSONResponse(load())
+
+
+@app.post("/api/eod-report/run")
+def run_eod_report_api() -> JSONResponse:
+    """장 마감 AI 리포트 지금 생성(수동 테스트). 카톡·텔레그램으로도 발송. 500 금지."""
+    try:
+        from app.analysis.eod_report import generate
+        return JSONResponse(generate(_registry, send=True))
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)})
 
 
 @app.get("/api/token-usage")

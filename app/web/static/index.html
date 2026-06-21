@@ -408,6 +408,14 @@
     <div class="tab-panel" id="panel-deudeumi" role="tabpanel">
       <section class="panel" style="margin-bottom:16px;">
         <div class="chart-head">
+          <div class="title">📊 장 마감 AI 리포트 <span style="color:var(--muted);font-weight:500;font-size:13px;margin-left:6px;">매일 15:40 자동 → 카톡·텔레그램</span></div>
+          <div class="periods"><button id="eodBtn" onclick="runEodReport(this)">지금 생성</button></div>
+        </div>
+        <div class="sub">오늘 관심종목 등락·테마 수급·발목·보유종목을 모아 <b>Claude가 요약 + 내일 관전포인트</b>. 매일 장 마감 자동 발송 · 지금 생성은 즉시(Claude 호출).</div>
+        <div id="eodBody" class="empty-state">불러오는 중…</div>
+      </section>
+      <section class="panel" style="margin-bottom:16px;">
+        <div class="chart-head">
           <div class="title">🐜 더듬이 1 · 종합 매매신호 <span id="deuSub" style="color:var(--muted);font-weight:500;font-size:13px;margin-left:6px;"></span></div>
           <div class="periods" id="deuSymbols"></div>
         </div>
@@ -1430,6 +1438,34 @@
       } catch (e) { el.textContent = "상태 확인 실패"; }
     }
     // ===== 더듬이4 · ETF 수급 신규 유입 — /api/deudeumi4 =====
+    // ===== 장 마감 AI 리포트 — /api/eod-report =====
+    function renderEod(r) {
+      const el = document.getElementById("eodBody");
+      if (!el) return;
+      if (r && r.ok && r.report) {
+        el.className = "";
+        el.innerHTML = `<div style="color:var(--muted);font-size:11px;margin-bottom:6px;">${r.ts || ""}</div>
+          <div style="white-space:pre-wrap;font-size:13.5px;line-height:1.6;">${r.report}</div>`;
+      } else {
+        el.className = "empty-state";
+        el.textContent = "아직 리포트가 없습니다. '지금 생성'을 누르거나 장 마감(15:40)을 기다리세요.";
+      }
+    }
+    async function loadEodReport() {
+      try { renderEod(await (await fetch("/api/eod-report")).json()); } catch (e) { /* 유지 */ }
+    }
+    async function runEodReport(btn) {
+      const el = document.getElementById("eodBody");
+      if (btn) { btn.disabled = true; btn.textContent = "생성 중…"; }
+      if (el) { el.className = "empty-state"; el.textContent = "🤖 AI 리포트 생성 중… (수 초)"; }
+      try {
+        const r = await (await fetch("/api/eod-report/run", { method: "POST" })).json();
+        if (r.ok) renderEod(r);
+        else if (el) { el.className = "empty-state"; el.textContent = "생성 실패: " + (r.error || ""); }
+      } catch (e) { if (el) el.textContent = "요청 실패"; }
+      finally { if (btn) { btn.disabled = false; btn.textContent = "지금 생성"; } }
+    }
+
     async function loadDeudeumi4() {
       const el = document.getElementById("deu4Body");
       const btn = document.getElementById("deu4Btn");
@@ -1935,6 +1971,7 @@
         // 차트는 숨김 상태에서 0px 로 그려질 수 있어 보일 때 리사이즈한다.
         requestAnimationFrame(resizeCharts);
       } else if (name === "deudeumi") {
+        loadEodReport();
         deuFillSymbols();
         if (!deuSymbol) { const first = Object.keys(quotesById)[0]; if (first) setDeuSymbol(first); }
         else loadDeudeumi(deuSymbol);
