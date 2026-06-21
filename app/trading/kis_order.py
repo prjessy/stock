@@ -106,7 +106,7 @@ class OrderClient:
         if not self.configured():
             return {"ok": False, "error": "주문 계좌 미설정(.env KIS_CANO/KIS_APP_KEY)"}
         try:
-            token = self._ensure_token()
+            token = self._ps._ensure_token()
             today = datetime.now()
             start = today - timedelta(days=max(0, int(days)))
             tr = ("VTTC" if settings.kis_paper else "TTTC") + "8001R"
