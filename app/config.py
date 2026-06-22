@@ -78,6 +78,14 @@ class Settings:
     kakao_rest_api_key: str = ""
     kakao_redirect_uri: str = "https://jessystock.com/api/kakao/callback"
 
+    # 구글 로그인(OAuth) — 사용자별 매매일지용. 키는 .env 에서만(커밋 금지).
+    # 비어 있으면 로그인 기능 비활성(대시보드는 그대로 동작).
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = "https://jessystock.com/api/auth/google/callback"
+    # True 면 사이트 전체에 로그인 요구(나중에 비공개 운영 전환용). 기본 False(공개 대시보드).
+    require_login: bool = False
+
     # 접근 제어: 허용된 Telegram chat id 목록
     allowed_chat_ids: list[str] = field(default_factory=list)
 
@@ -117,6 +125,10 @@ def load_settings() -> Settings:
         deudeumi_interval_min=int(os.getenv("DEUDEUMI_INTERVAL_MIN", "0")),
         kakao_rest_api_key=os.getenv("KAKAO_REST_API_KEY", ""),
         kakao_redirect_uri=os.getenv("KAKAO_REDIRECT_URI", "https://jessystock.com/api/kakao/callback"),
+        google_client_id=os.getenv("GOOGLE_CLIENT_ID", ""),
+        google_client_secret=os.getenv("GOOGLE_CLIENT_SECRET", ""),
+        google_redirect_uri=os.getenv("GOOGLE_REDIRECT_URI", "https://jessystock.com/api/auth/google/callback"),
+        require_login=os.getenv("REQUIRE_LOGIN", "false").lower() in ("1", "true", "yes"),
         allowed_chat_ids=_split_csv(os.getenv("ALLOWED_CHAT_IDS", "")),
         hermes_base_url=os.getenv("HERMES_BASE_URL", "http://localhost:8080"),
         db_path=os.getenv("DB_PATH", "data/stock.db"),

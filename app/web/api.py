@@ -86,6 +86,13 @@ _weekly = WeeklyReviewScheduler(_registry)
 
 @app.on_event("startup")
 def _start_poller() -> None:
+    # 새 테이블(users/sessions/journal 등)을 idempotent 하게 보장. 웹앱은 데몬과 별개로 뜨므로
+    # 여기서 init_db 를 호출하지 않으면 VPS DB 에 로그인/일지 테이블이 안 생긴다.
+    try:
+        from app.storage.db import init_db
+        init_db(settings.db_path).close()
+    except Exception:
+        pass
     _poller.start()
     _alert_watch.start()
     _deudeumi.start()
@@ -741,6 +748,239 @@ def get_alerts(limit: int = 50) -> JSONResponse:
         return JSONResponse({"alerts": alerts})
     except Exception:
         return JSONResponse({"alerts": []})
+
+
+# ===================== 구글 로그인 + 사용자별 매매일지 =====================
+# 세션은 랜덤 sid 를 httponly 쿠키로 내려 DB sessions 테이블과 연결한다.
+# 키(GOOGLE_CLIENT_ID/SECRET)는 .env 에만(공개 레포라 커밋 금지).
+import secrets as _secrets
+from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+
+_SESSION_DAYS = 30
+# OAuth state(CSRF 방지) 임시 보관 — 단일 프로세스 메모리. 콜백에서 1회 검증 후 삭제.
+_OAUTH_STATES: set[str] = set()
+
+# 구글 인증 적용 모드(사용자가 ⚙️설정에서 토글). 서버 파일에 저장해 재시작에도 유지.
+#   off     = 미사용(로그인 버튼·매매일지 탭 숨김)
+#   journal = 매매일지 부분 사용(일지만 로그인 필요, 나머지는 공개)
+#   full    = 전체 메뉴 사용(사이트 전체 로그인 필요)
+_AUTH_MODES = ("off", "journal", "full")
+import json as _json
+from pathlib import Path as _Path
+_AUTH_CFG_FILE = _Path(settings.db_path).resolve().parent / "auth_config.json"
+
+
+def _auth_mode() -> str:
+    """현재 인증 모드. 파일 우선, 없으면 .env(REQUIRE_LOGIN/기본) 폴백."""
+    try:
+        if _AUTH_CFG_FILE.exists():
+            m = _json.loads(_AUTH_CFG_FILE.read_text(encoding="utf-8")).get("mode")
+            if m in _AUTH_MODES:
+                return m
+    except Exception:
+        pass
+    return "full" if settings.require_login else "journal"
+
+
+def _save_auth_mode(mode: str) -> None:
+    try:
+        _AUTH_CFG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _AUTH_CFG_FILE.write_text(_json.dumps({"mode": mode}, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _current_user(request: Request) -> dict | None:
+    """요청 쿠키(sid)로 로그인 사용자를 찾는다. 비로그인/실패 시 None."""
+    sid = request.cookies.get("sid", "")
+    if not sid:
+        return None
+    repo = Repository()
+    try:
+        return repo.user_by_session(sid)
+    except Exception:
+        return None
+    finally:
+        repo.close()
+
+
+@app.get("/api/auth/me")
+def auth_me(request: Request) -> JSONResponse:
+    """현재 로그인 상태 + 인증 적용 모드(off/journal/full) + 키 설정 여부."""
+    from app.auth.google_auth import configured
+    mode = _auth_mode()
+    user = _current_user(request)
+    base = {"configured": configured(), "mode": mode}
+    if user:
+        return JSONResponse({**base, "authenticated": True,
+                             "user": {"name": user["name"], "email": user["email"], "picture": user["picture"]}})
+    return JSONResponse({**base, "authenticated": False})
+
+
+@app.get("/api/auth-config")
+def auth_config_get() -> JSONResponse:
+    """현재 인증 모드 + 키 설정 여부(설정 화면 표시용). 500 금지."""
+    from app.auth.google_auth import configured
+    return JSONResponse({"mode": _auth_mode(), "configured": configured()})
+
+
+@app.post("/api/auth-config")
+async def auth_config_set(request: Request) -> JSONResponse:
+    """인증 모드 변경 — 자동매매와 동일한 비밀번호(TRADE_PASSWORD)로 보호.
+
+    공개 대시보드라 아무나 사이트 전체를 잠그지 못하도록 비번을 검증한다.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    mode = str(body.get("mode") or "").strip()
+    if mode not in _AUTH_MODES:
+        return JSONResponse({"ok": False, "error": "mode 는 off/journal/full 중 하나"})
+    pw = str(body.get("password") or "")
+    if not settings.trade_password or pw != settings.trade_password:
+        return JSONResponse({"ok": False, "error": "비밀번호가 올바르지 않습니다."}, status_code=403)
+    _save_auth_mode(mode)
+    return JSONResponse({"ok": True, "mode": mode})
+
+
+@app.get("/api/auth/google/login")
+def auth_google_login():
+    """구글 로그인 동의 페이지로 리다이렉트. state 를 쿠키+메모리에 심어 CSRF 방지."""
+    from app.auth.google_auth import authorize_url, configured
+    if not configured():
+        return JSONResponse({"ok": False, "error": "GOOGLE_CLIENT_ID/SECRET 미설정"})
+    state = _secrets.token_urlsafe(24)
+    _OAUTH_STATES.add(state)
+    resp = RedirectResponse(authorize_url(state))
+    resp.set_cookie("oauth_state", state, max_age=600, httponly=True, samesite="lax", secure=True)
+    return resp
+
+
+@app.get("/api/auth/google/callback")
+def auth_google_callback(request: Request, code: str = "", state: str = "", error: str = ""):
+    """구글 OAuth 콜백 → code 교환 → 사용자 생성/갱신 → 세션 쿠키 발급 후 / 로 이동."""
+    from app.auth.google_auth import exchange_code
+    if error or not code:
+        return HTMLResponse(f"<h3>구글 로그인 실패</h3><pre>{error or '코드 없음'}</pre><p>창을 닫고 다시 시도하세요.</p>")
+    # state 검증(CSRF): 쿠키와 쿼리, 그리고 서버 메모리 셋이 일치해야 통과.
+    cookie_state = request.cookies.get("oauth_state", "")
+    if not state or state != cookie_state or state not in _OAUTH_STATES:
+        return HTMLResponse("<h3>로그인 실패</h3><p>state 불일치(보안). 다시 시도하세요.</p>")
+    _OAUTH_STATES.discard(state)
+    info = exchange_code(code)
+    if not info.get("ok"):
+        return HTMLResponse(f"<h3>로그인 실패</h3><pre>{info.get('error')}</pre>")
+    repo = Repository()
+    try:
+        uid = repo.upsert_user(info["sub"], info["email"], info["name"], info["picture"])
+        sid = _secrets.token_urlsafe(32)
+        expires = (_dt.now(_tz.utc) + _td(days=_SESSION_DAYS)).isoformat()
+        repo.create_session(sid, uid, expires)
+    finally:
+        repo.close()
+    resp = RedirectResponse("/?login=ok")
+    resp.set_cookie("sid", sid, max_age=_SESSION_DAYS * 86400, httponly=True, samesite="lax", secure=True)
+    resp.delete_cookie("oauth_state")
+    return resp
+
+
+@app.post("/api/auth/logout")
+def auth_logout(request: Request) -> JSONResponse:
+    """로그아웃 — 서버 세션 삭제 + 쿠키 제거."""
+    sid = request.cookies.get("sid", "")
+    if sid:
+        repo = Repository()
+        try:
+            repo.delete_session(sid)
+        finally:
+            repo.close()
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie("sid")
+    return resp
+
+
+def _journal_fields(body: dict) -> dict:
+    """클라이언트 입력에서 일지 필드만 추려 안전하게 정규화."""
+    def _num(v):
+        try:
+            return float(v) if v not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+    return {
+        "trade_date": (str(body.get("trade_date") or "")).strip() or _dt.now().strftime("%Y-%m-%d"),
+        "symbol": (str(body.get("symbol") or "")).strip()[:32],
+        "name": (str(body.get("name") or "")).strip()[:64],
+        "side": (str(body.get("side") or "")).strip()[:16],   # 매수/매도/메모 등
+        "price": _num(body.get("price")),
+        "qty": _num(body.get("qty")),
+        "reason": (str(body.get("reason") or "")).strip()[:2000],
+        "memo": (str(body.get("memo") or "")).strip()[:2000],
+    }
+
+
+@app.get("/api/journal")
+def journal_list(request: Request) -> JSONResponse:
+    """내 매매일지 목록. 비로그인은 401(절대 남의 일지 노출 안 함)."""
+    user = _current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "login_required"}, status_code=401)
+    repo = Repository()
+    try:
+        return JSONResponse({"ok": True, "entries": repo.list_journal(user["id"])})
+    finally:
+        repo.close()
+
+
+@app.post("/api/journal")
+async def journal_create(request: Request) -> JSONResponse:
+    """매매일지 추가(본인). 비로그인 401."""
+    user = _current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "login_required"}, status_code=401)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    repo = Repository()
+    try:
+        eid = repo.add_journal(user["id"], _journal_fields(body or {}))
+        return JSONResponse({"ok": True, "id": eid})
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)})
+    finally:
+        repo.close()
+
+
+@app.put("/api/journal/{entry_id}")
+async def journal_update(entry_id: int, request: Request) -> JSONResponse:
+    """매매일지 수정 — 본인 소유만(user_id 일치 강제)."""
+    user = _current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "login_required"}, status_code=401)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    repo = Repository()
+    try:
+        ok = repo.update_journal(user["id"], entry_id, _journal_fields(body or {}))
+        return JSONResponse({"ok": ok})
+    finally:
+        repo.close()
+
+
+@app.delete("/api/journal/{entry_id}")
+def journal_delete(entry_id: int, request: Request) -> JSONResponse:
+    """매매일지 삭제 — 본인 소유만."""
+    user = _current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "login_required"}, status_code=401)
+    repo = Repository()
+    try:
+        return JSONResponse({"ok": repo.delete_journal(user["id"], entry_id)})
+    finally:
+        repo.close()
 
 
 @app.get("/api/session")

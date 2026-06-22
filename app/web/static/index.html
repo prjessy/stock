@@ -367,6 +367,30 @@
     .at-fld { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); }
     .at-fld span { white-space: nowrap; }
     .modal-note { color: var(--muted); font-size: 12px; line-height: 1.6; margin-top: 8px; border-top: 1px solid var(--border); padding-top: 12px; }
+    /* 🔐 로그인 박스(헤더) */
+    .auth-box { display: inline-flex; align-items: center; gap: 8px; margin-left: 4px; vertical-align: middle; }
+    .auth-box img { width: 22px; height: 22px; border-radius: 50%; flex: 0 0 auto; }
+    .auth-box .who { font-size: 12px; color: var(--text); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .btn-google { display: inline-flex; align-items: center; gap: 6px; background: #fff; color: #3c4043; border: 1px solid #dadce0; border-radius: 8px; padding: 5px 12px; font-size: 12.5px; font-weight: 600; cursor: pointer; text-decoration: none; }
+    .btn-google:hover { background: #f7f8f8; }
+    .btn-google .g { font-weight: 800; font-size: 14px; background: conic-gradient(from -45deg, #ea4335 110deg, #4285f4 90deg 180deg, #34a853 180deg 270deg, #fbbc05 270deg) border-box; -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .btn-link { background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 8px; padding: 4px 10px; font-size: 11.5px; cursor: pointer; }
+    .btn-link:hover { color: var(--text); }
+    /* 📔 매매일지 */
+    .jrn-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+    .jrn-form .fld { display: flex; flex-direction: column; gap: 4px; }
+    .jrn-form label { font-size: 11.5px; color: var(--muted); }
+    .jrn-form input, .jrn-form select, .jrn-form textarea { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 7px 9px; font-size: 13.5px; font-family: inherit; }
+    .jrn-form textarea { resize: vertical; min-height: 38px; }
+    .jrn-form .wide { grid-column: 1 / -1; }
+    .jrn-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .jrn-tbl th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11.5px; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    .jrn-tbl td { padding: 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    .jrn-tbl .side-buy { color: var(--up); font-weight: 700; } .jrn-tbl .side-sell { color: var(--down); font-weight: 700; }
+    .jrn-del { background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 6px; padding: 3px 8px; font-size: 11px; cursor: pointer; }
+    .jrn-del:hover { color: var(--down); border-color: var(--down); }
+    .login-gate { text-align: center; padding: 48px 20px; }
+    .login-gate .btn-google { font-size: 14px; padding: 9px 18px; margin-top: 14px; }
   </style>
 </head>
 <body>
@@ -379,12 +403,15 @@
         <span class="badge" id="usSessionBadge"><span class="dot"></span>미국 —</span>
       </div>
       <div class="meta">수신 <b id="recvTime">—</b> <span id="liveAge" style="color:var(--muted)"></span> · 1초 실시간(KIS) · 데이터: 한국투자증권 OpenAPI
+        <span id="authBox" class="auth-box"></span>
         <button id="gearBtn" class="refresh-btn gear-btn" title="설정" onclick="openSettings()">⚙️ 설정</button></div>
     </header>
 
     <nav class="tabs" id="tabs" role="tablist">
       <button class="tab-btn active" data-tab="summary" role="tab" aria-selected="true">📊 대시보드</button>
       <button class="tab-btn" data-tab="dashboard" role="tab" aria-selected="false">📈 차트</button>
+      <button class="tab-btn" data-tab="portfolio" role="tab" aria-selected="false">💼 포트폴리오</button>
+      <button class="tab-btn" data-tab="journal" role="tab" aria-selected="false">📔 매매일지</button>
       <button class="tab-btn" data-tab="briefing" role="tab" aria-selected="false">🇺🇸 미국증시</button>
       <button class="tab-btn" data-tab="marketing" role="tab" aria-selected="false">📰 뉴스 요약</button>
       <button class="tab-btn" data-tab="deudeumi" role="tab" aria-selected="false">🐜 더듬이</button>
@@ -411,8 +438,7 @@
       </div>
 
       <div id="summaryGrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;">
-        <div class="panel" id="sumBalance"><h2 style="font-size:14px;">💼 내 계좌 손익</h2><div style="margin-top:8px;"><div class="skeleton lg"></div><div class="skeleton"></div><div class="skeleton sm"></div></div></div>
-        <div class="panel" id="sumDonut"><h2 style="font-size:14px;">🍩 종목별 비중</h2><div style="margin-top:8px;"><div class="skeleton lg"></div><div class="skeleton"></div><div class="skeleton sm"></div></div></div>
+        <div class="panel" id="sumSupply" style="grid-column:span 2;"><h2 style="font-size:14px;">📊 수급 — 외국인·기관·개인</h2><div style="margin-top:8px;"><div class="skeleton lg"></div><div class="skeleton"></div><div class="skeleton sm"></div></div></div>
         <div class="panel" id="sumMovers"><h2 style="font-size:14px;">📊 관심종목 등락</h2><div style="margin-top:8px;"><div class="skeleton lg"></div><div class="skeleton"></div><div class="skeleton sm"></div></div></div>
         <div class="panel" id="sumBalmok"><h2 style="font-size:14px;">🦶 발목 근접</h2><div style="margin-top:8px;"><div class="skeleton lg"></div><div class="skeleton"></div><div class="skeleton sm"></div></div></div>
         <div class="panel" id="sumUs"><h2 style="font-size:14px;">🇺🇸 미국장 한줄</h2><div style="margin-top:8px;"><div class="skeleton lg"></div><div class="skeleton"></div><div class="skeleton sm"></div></div></div>
@@ -515,6 +541,66 @@
       <div id="finBody"><div class="fin-note">불러오는 중…</div></div>
     </section>
     </div><!-- /panel-dashboard -->
+
+    <!-- ===== 탭: 💼 포트폴리오 (총자산 + 종목별 비중) ===== -->
+    <div class="tab-panel" id="panel-portfolio" role="tabpanel">
+      <section class="panel" style="margin-bottom:14px;">
+        <div class="chart-head">
+          <h2 style="font-size:15px;margin:0;">💼 포트폴리오 <span style="color:var(--muted);font-weight:500;font-size:12px;margin-left:6px;">총자산 · 평가손익 · 종목별 비중 (KIS 실계좌)</span></h2>
+          <button class="refresh-btn" onclick="loadPortfolio(true)">🔄 새로고침</button>
+        </div>
+      </section>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:14px;">
+        <div class="panel" id="pfHero"><h2 style="font-size:14px;">🏆 총자산</h2><div style="margin-top:8px;"><div class="skeleton lg"></div><div class="skeleton"></div></div></div>
+        <div class="panel" id="pfDonut"><h2 style="font-size:14px;">🍩 종목별 비중</h2><div style="margin-top:8px;"><div class="skeleton lg"></div><div class="skeleton"></div></div></div>
+      </div>
+      <section class="panel">
+        <h2 style="font-size:14px;">📋 보유 종목</h2>
+        <div class="sub">종목별 평가금액·평가손익·수익률 (KIS 잔고).</div>
+        <div id="pfHoldings" class="empty-state" style="margin-top:8px;">불러오는 중…</div>
+      </section>
+    </div><!-- /panel-portfolio -->
+
+    <!-- ===== 탭: 📔 매매일지 (사용자별 · 구글 로그인) ===== -->
+    <div class="tab-panel" id="panel-journal" role="tabpanel">
+      <section class="panel" style="margin-bottom:14px;">
+        <div class="chart-head">
+          <h2 style="font-size:15px;margin:0;">📔 매매일지 <span style="color:var(--muted);font-weight:500;font-size:12px;margin-left:6px;">내 매매 기록 (나만 보임 · 구글 로그인)</span></h2>
+        </div>
+      </section>
+      <!-- 비로그인 시 게이트, 로그인 시 입력폼+목록 -->
+      <div id="journalGate" class="login-gate" style="display:none;">
+        <div style="font-size:42px;">📔</div>
+        <h2 style="font-size:17px;margin:10px 0 4px;">내 매매일지를 쓰려면 로그인하세요</h2>
+        <div class="sub">구글 계정으로 로그인하면 나만의 매매 기록을 남기고 볼 수 있어요. 다른 사람은 내 일지를 볼 수 없습니다.</div>
+        <a class="btn-google" href="/api/auth/google/login"><span class="g">G</span> 구글로 로그인</a>
+        <div id="journalGateNote" class="sub" style="margin-top:12px;"></div>
+      </div>
+      <div id="journalApp" style="display:none;">
+        <section class="panel" style="margin-bottom:14px;">
+          <h2 style="font-size:14px;">✍️ 새 기록</h2>
+          <form id="journalForm" class="jrn-form" style="margin-top:10px;">
+            <div class="fld"><label>날짜</label><input type="date" name="trade_date" required></div>
+            <div class="fld"><label>구분</label><select name="side"><option value="매수">매수</option><option value="매도">매도</option><option value="메모">메모</option></select></div>
+            <div class="fld"><label>종목명</label><input type="text" name="name" placeholder="삼성전자" list="journalSymList"></div>
+            <div class="fld"><label>종목코드</label><input type="text" name="symbol" placeholder="005930"></div>
+            <div class="fld"><label>가격</label><input type="number" name="price" step="any" placeholder="0"></div>
+            <div class="fld"><label>수량</label><input type="number" name="qty" step="any" placeholder="0"></div>
+            <div class="fld wide"><label>매매 이유 / 근거</label><textarea name="reason" placeholder="왜 사고팔았는지 (예: 5만전자 지지 확인, 외국인 순매수 전환)"></textarea></div>
+            <div class="fld wide"><label>복기 / 메모</label><textarea name="memo" placeholder="결과·느낀 점·다음 계획"></textarea></div>
+            <div class="wide" style="display:flex;gap:10px;align-items:center;">
+              <button type="submit" class="refresh-btn" style="background:var(--gold);color:#1a1f2b;font-weight:700;">＋ 기록 추가</button>
+              <span id="journalMsg" class="sub"></span>
+            </div>
+          </form>
+          <datalist id="journalSymList"></datalist>
+        </section>
+        <section class="panel">
+          <h2 style="font-size:14px;">📒 내 기록 <span id="journalCount" class="sub"></span></h2>
+          <div id="journalList" class="empty-state" style="margin-top:8px;">불러오는 중…</div>
+        </section>
+      </div>
+    </div><!-- /panel-journal -->
 
     <!-- ===== 탭 2: 브리핑 ===== -->
     <div class="tab-panel" id="panel-deudeumi" role="tabpanel">
@@ -737,6 +823,19 @@
           <h2>⚙️ 설정</h2>
           <button class="modal-x" onclick="closeSettings()" aria-label="닫기">✕</button>
         </div>
+        <div class="modal-row" style="display:block;">
+          <div class="modal-k" style="margin-bottom:6px;">🔐 구글 로그인 적용 <span id="authModeState" style="font-weight:500;font-size:11.5px;color:var(--muted);"></span></div>
+          <label class="alarm-opt"><input type="radio" name="authMode" value="off"> 미사용 <span class="opt-tag">로그인·일지 숨김</span></label>
+          <label class="alarm-opt"><input type="radio" name="authMode" value="journal"> 매매일지만 <span class="opt-tag">일지만 로그인</span></label>
+          <label class="alarm-opt"><input type="radio" name="authMode" value="full"> 전체 메뉴 <span class="opt-tag">사이트 전체 로그인</span></label>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px;">
+            <input id="authModePw" type="password" placeholder="비밀번호(자동매매와 동일)"
+              style="width:200px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:5px 8px;font-size:14px;">
+            <button class="refresh-btn" onclick="saveAuthMode(this)">저장</button>
+            <span id="authModeMsg" style="font-size:12.5px;color:var(--muted);"></span>
+          </div>
+        </div>
+        <div class="modal-note">사용자별 <b>매매일지</b>는 구글 로그인이 필요합니다. <b>미사용</b>=로그인 끔 · <b>매매일지만</b>=일지 탭만 로그인 · <b>전체 메뉴</b>=사이트 전체 로그인. 변경엔 비밀번호가 필요(아무나 못 잠금). <span style="color:var(--muted)">키(GOOGLE_CLIENT_ID/SECRET)는 VPS .env 에만 — 미설정 시 로그인 버튼이 안 보입니다.</span></div>
         <div class="modal-row" style="display:block;">
           <div class="modal-k" style="margin-bottom:6px;">📋 종목 관리 (대시보드 추가/삭제)</div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">
@@ -2164,7 +2263,36 @@
       loadKakaoStatus();
       loadTokenUsage();
       loadWatchlist();
+      loadAuthModeSetting();
       document.getElementById("settingsOverlay").classList.add("open");
+    }
+    // 🔐 인증 모드 설정 — 현재 모드를 라디오에 반영
+    async function loadAuthModeSetting() {
+      try {
+        const r = await (await fetch("/api/auth-config")).json();
+        document.querySelectorAll('input[name="authMode"]').forEach((el) => { el.checked = (el.value === r.mode); });
+        const st = document.getElementById("authModeState");
+        if (st) st.textContent = r.configured ? "" : "· ⚠️ 키 미설정(로그인 비활성)";
+      } catch {}
+    }
+    async function saveAuthMode(btn) {
+      const sel = document.querySelector('input[name="authMode"]:checked');
+      const msg = document.getElementById("authModeMsg");
+      const pw = document.getElementById("authModePw").value;
+      if (!sel) { msg.textContent = "모드를 선택하세요."; return; }
+      if (!pw) { msg.textContent = "비밀번호를 입력하세요."; return; }
+      if (btn) btn.disabled = true;
+      msg.textContent = "저장 중…";
+      try {
+        const r = await fetch("/api/auth-config", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: sel.value, password: pw }),
+        });
+        const d = await r.json();
+        if (d.ok) { msg.textContent = "✅ 저장됨 — 적용 중"; document.getElementById("authModePw").value = ""; loadAuth(); }
+        else { msg.textContent = "실패: " + (d.error || ""); }
+      } catch { msg.textContent = "저장 실패"; }
+      finally { if (btn) btn.disabled = false; }
     }
     function closeSettings() {
       document.getElementById("settingsOverlay").classList.remove("open");
@@ -2426,8 +2554,8 @@
     }
     // 🍩 종목별 비중 도넛(conic-gradient)
     const DONUT_PALETTE = ["#4c8dff", "#2ec26b", "#e0b13a", "#ff5d6c", "#9b6cff", "#36c5d0", "#ff9f43", "#8b97a8"];
-    function renderHoldingsDonut(list) {
-      const el = document.getElementById("sumDonut"); if (!el) return;
+    function renderHoldingsDonut(list, elId = "sumDonut") {
+      const el = document.getElementById(elId); if (!el) return;
       const rows = (list || [])
         .map((h) => ({ name: h.name || h.symbol, amt: (h.eval_amt != null ? h.eval_amt : (h.cur_price || 0) * (h.qty || 0)) }))
         .filter((r) => r.amt > 0).sort((a, b) => b.amt - a.amt);
@@ -2442,6 +2570,223 @@
       el.innerHTML = `<h2 style="font-size:14px;">🍩 종목별 비중</h2>
         <div class="donut-wrap"><div class="donut" style="background:conic-gradient(${stops})"></div><div class="donut-legend">${legend}</div></div>`;
     }
+
+    // ===================== 📊 대시보드 수급 요약(외국인·기관·개인) =====================
+    async function loadSummarySupply() {
+      const el = document.getElementById("sumSupply"); if (!el) return;
+      try {
+        const rows = await Promise.all(SUPPLY_SYMS.map((s) =>
+          fetch(`/api/investor/${s}`).then((r) => r.json()).catch(() => null)));
+        const ok = rows.filter((r) => r && r.available);
+        if (!ok.length) {
+          el.innerHTML = `<h2 style="font-size:14px;">📊 수급 — 외국인·기관·개인</h2><div class="sub" style="margin-top:6px;">수급 데이터 없음(장중·평일 표시)</div>`;
+          return;
+        }
+        const cell = (q, emph) => `<td class="${emph ? "col-frgn " : ""}${flowCls(q)}" style="text-align:right;font-variant-numeric:tabular-nums;">${arrow(q)} ${fmtQty(q)}</td>`;
+        const fmtD = (d) => d ? d.replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3") : "—";
+        el.innerHTML = `<h2 style="font-size:14px;">📊 수급 — 외국인·기관·개인 <span class="sub" style="font-weight:500;">순매수 주식수 · 체결 기준</span></h2>
+          <table class="flow-tbl" style="margin-top:8px;">
+            <thead><tr><th>종목</th><th style="text-align:right;">외국인</th><th style="text-align:right;">기관</th><th style="text-align:right;">개인</th></tr></thead>
+            <tbody>${ok.map((r) => `<tr>
+              <td>${r.name}</td>
+              ${cell(r.frgn_ntby_qty, true)}
+              ${cell(r.orgn_ntby_qty, false)}
+              ${cell(r.prsn_ntby_qty, false)}
+            </tr>`).join("")}</tbody></table>
+          <div class="flow-sub" style="margin-top:6px;">기준일 ${fmtD(ok[0].date)} · ▲순매수/▼순매도 · 외국인 강조</div>`;
+      } catch {
+        el.innerHTML = `<h2 style="font-size:14px;">📊 수급 — 외국인·기관·개인</h2><div class="sub" style="margin-top:6px;color:var(--down)">수급 로딩 실패</div>`;
+      }
+    }
+
+    // ===================== 💼 포트폴리오 탭(총자산 + 비중 + 보유) =====================
+    let portfolioLoaded = false;
+    async function loadPortfolio(force) {
+      if (portfolioLoaded && !force) return;
+      portfolioLoaded = true;
+      const won = (n) => (n == null ? "-" : Math.round(n).toLocaleString());
+      const pc = (v) => (v > 0 ? "var(--up)" : v < 0 ? "var(--down)" : "var(--muted)");
+      const sgn = (v) => (v > 0 ? "+" : "");
+      const hero = document.getElementById("pfHero");
+      const donut = document.getElementById("pfDonut");
+      const hold = document.getElementById("pfHoldings");
+      try {
+        const r = await (await fetch("/api/balance")).json();
+        if (!r.ok) {
+          hero.innerHTML = `<h2 style="font-size:14px;">🏆 총자산</h2><div class="sub" style="margin-top:6px;color:var(--muted)">${r.error || "조회 불가"}</div>`;
+          donut.innerHTML = `<h2 style="font-size:14px;">🍩 종목별 비중</h2><div class="sub" style="margin-top:6px;color:var(--muted)">조회 불가</div>`;
+          hold.className = "empty-state"; hold.textContent = "조회 불가"; return;
+        }
+        const list = r.holdings || [], sm = r.summary || {};
+        let buy = sm.buy_total, evalAmt = sm.total_eval, pnl = sm.pnl_total, pnlPct = sm.pnl_total_pct;
+        if (evalAmt == null) {
+          buy = 0; evalAmt = 0;
+          list.forEach((h) => { buy += (h.avg_price || 0) * (h.qty || 0); evalAmt += (h.cur_price || 0) * (h.qty || 0); });
+          pnl = evalAmt - buy; pnlPct = buy ? (pnl / buy * 100) : 0;
+        }
+        const totalAsset = (sm.total_eval != null) ? sm.total_eval : evalAmt;
+        hero.innerHTML =
+          `<h2 style="font-size:14px;">🏆 총자산</h2>
+           <div style="margin-top:6px;font-size:32px;font-weight:800;letter-spacing:-1px;font-variant-numeric:tabular-nums;">₩${won(totalAsset)}</div>
+           <div style="margin-top:4px;font-size:15px;font-weight:700;color:${pc(pnl)}">${sgn(pnl)}${won(pnl)}원 (${sgn(pnlPct)}${(pnlPct || 0).toFixed(2)}%)</div>
+           <div class="sub" style="margin-top:6px;">평가 ${won(evalAmt)} · 매입 ${won(buy)} · 예수금 ${won(sm.deposit)} · ${list.length}종목</div>`;
+        renderHoldingsDonut(list, "pfDonut");
+        if (!list.length) { hold.className = "empty-state"; hold.textContent = "보유 종목 없음"; return; }
+        hold.className = "";
+        hold.innerHTML = `<div class="tbl-wrap"><table class="alert-table" style="width:100%;font-size:13px;">
+          <thead><tr><th style="text-align:left;">종목</th><th style="text-align:right;">수량</th><th style="text-align:right;">평단</th><th style="text-align:right;">현재가</th><th style="text-align:right;">평가손익</th><th style="text-align:right;">손익률</th></tr></thead>
+          <tbody>${list.map((h) => `<tr>
+            <td style="text-align:left;">${h.name || h.symbol}</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums;">${(h.qty || 0).toLocaleString()}</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums;">${Math.round(h.avg_price || 0).toLocaleString()}</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums;">${(h.cur_price || 0).toLocaleString()}</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums;color:${pc(h.pnl_amt)}">${h.pnl_amt == null ? "-" : sgn(h.pnl_amt) + won(h.pnl_amt)}</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums;color:${pc(h.pnl_pct)}">${sgn(h.pnl_pct) + (h.pnl_pct || 0).toFixed(2)}%</td>
+          </tr>`).join("")}</tbody></table></div>`;
+      } catch {
+        hero.innerHTML = `<h2 style="font-size:14px;">🏆 총자산</h2><div class="sub" style="margin-top:6px;color:var(--down)">조회 실패</div>`;
+        donut.innerHTML = `<h2 style="font-size:14px;">🍩 종목별 비중</h2><div class="sub" style="margin-top:6px;color:var(--down)">조회 실패</div>`;
+        hold.className = "empty-state"; hold.textContent = "조회 실패";
+      }
+    }
+
+    // ===================== 🔐 구글 로그인 / 사용자 상태 =====================
+    // mode: off(미사용) / journal(매매일지 부분) / full(전체 메뉴 로그인)
+    let authState = { authenticated: false, configured: false, mode: "journal", user: null };
+    async function loadAuth() {
+      try {
+        const r = await (await fetch("/api/auth/me")).json();
+        authState = r;
+      } catch { authState = { authenticated: false, configured: false, mode: "journal" }; }
+      renderAuthBox();
+      applyAuthMode();
+      applyLoginGate();
+      renderJournalGate();
+    }
+    // 모드에 따라 탭 노출 제어: off 면 매매일지 탭 숨김.
+    function applyAuthMode() {
+      const jbtn = document.querySelector('.tab-btn[data-tab="journal"]');
+      if (jbtn) jbtn.style.display = (authState.mode === "off") ? "none" : "";
+    }
+    function renderAuthBox() {
+      const box = document.getElementById("authBox"); if (!box) return;
+      if (authState.mode === "off") { box.innerHTML = ""; return; }  // 미사용: 버튼 숨김
+      if (authState.authenticated && authState.user) {
+        const u = authState.user;
+        const pic = u.picture ? `<img src="${u.picture}" alt="" referrerpolicy="no-referrer">` : "";
+        box.innerHTML = `${pic}<span class="who" title="${u.email || ""}">${u.name || u.email || "사용자"}</span><button class="btn-link" onclick="logout()">로그아웃</button>`;
+      } else if (authState.configured) {
+        box.innerHTML = `<a class="btn-google" href="/api/auth/google/login"><span class="g">G</span> 로그인</a>`;
+      } else {
+        box.innerHTML = "";  // 키 미설정 시 버튼 숨김(대시보드는 그대로 동작)
+      }
+    }
+    async function logout() {
+      try { await fetch("/api/auth/logout", { method: "POST" }); } catch {}
+      location.href = "/";
+    }
+    // 전체 로그인 모드(full)일 때 비로그인이면 전체 화면 게이트로 막는다(클라이언트 차단).
+    function applyLoginGate() {
+      let gate = document.getElementById("siteGate");
+      if (authState.mode === "full" && !authState.authenticated && authState.configured) {
+        if (!gate) {
+          gate = document.createElement("div");
+          gate.id = "siteGate";
+          gate.style.cssText = "position:fixed;inset:0;background:var(--bg,#0e1320);z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;padding:24px;";
+          gate.innerHTML = `<div style="font-size:48px;">🔒</div>
+            <h2 style="margin:12px 0 4px;">로그인이 필요합니다</h2>
+            <div class="sub">이 대시보드는 로그인한 사용자만 볼 수 있도록 설정되어 있습니다.</div>
+            <a class="btn-google" style="font-size:15px;padding:10px 20px;margin-top:16px;" href="/api/auth/google/login"><span class="g">G</span> 구글로 로그인</a>`;
+          document.body.appendChild(gate);
+        }
+        gate.style.display = "flex";
+      } else if (gate) {
+        gate.style.display = "none";
+      }
+    }
+
+    // ===================== 📔 매매일지(사용자별) =====================
+    function renderJournalGate() {
+      const gate = document.getElementById("journalGate");
+      const appEl = document.getElementById("journalApp");
+      if (!gate || !appEl) return;
+      if (authState.authenticated) {
+        gate.style.display = "none"; appEl.style.display = "block";
+      } else {
+        appEl.style.display = "none"; gate.style.display = "block";
+        const note = document.getElementById("journalGateNote");
+        if (note) note.textContent = authState.configured ? "" : "⚠️ 관리자가 아직 구글 로그인 키(GOOGLE_CLIENT_ID/SECRET)를 설정하지 않았습니다.";
+      }
+    }
+    const JRN_SIDE_CLS = { "매수": "side-buy", "매도": "side-sell" };
+    async function loadJournal() {
+      renderJournalGate();
+      if (!authState.authenticated) return;
+      // 종목 자동완성: 관심종목 이름→코드
+      const dl = document.getElementById("journalSymList");
+      if (dl) dl.innerHTML = Object.values(quotesById).map((q) => `<option value="${q.name || q.symbol}">${q.symbol}</option>`).join("");
+      const el = document.getElementById("journalList");
+      try {
+        const r = await fetch("/api/journal");
+        if (r.status === 401) { authState.authenticated = false; renderJournalGate(); return; }
+        const data = await r.json();
+        const entries = data.entries || [];
+        document.getElementById("journalCount").textContent = entries.length ? `· ${entries.length}건` : "";
+        if (!entries.length) { el.className = "empty-state"; el.textContent = "아직 기록이 없습니다. 위에서 첫 기록을 남겨보세요."; return; }
+        const won = (n) => (n == null ? "" : Number(n).toLocaleString());
+        el.className = "";
+        el.innerHTML = `<div class="tbl-wrap"><table class="jrn-tbl">
+          <thead><tr><th>날짜</th><th>구분</th><th>종목</th><th style="text-align:right;">가격</th><th style="text-align:right;">수량</th><th>이유/복기</th><th></th></tr></thead>
+          <tbody>${entries.map((e) => `<tr>
+            <td style="white-space:nowrap;">${e.trade_date || ""}</td>
+            <td class="${JRN_SIDE_CLS[e.side] || ""}">${e.side || ""}</td>
+            <td>${e.name || ""}${e.symbol ? `<div class="sub" style="font-size:11px;">${e.symbol}</div>` : ""}</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums;">${won(e.price)}</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums;">${won(e.qty)}</td>
+            <td style="font-size:12.5px;">${e.reason ? `<div>${escapeHtml(e.reason)}</div>` : ""}${e.memo ? `<div class="sub" style="margin-top:3px;">📝 ${escapeHtml(e.memo)}</div>` : ""}</td>
+            <td><button class="jrn-del" onclick="deleteJournal(${e.id})">삭제</button></td>
+          </tr>`).join("")}</tbody></table></div>`;
+      } catch { el.className = "empty-state"; el.textContent = "불러오지 못했습니다."; }
+    }
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+    async function deleteJournal(id) {
+      if (!confirm("이 기록을 삭제할까요?")) return;
+      try {
+        const r = await fetch(`/api/journal/${id}`, { method: "DELETE" });
+        const d = await r.json();
+        if (d.ok) loadJournal();
+      } catch {}
+    }
+    (function bindJournalForm() {
+      const form = document.getElementById("journalForm");
+      if (!form) return;
+      // 날짜 기본값 = 오늘
+      const di = form.querySelector('input[name="trade_date"]');
+      if (di && !di.value) di.value = new Date().toISOString().slice(0, 10);
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const msg = document.getElementById("journalMsg");
+        const fd = new FormData(form);
+        const body = Object.fromEntries(fd.entries());
+        msg.textContent = "저장 중…";
+        try {
+          const r = await fetch("/api/journal", {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+          });
+          if (r.status === 401) { msg.textContent = "로그인이 필요합니다."; authState.authenticated = false; renderJournalGate(); return; }
+          const d = await r.json();
+          if (d.ok) {
+            msg.textContent = "✅ 저장됨";
+            const keepDate = di ? di.value : "";
+            form.reset(); if (di) di.value = keepDate;
+            loadJournal();
+            setTimeout(() => { msg.textContent = ""; }, 2000);
+          } else { msg.textContent = "저장 실패: " + (d.error || ""); }
+        } catch { msg.textContent = "저장 실패"; }
+      });
+    })();
 
     // ===================== 🏠 써머리 탭 =====================
     let summaryLoaded = false;
@@ -2459,43 +2804,8 @@
       // 📌 핀 차트 스트립
       loadPins();
 
-      // 🏆 총자산 히어로 + 🍩 종목별 비중 도넛 (둘 다 /api/balance 한 번으로)
-      (async () => {
-        try {
-          const r = await (await fetch("/api/balance")).json();
-          if (!r.ok) {
-            setBody("sumBalance", "💼 내 계좌", `<div class="sub" style="margin-top:6px;color:var(--muted)">${r.error || "조회 불가"}</div>`);
-            setBody("sumDonut", "🍩 종목별 비중", `<div class="sub" style="margin-top:6px;color:var(--muted)">조회 불가</div>`);
-            return;
-          }
-          const list = r.holdings || [];
-          const sm = r.summary || {};
-          // 합계: KIS summary 우선, 없으면 보유 합산
-          let buy = sm.buy_total, evalAmt = sm.total_eval, pnl = sm.pnl_total, pnlPct = sm.pnl_total_pct;
-          if (evalAmt == null) {
-            buy = 0; evalAmt = 0;
-            list.forEach((h) => { buy += (h.avg_price || 0) * (h.qty || 0); evalAmt += (h.cur_price || 0) * (h.qty || 0); });
-            pnl = evalAmt - buy; pnlPct = buy ? (pnl / buy * 100) : 0;
-          }
-          const totalAsset = (sm.total_eval != null) ? sm.total_eval : evalAmt;
-          if (!list.length && !totalAsset) {
-            setBody("sumBalance", "💼 내 계좌", `<div class="sub" style="margin-top:6px;">보유 종목 없음</div>`);
-            setBody("sumDonut", "🍩 종목별 비중", `<div class="sub" style="margin-top:6px;">보유 종목 없음</div>`);
-            return;
-          }
-          // 히어로: 총평가 크게 + 평가손익
-          const el = document.getElementById("sumBalance");
-          if (el) el.innerHTML =
-            `<h2 style="font-size:14px;">🏆 총자산</h2>
-             <div style="margin-top:6px;font-size:30px;font-weight:800;letter-spacing:-1px;font-variant-numeric:tabular-nums;">₩${won(totalAsset)}</div>
-             <div style="margin-top:4px;font-size:15px;font-weight:700;color:${pc(pnl)}">${sgn(pnl)}${won(pnl)}원 (${sgn(pnlPct)}${(pnlPct || 0).toFixed(2)}%)</div>
-             <div class="sub" style="margin-top:6px;">평가 ${won(evalAmt)} · 매입 ${won(buy)} · 예수금 ${won(sm.deposit)} · ${list.length}종목</div>`;
-          renderHoldingsDonut(list);
-        } catch {
-          setBody("sumBalance", "💼 내 계좌", `<div class="sub" style="margin-top:6px;color:var(--down)">조회 실패</div>`);
-          setBody("sumDonut", "🍩 종목별 비중", `<div class="sub" style="margin-top:6px;color:var(--down)">조회 실패</div>`);
-        }
-      })();
+      // 📊 수급(외국인·기관·개인) — 차트탭과 동일 데이터를 대시보드 요약 카드로
+      loadSummarySupply();
 
       // 📊 관심종목 등락(인메모리 quotes 상·하위)
       (() => {
@@ -2860,6 +3170,10 @@
       } else if (name === "dashboard") {
         // 차트는 숨김 상태에서 0px 로 그려질 수 있어 보일 때 리사이즈한다.
         requestAnimationFrame(resizeCharts);
+      } else if (name === "portfolio") {
+        loadPortfolio(true);
+      } else if (name === "journal") {
+        loadJournal();
       } else if (name === "deudeumi") {
         loadEodReport();
         loadWeekly();
@@ -3304,6 +3618,7 @@
       await loadFundamentals();
       requestAnimationFrame(resizeCharts); // 초기 렌더 직후 차트 크기 보정
       startRealtime();                // 1초 실시간 폴링 + 세션 배지 시작
+      loadAuth();                     // 🔐 로그인 상태/모드 확인(헤더 버튼·게이트·일지 탭)
       loadSummary(true);              // 기본 탭이 써머리이므로 초기 로드
     })();
   </script>

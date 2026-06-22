@@ -83,6 +83,103 @@ class Repository:
         except Exception:
             return []
 
+    # --- 구글 로그인 사용자 / 세션 -------------------------------------
+
+    def upsert_user(self, google_sub: str, email: str, name: str, picture: str) -> int:
+        """구글 사용자 신규 생성 또는 기존 갱신 후 user_id 반환."""
+        now = datetime.now(timezone.utc).isoformat()
+        self.conn.execute(
+            "INSERT INTO users (google_sub, email, name, picture, created_at, last_login) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(google_sub) DO UPDATE SET "
+            "email=excluded.email, name=excluded.name, picture=excluded.picture, last_login=excluded.last_login",
+            (google_sub, email, name, picture, now, now),
+        )
+        self.conn.commit()
+        row = self.conn.execute(
+            "SELECT id FROM users WHERE google_sub = ?", (google_sub,)
+        ).fetchone()
+        return int(row["id"])
+
+    def create_session(self, sid: str, user_id: int, expires_at: str) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        self.conn.execute(
+            "INSERT OR REPLACE INTO sessions (sid, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+            (sid, user_id, now, expires_at),
+        )
+        self.conn.commit()
+
+    def user_by_session(self, sid: str) -> dict | None:
+        """세션 쿠키(sid)로 사용자를 찾는다. 만료/없음이면 None."""
+        if not sid:
+            return None
+        try:
+            row = self.conn.execute(
+                "SELECT u.id, u.email, u.name, u.picture, s.expires_at "
+                "FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.sid = ?",
+                (sid,),
+            ).fetchone()
+        except Exception:
+            return None
+        if not row:
+            return None
+        if row["expires_at"] and row["expires_at"] < datetime.now(timezone.utc).isoformat():
+            self.delete_session(sid)
+            return None
+        return {"id": row["id"], "email": row["email"], "name": row["name"], "picture": row["picture"]}
+
+    def delete_session(self, sid: str) -> None:
+        try:
+            self.conn.execute("DELETE FROM sessions WHERE sid = ?", (sid,))
+            self.conn.commit()
+        except Exception:
+            pass
+
+    # --- 사용자별 매매일지 ----------------------------------------------
+
+    def list_journal(self, user_id: int, limit: int = 500) -> list[dict]:
+        """해당 사용자의 매매일지(최신순). 실패 시 빈 리스트(500 금지)."""
+        try:
+            rows = self.conn.execute(
+                "SELECT id, trade_date, symbol, name, side, price, qty, reason, memo, created_at, updated_at "
+                "FROM journal WHERE user_id = ? ORDER BY trade_date DESC, id DESC LIMIT ?",
+                (user_id, limit),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        except Exception:
+            return []
+
+    def add_journal(self, user_id: int, e: dict) -> int:
+        now = datetime.now(timezone.utc).isoformat()
+        cur = self.conn.execute(
+            "INSERT INTO journal (user_id, trade_date, symbol, name, side, price, qty, reason, memo, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (user_id, e.get("trade_date"), e.get("symbol"), e.get("name"), e.get("side"),
+             e.get("price"), e.get("qty"), e.get("reason"), e.get("memo"), now, now),
+        )
+        self.conn.commit()
+        return int(cur.lastrowid)
+
+    def update_journal(self, user_id: int, entry_id: int, e: dict) -> bool:
+        """본인 소유 일지만 수정(user_id 일치 강제). 변경 행 1 이상이면 True."""
+        now = datetime.now(timezone.utc).isoformat()
+        cur = self.conn.execute(
+            "UPDATE journal SET trade_date=?, symbol=?, name=?, side=?, price=?, qty=?, reason=?, memo=?, updated_at=? "
+            "WHERE id=? AND user_id=?",
+            (e.get("trade_date"), e.get("symbol"), e.get("name"), e.get("side"),
+             e.get("price"), e.get("qty"), e.get("reason"), e.get("memo"), now, entry_id, user_id),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def delete_journal(self, user_id: int, entry_id: int) -> bool:
+        """본인 소유 일지만 삭제. 삭제됐으면 True."""
+        cur = self.conn.execute(
+            "DELETE FROM journal WHERE id=? AND user_id=?", (entry_id, user_id)
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
     def close(self) -> None:
         self.conn.close()
 

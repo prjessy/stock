@@ -57,6 +57,49 @@ CREATE TABLE IF NOT EXISTS briefings (
 );
 """
 
+# 구글 로그인 사용자. google_sub(구글 고유 ID)로 식별, 이메일/이름/사진은 표시용.
+CREATE_USERS = """
+CREATE TABLE IF NOT EXISTS users (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    google_sub  TEXT    NOT NULL UNIQUE,
+    email       TEXT,
+    name        TEXT,
+    picture     TEXT,
+    created_at  TEXT    NOT NULL,
+    last_login  TEXT
+);
+"""
+
+# 로그인 세션. sid(랜덤 토큰)를 httponly 쿠키로 내려 user_id 와 연결한다.
+CREATE_SESSIONS = """
+CREATE TABLE IF NOT EXISTS sessions (
+    sid         TEXT    PRIMARY KEY,
+    user_id     INTEGER NOT NULL,
+    created_at  TEXT    NOT NULL,
+    expires_at  TEXT    NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+"""
+
+# 사용자별 매매일지. 사용자(user_id)마다 자기 기록만 보고 쓴다.
+CREATE_JOURNAL = """
+CREATE TABLE IF NOT EXISTS journal (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL,
+    trade_date  TEXT    NOT NULL,
+    symbol      TEXT,
+    name        TEXT,
+    side        TEXT,
+    price       REAL,
+    qty         REAL,
+    reason      TEXT,
+    memo        TEXT,
+    created_at  TEXT    NOT NULL,
+    updated_at  TEXT    NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+"""
+
 # init_db() 가 순서대로 실행할 DDL 목록.
 ALL_TABLES = [
     CREATE_ALERTS,
@@ -64,4 +107,7 @@ ALL_TABLES = [
     CREATE_ANALYSIS_CACHE,
     CREATE_MARKETING_CACHE,
     CREATE_BRIEFINGS,
+    CREATE_USERS,
+    CREATE_SESSIONS,
+    CREATE_JOURNAL,
 ]
