@@ -351,11 +351,14 @@
     .modal-head h2 { font-size: 16px; font-weight: 640; margin: 0; }
     .modal-x { background: transparent; border: none; color: var(--muted); font-size: 16px; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
     .modal-x:hover { color: var(--text); background: var(--panel); }
-    .modal-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; }
+    .modal-row { display: flex; align-items: center; justify-content: space-between; gap: 10px 12px; padding: 10px 0; flex-wrap: wrap; }
     .modal-k { font-size: 13.5px; font-weight: 600; }
-    .modal-v { display: flex; align-items: center; gap: 4px; font-size: 14px; }
-    .modal-v input { width: 72px; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font-size: 14px; font-variant-numeric: tabular-nums; }
+    .modal-v { display: flex; align-items: center; gap: 4px; font-size: 14px; flex-wrap: nowrap; white-space: nowrap; }
+    .modal-v input { width: 60px; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font-size: 14px; font-variant-numeric: tabular-nums; }
     .modal-v input:focus { outline: none; border-color: var(--accent); }
+    .alarm-opt { display: flex; align-items: center; gap: 8px; padding: 7px 0; font-size: 14px; cursor: pointer; }
+    .alarm-opt input { width: 16px; height: 16px; flex: 0 0 auto; }
+    .opt-tag { margin-left: auto; font-size: 10.5px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
     .modal-note { color: var(--muted); font-size: 12px; line-height: 1.6; margin-top: 8px; border-top: 1px solid var(--border); padding-top: 12px; }
   </style>
 </head>
@@ -739,13 +742,17 @@
         </div>
         <div class="modal-note">6자리 종목코드로 대시보드에 종목을 <b>바로 추가</b>(재시작 불필요). 추가한 종목만 ✕로 삭제 가능(기본 종목은 고정). 코드는 네이버금융/증권사에서 확인.</div>
         <div class="modal-row" style="display:block;">
-          <div class="modal-k" style="margin-bottom:6px;">📡 서버 알림 종류 (복수 선택 · 폰 꺼도 수신)</div>
-          <label style="display:block;margin:4px 0;font-size:14px;"><input type="checkbox" class="at-input" value="pct"> 증감(±%) 도달</label>
-          <label style="display:block;margin:4px 0;font-size:14px;"><input type="checkbox" class="at-input" value="target"> 목표금액 도달</label>
-          <label style="display:block;margin:4px 0;font-size:14px;"><input type="checkbox" class="at-input" value="deudeumi1"> 더듬이1 (피보나치 근접) · 매일 9시 알림</label>
-          <label style="display:block;margin:4px 0;font-size:14px;"><input type="checkbox" class="at-input" value="deudeumi4"> 더듬이4 (ETF 수급) · 매일 9시 알림</label>
+          <div class="modal-k" style="margin-bottom:8px;">📡 서버 알림 종류 (복수 선택 · 폰 꺼도 수신)</div>
+          <label class="alarm-opt"><input type="checkbox" class="at-input" value="pct"> 증감(±%) 도달 <span class="opt-tag">실시간</span></label>
+          <label class="alarm-opt"><input type="checkbox" class="at-input" value="target"> 목표금액 도달 <span class="opt-tag">실시간</span></label>
+          <label class="alarm-opt"><input type="checkbox" class="at-input" value="deudeumi1"> 더듬이1 (피보나치 근접) <span class="opt-tag">매일 9시</span></label>
+          <label class="alarm-opt"><input type="checkbox" class="at-input" value="deudeumi4"> 더듬이4 (ETF 수급) <span class="opt-tag">매일 9시</span></label>
+          <div style="font-size:11.5px;color:var(--muted);margin:10px 0 4px;border-top:1px solid var(--border);padding-top:8px;">🤖 AI 리포트 (텔레그램 발송 · 앱에선 항상 표시)</div>
+          <label class="alarm-opt"><input type="checkbox" class="at-input" value="report_eod"> 📊 장 마감 리포트 <span class="opt-tag">평일 15:40</span></label>
+          <label class="alarm-opt"><input type="checkbox" class="at-input" value="report_care"> 💼 보유종목 데일리 케어 <span class="opt-tag">평일 09:30</span></label>
+          <label class="alarm-opt"><input type="checkbox" class="at-input" value="report_weekly"> 🗓️ 주간 복기 <span class="opt-tag">토 09:00</span></label>
         </div>
-        <div class="modal-note">선택한 알림을 <b>서버가 장중(평일 08~20시) 자동 감시</b>해 <b>텔레그램+카카오</b>로 보냅니다 — <b>브라우저를 안 켜도 수신</b>됩니다. (증감·목표금액은 실시간, 더듬이1·4는 매일 9시 1회)</div>
+        <div class="modal-note">선택한 알림을 <b>서버가 자동 발송</b>(텔레그램+카카오) — 폰 꺼도 수신. 체크 해제하면 발송 안 함. <span style="color:var(--muted)">발목·자동매매 체결 알림은 🤖 자동매매 탭에서 제어.</span></div>
         <div class="modal-row">
           <div class="modal-k">등락률(증감) 단계 · 횟수</div>
           <div class="modal-v">±<input class="thr-input" type="number" min="0.5" max="50" step="0.5" value="3">% × 최대 <input class="cnt-input" type="number" min="1" max="20" step="1" value="3" style="width:52px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:4px 6px;font-size:14px;">회</div>

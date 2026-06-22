@@ -146,7 +146,9 @@ class WeeklyReviewScheduler:
             if now.weekday() == self._weekday and now.hour >= self._hour and self._last_week != week:
                 self._last_week = week
                 try:
-                    generate(self._registry, send=True)
+                    from app.core import alert_config
+                    send = "report_weekly" in (alert_config.load().get("types") or [])
+                    generate(self._registry, send=send)
                 except Exception:
                     pass
             self._stop.wait(600)

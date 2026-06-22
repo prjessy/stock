@@ -152,7 +152,9 @@ class EodScheduler:
             if now.weekday() < 5 and after and self._last_date != today:
                 self._last_date = today
                 try:
-                    generate(self._registry, send=True)
+                    from app.core import alert_config
+                    send = "report_eod" in (alert_config.load().get("types") or [])
+                    generate(self._registry, send=send)  # 발송은 알림설정 토글, 생성은 항상(앱 표시)
                 except Exception:
                     pass
             self._stop.wait(300)  # 5분마다 시각 체크

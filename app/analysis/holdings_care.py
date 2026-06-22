@@ -138,7 +138,9 @@ class HoldingsCareScheduler:
             if now.weekday() < 5 and after and self._last_date != today:
                 self._last_date = today
                 try:
-                    generate(self._registry, send=True)
+                    from app.core import alert_config
+                    send = "report_care" in (alert_config.load().get("types") or [])
+                    generate(self._registry, send=send)
                 except Exception:
                     pass
             self._stop.wait(300)

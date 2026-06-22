@@ -13,12 +13,16 @@ from app.config import settings
 
 _FILE = Path(settings.db_path).resolve().parent / "alert_config.json"
 
-_VALID_TYPES = ("pct", "target", "deudeumi1", "deudeumi4")
+# 텔레그램으로 가는 모든 종류를 사용자가 선택. report_*는 AI 리포트 3종(발송 토글).
+_VALID_TYPES = ("pct", "target", "deudeumi1", "deudeumi4",
+                "report_eod", "report_care", "report_weekly")
+_REPORT_TYPES = ("report_eod", "report_care", "report_weekly")
 _DEFAULT = {
-    "types": ["pct", "target"],          # 활성 알림 종류(멀티)
+    "types": ["pct", "target", "report_eod", "report_care", "report_weekly"],  # 활성 알림(멀티)
     "pct_step": 3.0,                     # 증감 단계(%). ±step,±2step,±3step… 배수마다 알림(기본 ±3)
     "pct_count": 3,                      # 증감 알림 최대 횟수(단계 수). 예: 3 → step·2step·3step 까지
     "targets": {},                       # {symbol: {"price": float, "dir": "up"|"down"}}
+    "v": 2,                              # 설정 버전(리포트 토글 마이그레이션용)
 }
 
 
@@ -31,7 +35,12 @@ def load() -> dict:
                 pos = next((abs(float(x)) for x in d["pct_thresholds"] if float(x) > 0), None)
                 if pos:
                     d["pct_step"] = pos
-            return {**_DEFAULT, **{k: v for k, v in d.items() if k in _DEFAULT}}
+            out = {**_DEFAULT, **{k: v for k, v in d.items() if k in _DEFAULT}}
+            # v<2 (리포트 토글 도입 전): 리포트는 기존처럼 켜진 상태로 보존(사용자가 끄기 전까지).
+            if d.get("v", 1) < 2 and not any(t in out["types"] for t in _REPORT_TYPES):
+                out["types"] = list(out["types"]) + list(_REPORT_TYPES)
+                out["v"] = 2
+            return out
     except Exception:
         pass
     return {**_DEFAULT}
