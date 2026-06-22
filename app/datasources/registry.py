@@ -104,10 +104,11 @@ class SourceRegistry:
         fn = getattr(self.source_for(symbol), "get_investor_flow", None)
         return fn(symbol) if fn is not None else None
 
-    def orderbook(self, symbol: str) -> dict | None:
-        """호가(매도/매수 단계별 잔량). KIS 소스만 지원, 그 외 None."""
+    def orderbook(self, symbol: str, market_code: str = "J") -> dict | None:
+        """호가(매도/매수 단계별 잔량). KIS 소스만 지원, 그 외 None.
+        market_code: "J"=본장, "NX"=시간외(NXT)."""
         fn = getattr(self.source_for(symbol), "get_orderbook", None)
-        return fn(symbol) if fn is not None else None
+        return fn(symbol, market_code=market_code) if fn is not None else None
 
     def etf_constituents(self, etf_code: str) -> list[tuple[str, str]]:
         """ETF 구성종목 [(코드, 이름)]. KIS 소스만 지원(더듬이4), 그 외 []."""

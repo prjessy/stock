@@ -302,16 +302,37 @@
     </header>
 
     <nav class="tabs" id="tabs" role="tablist">
-      <button class="tab-btn active" data-tab="dashboard" role="tab" aria-selected="true">📊 대시보드</button>
+      <button class="tab-btn active" data-tab="summary" role="tab" aria-selected="true">🏠 써머리</button>
+      <button class="tab-btn" data-tab="dashboard" role="tab" aria-selected="false">📊 대시보드</button>
       <button class="tab-btn" data-tab="briefing" role="tab" aria-selected="false">🇺🇸 미국 시장 동향</button>
       <button class="tab-btn" data-tab="marketing" role="tab" aria-selected="false">🍡 찰떡 써머리</button>
       <button class="tab-btn" data-tab="deudeumi" role="tab" aria-selected="false">🐜 더듬이</button>
+      <button class="tab-btn" data-tab="fintech" role="tab" aria-selected="false">💰 핀테크</button>
       <button class="tab-btn" data-tab="alarm" role="tab" aria-selected="false">🔔 알람</button>
       <button class="tab-btn" data-tab="autotrade" role="tab" aria-selected="false">🤖 자동매매봇 🔒</button>
     </nav>
 
+    <!-- ===== 탭 0: 🏠 써머리 (각 탭 핵심만 한 화면) ===== -->
+    <div class="tab-panel active" id="panel-summary" role="tabpanel">
+      <section class="panel" style="margin-bottom:14px;">
+        <div class="chart-head">
+          <h2 style="font-size:15px;margin:0;">🏠 써머리 <span style="color:var(--muted);font-weight:500;font-size:12px;margin-left:6px;">오늘 꼭 봐야 할 것만</span></h2>
+          <button class="refresh-btn" onclick="loadSummary(true)">🔄 새로고침</button>
+        </div>
+      </section>
+      <div id="summaryGrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;">
+        <div class="panel" id="sumBalance"><h2 style="font-size:14px;">💼 내 계좌 손익</h2><div class="sub" style="margin-top:6px;">불러오는 중…</div></div>
+        <div class="panel" id="sumMovers"><h2 style="font-size:14px;">📊 관심종목 등락</h2><div class="sub" style="margin-top:6px;">불러오는 중…</div></div>
+        <div class="panel" id="sumBalmok"><h2 style="font-size:14px;">🦶 발목 근접</h2><div class="sub" style="margin-top:6px;">불러오는 중…</div></div>
+        <div class="panel" id="sumUs"><h2 style="font-size:14px;">🇺🇸 미국장 한줄</h2><div class="sub" style="margin-top:6px;">불러오는 중…</div></div>
+        <div class="panel" id="sumIpo"><h2 style="font-size:14px;">🗓️ 청약 임박</h2><div class="sub" style="margin-top:6px;">불러오는 중…</div></div>
+        <div class="panel" id="sumFx"><h2 style="font-size:14px;">🥇 금·환율</h2><div class="sub" style="margin-top:6px;">불러오는 중…</div></div>
+        <div class="panel" id="sumAlerts"><h2 style="font-size:14px;">🔔 최근 알림</h2><div class="sub" style="margin-top:6px;">불러오는 중…</div></div>
+      </div>
+    </div>
+
     <!-- ===== 탭 1: 대시보드 (기존 기능 그대로) ===== -->
-    <div class="tab-panel active" id="panel-dashboard" role="tabpanel">
+    <div class="tab-panel" id="panel-dashboard" role="tabpanel">
     <section class="grid" id="cards"></section>
 
     <section class="panel flow-panel" style="margin-bottom:16px;">
@@ -472,6 +493,37 @@
       <div id="mktLinks" class="empty-state">불러오는 중…</div>
     </div>
 
+    <!-- ===== 탭: 💰 핀테크 (금·원자재·환율 / 각국 금리·국채 / 공모주 청약 / 부동산) ===== -->
+    <div class="tab-panel" id="panel-fintech" role="tabpanel">
+      <section class="panel" style="margin-bottom:16px;">
+        <div class="chart-head">
+          <h2 style="font-size:15px;margin:0;">💰 핀테크 <span style="color:var(--muted);font-weight:500;font-size:12px;margin-left:6px;">금·원자재·환율 · 각국 금리/국채 · 공모주 청약 · 부동산</span></h2>
+          <button class="refresh-btn" onclick="loadFintech(true)">🔄 새로고침</button>
+        </div>
+        <div class="sub">무료 공개데이터(야후·FRED·38커뮤니케이션) 기반. 금리는 일부 월별 갱신.</div>
+      </section>
+
+      <section class="panel" style="margin-bottom:16px;">
+        <h2 style="font-size:14px;">🥇 금·원자재·환율</h2>
+        <div id="ftMarkets" class="dir-row" style="margin-top:8px;">불러오는 중…</div>
+      </section>
+
+      <section class="panel" style="margin-bottom:16px;">
+        <h2 style="font-size:14px;">📈 각국 금리 · 국채</h2>
+        <div id="ftRates" style="margin-top:8px;">불러오는 중…</div>
+      </section>
+
+      <section class="panel" style="margin-bottom:16px;">
+        <h2 style="font-size:14px;">🗓️ 공모주 청약 달력 <span style="color:var(--muted);font-weight:500;font-size:11px;">날짜 · 종목 · 공모가 · 주관 증권사</span></h2>
+        <div id="ftIpo" style="margin-top:8px;">불러오는 중…</div>
+      </section>
+
+      <section class="panel">
+        <h2 style="font-size:14px;">🏢 부동산 거래량 <span style="color:var(--muted);font-weight:500;font-size:11px;">아파트 3000세대+ 대단지</span></h2>
+        <div id="ftRealestate" style="margin-top:8px;">불러오는 중…</div>
+      </section>
+    </div>
+
     <!-- ===== 탭 4: 알람 ===== -->
     <div class="tab-panel" id="panel-alarm" role="tabpanel">
       <section class="panel">
@@ -508,6 +560,22 @@
         </div>
         <div class="sub" style="margin-top:12px;">⚠️ <b>실제 주문</b>입니다. 위에서 종목을 고르고 지정가를 확인하세요. 종목이 없으면 ⚙️설정 → 📋종목 관리에서 추가. VPS <code>.env</code>에 계좌번호(KIS_CANO)·주문권한 필요.</div>
       </section>
+
+      <section class="panel">
+        <h2 style="font-size:15px;margin:0;">🧠 AI 매수 판단 <span style="color:var(--muted);font-weight:500;font-size:12px;margin-left:6px;">기준값·예산 → 적정/위험/중립 + 권장 금액</span></h2>
+        <div class="sub" style="margin:6px 0;"><b>위 '종목 테스트'에서 고른 종목</b>을 기준으로, 기준값(목표/판단 가격)과 예산을 넣으면 <b>Claude가 지금 매수가 적정/위험/중립인지 + 예산 내 권장 매수 금액·수량</b>을 제시합니다. 판단 보조일 뿐 자동 주문은 하지 않습니다(Claude 호출 · 토큰비용).</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:8px 0;">
+          <span style="font-size:13px;">기준값</span>
+          <input id="aiBasePrice" type="number" min="0" step="any" placeholder="목표/판단 가격(원)"
+            style="width:150px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:4px 6px;font-size:14px;font-variant-numeric:tabular-nums;">
+          <span style="font-size:13px;">예산</span>
+          <input id="aiBudget" type="number" min="0" step="any" placeholder="매수 가능 금액(원)"
+            style="width:150px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:4px 6px;font-size:14px;font-variant-numeric:tabular-nums;">
+          <button class="refresh-btn" onclick="runAiJudge(this)">🧠 AI 판단 받기</button>
+        </div>
+        <div id="aiJudgeBody" class="sub" style="margin-top:6px;">위 종목을 고르고 기준값·예산을 넣은 뒤 '판단 받기'를 누르세요.</div>
+      </section>
+
       <section class="panel">
         <div class="chart-head">
           <h2 style="font-size:15px;margin:0;">💼 보유 종목 <span style="color:var(--muted);font-weight:500;font-size:12px;margin-left:6px;">잔고 · 평단 · 손익</span></h2>
@@ -714,7 +782,7 @@
           <div class="price ${hasPrice ? "" : "dim"}">${hasPrice ? fmtPrice(q) : (q.error ? "—" : "로딩 중…")}</div>
           <div class="change ${changeClass(q.change_pct)}">${fmtChange(q.change_pct)}${hit ? `<span class="hit-badge ${q.change_pct >= 0 ? "up" : "down"}">🔔 ±${ALERT_PCT}%</span>` : ""}${tgt ? `<span class="tgt-badge${tgtReached ? " on" : ""}">🎯 ${tgt.dir === "up" ? "≥" : "≤"} ${fmtPriceNum(q.currency, tgt.price)}</span>` : ""}</div>
           ${q.stale ? `<div class="stale-note">🕘 휴장 · 종가${q.asof ? " " + q.asof : ""}</div>` : ""}
-          ${hasPrice && q.currency === "KRW" ? `<div class="venue-note"><span class="vtag">KRX 정규장</span> ${fmtPriceNum(q.currency, q.price)} <span class="${changeClass(q.change_pct)}">${fmtChange(q.change_pct)}</span>${q.nxt && q.nxt.price ? `<br><span class="vtag">NXT 애프터</span> ${fmtPriceNum(q.currency, q.nxt.price)} <span class="${changeClass(q.nxt.change_pct)}">${fmtChange(q.nxt.change_pct)}</span>` : ""}</div>` : ""}
+          ${hasPrice && q.currency === "KRW" ? `<div class="venue-note"><span class="vtag">KRX 정규장</span> ${fmtPriceNum(q.currency, q.price)} <span class="${changeClass(q.change_pct)}">${fmtChange(q.change_pct)}</span>${q.nxt && q.nxt.price ? `<br><span class="vtag">NXT 시간외</span> ${fmtPriceNum(q.currency, q.nxt.price)} <span class="${changeClass(q.nxt.change_pct)}">${fmtChange(q.nxt.change_pct)}</span>` : ""}</div>` : ""}
           ${q.error ? `<div class="err">데이터 없음</div>` : ""}
           ${(q.note || "").includes("레버리지") ? `<div class="warn-lev">⚠️ 매수 전 교육 필수(미이수 시 매수 불가) · 비용 약 8,000원 발생 · 음의 복리 유의</div>` : ""}
         `;
@@ -1651,16 +1719,37 @@
         const r = await (await fetch("/api/balance")).json();
         if (!r.ok) { el.className = "empty-state"; el.innerHTML = `<span style="color:var(--down)">조회 실패 — ${r.error || ""}</span>`; return; }
         const list = r.holdings || [];
-        if (!list.length) { el.className = "empty-state"; el.textContent = "보유 종목이 없습니다."; return; }
+        const sm = r.summary || {};
         const pc = (v) => v > 0 ? "var(--up)" : v < 0 ? "var(--down)" : "var(--muted)";
+        const won = (n) => (n == null ? "-" : Math.round(n).toLocaleString());
+        const sgn = (v) => (v > 0 ? "+" : "");
+        // 💰 수익현황 요약(계좌 합계)
+        let summaryHtml = "";
+        if (sm.total_eval != null || sm.pnl_total != null) {
+          summaryHtml =
+            `<div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px;">
+              <div style="font-size:13px;color:var(--muted);">💰 수익현황 (계좌 합계)</div>
+              <div style="font-size:22px;font-weight:700;margin:4px 0;color:${pc(sm.pnl_total)}">
+                ${sgn(sm.pnl_total)}${won(sm.pnl_total)}원 <span style="font-size:14px">(${sm.pnl_total_pct == null ? "-" : sgn(sm.pnl_total_pct) + sm.pnl_total_pct + "%"})</span>
+              </div>
+              <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);">
+                <span>총평가 <b style="color:var(--text)">${won(sm.total_eval)}</b></span>
+                <span>매입합계 <b style="color:var(--text)">${won(sm.buy_total)}</b></span>
+                <span>예수금 <b style="color:var(--text)">${won(sm.deposit)}</b></span>
+                <span>순자산 <b style="color:var(--text)">${won(sm.net_asset)}</b></span>
+              </div>
+            </div>`;
+        }
+        if (!list.length) { el.className = "empty-state"; el.innerHTML = summaryHtml + "보유 종목이 없습니다."; return; }
         el.className = "";
-        el.innerHTML = `<div class="tbl-wrap"><table class="alert-table" style="width:100%;font-size:13px;">
-          <thead><tr><th style="text-align:left;">종목</th><th style="text-align:right;">수량</th><th style="text-align:right;">평단</th><th style="text-align:right;">현재가</th><th style="text-align:right;">손익률</th></tr></thead>
+        el.innerHTML = summaryHtml + `<div class="tbl-wrap"><table class="alert-table" style="width:100%;font-size:13px;">
+          <thead><tr><th style="text-align:left;">종목</th><th style="text-align:right;">수량</th><th style="text-align:right;">평단</th><th style="text-align:right;">현재가</th><th style="text-align:right;">평가손익</th><th style="text-align:right;">손익률</th></tr></thead>
           <tbody>${list.map((h) => `<tr>
             <td style="text-align:left;">${h.name || h.symbol}</td>
             <td style="text-align:right;font-variant-numeric:tabular-nums;">${(h.qty || 0).toLocaleString()}</td>
             <td style="text-align:right;font-variant-numeric:tabular-nums;">${Math.round(h.avg_price || 0).toLocaleString()}</td>
             <td style="text-align:right;font-variant-numeric:tabular-nums;">${(h.cur_price || 0).toLocaleString()}</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums;color:${pc(h.pnl_amt)}">${h.pnl_amt == null ? "-" : (h.pnl_amt > 0 ? "+" : "") + won(h.pnl_amt)}</td>
             <td style="text-align:right;font-variant-numeric:tabular-nums;color:${pc(h.pnl_pct)}">${(h.pnl_pct > 0 ? "+" : "") + (h.pnl_pct || 0).toFixed(2)}%</td>
           </tr>`).join("")}</tbody></table></div>`;
       } catch (e) { el.className = "empty-state"; el.innerHTML = '<span style="color:var(--down)">조회 요청 실패</span>'; }
@@ -1783,13 +1872,31 @@
         const r = await (await fetch("/api/bottom-scan?min_score=" + score)).json();
         if (!r.ok) { el.innerHTML = `<span style="color:var(--down)">스캔 실패 — ${r.error || ""}</span>`; return; }
         const list = r.items || [];
-        if (!list.length) { el.textContent = `발목(저점권) 종목 없음 (신호 ${score}개 이상 기준).`; return; }
-        el.innerHTML = list.map((d) =>
-          `<div style="margin:6px 0;padding:6px 8px;background:var(--panel);border:1px solid var(--border);border-radius:8px;">
-            <b>${d.name}</b> <span style="color:var(--muted)">${(d.change_pct ?? 0) >= 0 ? "+" : ""}${(d.change_pct ?? 0).toFixed(2)}%</span>
-            · 발목 신호 <b style="color:var(--up)">${d.score}개</b><br>
-            <span style="font-size:12px;color:var(--muted)">${(d.signals || []).join(" · ")}</span>
-          </div>`).join("");
+        // 종목 카드: 판정(발목 O/X) + 5개 지표 근거(통과 ✓ / 미통과)
+        const card = (d) => {
+          const isB = d.is_balmok;
+          const checks = (d.checks || []).map((c) =>
+            `<div style="font-size:11.5px;color:${c.ok ? "var(--up)" : "var(--muted)"}">
+               ${c.ok ? "✅" : "▫️"} ${c.name}: ${c.detail}</div>`).join("");
+          return `<div style="margin:7px 0;padding:8px 10px;background:var(--panel);border:1px solid ${isB ? "var(--up)" : "var(--border)"};border-radius:8px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <b>${d.name || d.symbol}</b>
+              <span style="font-weight:700;color:${isB ? "var(--up)" : "var(--muted)"}">${isB ? "🦶 발목(저점권)" : "발목 아님"} · ${d.score}/5</span>
+            </div>
+            <div style="font-size:12px;color:var(--muted);margin:2px 0 4px;">${d.reason || ""} <span>(${(d.change_pct ?? 0) >= 0 ? "+" : ""}${(d.change_pct ?? 0).toFixed(2)}%)</span></div>
+            ${checks}
+          </div>`;
+        };
+        if (list.length) {
+          el.innerHTML = list.map(card).join("");
+        } else {
+          // 발목 판정 종목이 없으면 → 저점 근접 순위 전체를 근거와 함께 표시(빈 화면 방지).
+          const rk = r.ranking || [];
+          if (!rk.length) { el.textContent = `스캔 대상 없음 (errors: ${(r.errors||[]).join(", ")||"-"}).`; return; }
+          el.innerHTML =
+            `<div style="font-size:12.5px;color:var(--muted);margin-bottom:4px;">신호 ${score}개 이상 '발목' 종목은 없습니다. 아래는 <b>저점 근접 순위</b>(52주 하위 % 낮은 순)와 <b>각각 발목이 아닌 근거</b>:</div>`
+            + rk.map(card).join("");
+        }
       } catch (e) { el.innerHTML = '<span style="color:var(--down)">스캔 요청 실패</span>'; }
       finally { if (btn) { btn.disabled = false; btn.textContent = "🦶 발목 지금 스캔"; } }
     }
@@ -1859,6 +1966,46 @@
         alert(r.ok ? `✅ 접수됨\n${r.msg || ""}\n주문번호 ${r.order_no || "-"}` : `❌ 실패\n${r.error || ""}`);
       } catch (e) { alert("주문 요청 실패"); }
     }
+
+    // ===== 🧠 AI 매수 판단 — /api/autotrade/ai-judge =====
+    async function runAiJudge(btn) {
+      const el = document.getElementById("aiJudgeBody");
+      const sel = document.getElementById("orderSym");
+      const sym = (sel && sel.value) || selected;
+      if (!sym) { el.innerHTML = '<span style="color:var(--down)">위 \'주문 테스트\'에서 종목을 먼저 고르세요.</span>'; return; }
+      const base_price = parseFloat((document.getElementById("aiBasePrice") || {}).value) || null;
+      const budget = parseFloat((document.getElementById("aiBudget") || {}).value) || null;
+      if (btn) { btn.disabled = true; btn.textContent = "🧠 판단 중…(Claude)"; }
+      el.innerHTML = "AI가 지표·기준값·예산을 검토 중…";
+      try {
+        const r = await (await fetch("/api/autotrade/ai-judge", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ symbol: sym, base_price, budget, password: autotradePw }),
+        })).json();
+        if (!r.ok) { el.innerHTML = `<span style="color:var(--down)">판단 실패 — ${r.error || ""}</span>`; return; }
+        const color = r.verdict === "적정" ? "var(--up)" : r.verdict === "위험" ? "var(--down)" : "var(--gold)";
+        const won = (n) => (n || 0).toLocaleString();
+        el.innerHTML =
+          `<div style="background:var(--panel);border:1px solid ${color};border-radius:10px;padding:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-weight:700;font-size:16px;color:${color}">${r.verdict}</span>
+              <span style="color:var(--muted);font-size:12px;">${r.name || ""} · 현재가 ${won(r.price)}원</span>
+            </div>
+            <div style="margin:6px 0;font-size:14px;">${r.headline || ""}</div>
+            <div class="sub" style="margin-bottom:8px;">${r.summary || ""}</div>
+            <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:13px;margin-bottom:8px;">
+              <div>💰 권장 매수금액 <b style="color:${color}">${won(r.buy_amount_krw)}원</b></div>
+              <div>📦 권장 수량 <b>${won(r.buy_qty)}주</b></div>
+            </div>
+            <div style="font-size:12.5px;color:var(--muted);margin-bottom:6px;">진입대 ${r.entry_zone || "-"} · 손절참고 ${r.stop_ref || "-"}</div>
+            <div style="font-size:12.5px;">${(r.reasons || []).map((x) => `• ${x}`).join("<br>")}</div>
+            <div style="margin-top:8px;font-size:12px;color:var(--down);">⚠️ ${r.risk_note || ""}</div>
+            <div style="margin-top:6px;font-size:11px;color:var(--muted);">Claude(Haiku) 판단 보조 · 예측 아님 · 투자 책임 본인.</div>
+          </div>`;
+      } catch (e) { el.innerHTML = '<span style="color:var(--down)">판단 요청 실패</span>'; }
+      finally { if (btn) { btn.disabled = false; btn.textContent = "🧠 AI 판단 받기"; } }
+    }
+
     function openSettings() {
       renderAlertThreshold();
       syncIvInputs();
@@ -2036,14 +2183,19 @@
     const OB_SYMS = ["005930", "000660", "0193W0", "0193T0"];  // 삼성전자·하이닉스·삼전레버·하닉레버
     function renderBook(d) {
       const name = (d && d.name) || "";
-      if (!d || !d.available || (!(d.asks || []).length && !(d.bids || []).length))
-        return `<div class="ob-card"><div class="ob-name">${name}</div><div class="empty-state" style="padding:10px;font-size:11px;">장중 표시</div></div>`;
+      if (!d || !d.available || (!(d.asks || []).length && !(d.bids || []).length)) {
+        const msg = (d && d.note) ? d.note : "장중 표시";
+        return `<div class="ob-card"><div class="ob-name">${name}</div><div class="empty-state" style="padding:10px;font-size:11px;">${msg}</div></div>`;
+      }
       const asks = d.asks.slice(0, 5), bids = d.bids.slice(0, 5);
       const maxq = Math.max(1, ...asks.map((a) => a.qty), ...bids.map((b) => b.qty));
       const bar = (q, c) => `<span class="ob-bar" style="width:${Math.round(q / maxq * 28)}px;background:${c}"></span>`;
       const ar = asks.slice().reverse().map((a) => `<tr class="ask"><td class="obp">${a.price.toLocaleString()}</td><td class="obq">${a.qty.toLocaleString()}${bar(a.qty, "var(--down)")}</td></tr>`).join("");
       const br = bids.map((b) => `<tr class="bid"><td class="obp">${b.price.toLocaleString()}</td><td class="obq">${b.qty.toLocaleString()}${bar(b.qty, "var(--up)")}</td></tr>`).join("");
-      return `<div class="ob-card"><div class="ob-name">${name}</div><table class="ob-tbl">${ar}<tr class="mid"><td colspan="2">호가</td></tr>${br}</table></div>`;
+      // 시간외(NXT)면 노란 라벨로 구분.
+      const isNxt = d.market_code === "NX";
+      const tag = d.market_label ? `<span style="font-size:9px;font-weight:700;color:${isNxt ? "var(--gold)" : "var(--muted)"};margin-left:4px;">${d.market_label}</span>` : "";
+      return `<div class="ob-card"><div class="ob-name">${name}${tag}</div><table class="ob-tbl">${ar}<tr class="mid"><td colspan="2">호가</td></tr>${br}</table></div>`;
     }
     async function loadOrderbook() {
       const box = document.getElementById("flowOrderbook");
@@ -2096,6 +2248,194 @@
       return true;
     }
 
+    // ===================== 🏠 써머리 탭 =====================
+    let summaryLoaded = false;
+    async function loadSummary(force) {
+      if (summaryLoaded && !force) return;
+      summaryLoaded = true;
+      const won = (n) => Math.round(n || 0).toLocaleString();
+      const pc = (v) => (v > 0 ? "var(--up)" : v < 0 ? "var(--down)" : "var(--muted)");
+      const sgn = (v) => (v > 0 ? "+" : "");
+      const setBody = (id, title, html) => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = `<h2 style="font-size:14px;">${title}</h2>${html}`;
+      };
+
+      // 💼 계좌 손익 요약(보유 종목 합산)
+      (async () => {
+        try {
+          const r = await (await fetch("/api/balance")).json();
+          if (!r.ok) { setBody("sumBalance", "💼 내 계좌 손익", `<div class="sub" style="margin-top:6px;color:var(--muted)">${r.error || "조회 불가"}</div>`); return; }
+          const list = r.holdings || [];
+          if (!list.length) { setBody("sumBalance", "💼 내 계좌 손익", `<div class="sub" style="margin-top:6px;">보유 종목 없음</div>`); return; }
+          let buy = 0, evalAmt = 0;
+          list.forEach((h) => { buy += (h.avg_price || 0) * (h.qty || 0); evalAmt += (h.cur_price || 0) * (h.qty || 0); });
+          const pnl = evalAmt - buy, pnlPct = buy ? (pnl / buy * 100) : 0;
+          const top = list.slice().sort((a, b) => (b.pnl_pct || 0) - (a.pnl_pct || 0));
+          setBody("sumBalance", "💼 내 계좌 손익",
+            `<div style="margin-top:8px;font-size:22px;font-weight:700;color:${pc(pnl)}">${sgn(pnl)}${won(pnl)}원 <span style="font-size:14px">(${sgn(pnlPct)}${pnlPct.toFixed(2)}%)</span></div>
+             <div class="sub" style="margin-top:2px;">평가 ${won(evalAmt)} · 매입 ${won(buy)} · ${list.length}종목</div>
+             <div style="margin-top:6px;font-size:12.5px;">
+               ${top.slice(0, 3).map((h) => `<div style="display:flex;justify-content:space-between"><span>${h.name || h.symbol}</span><span style="color:${pc(h.pnl_pct)}">${sgn(h.pnl_pct)}${(h.pnl_pct || 0).toFixed(2)}%</span></div>`).join("")}
+             </div>`);
+        } catch { setBody("sumBalance", "💼 내 계좌 손익", `<div class="sub" style="margin-top:6px;color:var(--down)">조회 실패</div>`); }
+      })();
+
+      // 📊 관심종목 등락(인메모리 quotes 상·하위)
+      (() => {
+        const arr = Object.values(quotesById).filter((q) => q && q.change_pct != null);
+        if (!arr.length) { setBody("sumMovers", "📊 관심종목 등락", `<div class="sub" style="margin-top:6px;">데이터 없음</div>`); return; }
+        arr.sort((a, b) => b.change_pct - a.change_pct);
+        const row = (q) => `<div style="display:flex;justify-content:space-between;font-size:13px;margin:2px 0;"><span>${q.name || q.symbol}</span><span style="color:${pc(q.change_pct)}">${(q.price || 0).toLocaleString()} (${sgn(q.change_pct)}${q.change_pct.toFixed(2)}%)</span></div>`;
+        const top = arr.slice(0, 3), bot = arr.slice(-3).reverse();
+        setBody("sumMovers", "📊 관심종목 등락",
+          `<div style="margin-top:6px;"><div class="sub" style="color:var(--up)">▲ 상승</div>${top.map(row).join("")}
+           <div class="sub" style="color:var(--down);margin-top:4px;">▼ 하락</div>${bot.map(row).join("")}</div>`);
+      })();
+
+      // 🦶 발목 근접(저점 근접 순위 top 3)
+      (async () => {
+        try {
+          const r = await (await fetch("/api/bottom-scan?min_score=2")).json();
+          const rk = (r.ranking || (r.items || [])).slice(0, 3);
+          if (!rk.length) { setBody("sumBalmok", "🦶 발목 근접", `<div class="sub" style="margin-top:6px;">대상 없음</div>`); return; }
+          setBody("sumBalmok", "🦶 발목 근접",
+            `<div style="margin-top:6px;font-size:13px;">${rk.map((d) =>
+              `<div style="margin:3px 0;"><b>${d.name || d.symbol}</b> <span style="color:${d.is_balmok ? "var(--up)" : "var(--muted)"}">${d.is_balmok ? "🦶 발목" : "근접"} ${d.score}/5</span><br><span class="sub">52주 하위 ${d.pos52 ?? "-"}%</span></div>`).join("")}</div>`);
+        } catch { setBody("sumBalmok", "🦶 발목 근접", `<div class="sub" style="margin-top:6px;color:var(--down)">조회 실패</div>`); }
+      })();
+
+      // 🇺🇸 미국장 한줄
+      (async () => {
+        try {
+          const d = await (await fetch("/api/briefing")).json();
+          if (!d.available) { setBody("sumUs", "🇺🇸 미국장 한줄", `<div class="sub" style="margin-top:6px;">아직 생성 전</div>`); return; }
+          setBody("sumUs", "🇺🇸 미국장 한줄",
+            `<div style="margin-top:6px;font-size:13px;color:var(--accent)">“${d.one_liner || d.overview || "-"}”</div>
+             <div class="sub" style="margin-top:4px;">${d.market_label ? "미국장 " + d.market_label : ""}</div>`);
+        } catch { setBody("sumUs", "🇺🇸 미국장 한줄", `<div class="sub" style="margin-top:6px;color:var(--down)">조회 실패</div>`); }
+      })();
+
+      // 🗓️ 청약 임박(가까운 일정 3건)
+      (async () => {
+        try {
+          const r = await (await fetch("/api/fintech/ipo?limit=30")).json();
+          const items = (r.items || []).slice().sort((a, b) => (a.schedule || "").localeCompare(b.schedule || "")).slice(0, 4);
+          if (!items.length) { setBody("sumIpo", "🗓️ 청약 임박", `<div class="sub" style="margin-top:6px;">일정 없음</div>`); return; }
+          setBody("sumIpo", "🗓️ 청약 임박",
+            `<div style="margin-top:6px;font-size:12.5px;">${items.map((it) =>
+              `<div style="margin:3px 0;"><b>${it.name}</b><br><span class="sub">${it.schedule} · ${it.price} · ${it.underwriter}</span></div>`).join("")}</div>`);
+        } catch { setBody("sumIpo", "🗓️ 청약 임박", `<div class="sub" style="margin-top:6px;color:var(--down)">조회 실패</div>`); }
+      })();
+
+      // 🥇 금·환율
+      (async () => {
+        try {
+          const r = await (await fetch("/api/fintech/markets")).json();
+          const pick = (r.items || []).filter((m) => ["gold", "usdkrw", "wti"].includes(m.key));
+          if (!pick.length) { setBody("sumFx", "🥇 금·환율", `<div class="sub" style="margin-top:6px;">데이터 없음</div>`); return; }
+          setBody("sumFx", "🥇 금·환율",
+            `<div style="margin-top:6px;font-size:13px;">${pick.map((m) =>
+              `<div style="display:flex;justify-content:space-between;margin:2px 0;"><span>${m.emoji} ${m.name.split(" ")[0]}</span><span style="color:${pc(m.change_pct)}">${m.unit || ""}${(m.value || 0).toLocaleString()} (${sgn(m.change_pct)}${m.change_pct}%)</span></div>`).join("")}</div>`);
+        } catch { setBody("sumFx", "🥇 금·환율", `<div class="sub" style="margin-top:6px;color:var(--down)">조회 실패</div>`); }
+      })();
+
+      // 🔔 최근 알림(5건)
+      (async () => {
+        try {
+          const r = await (await fetch("/api/alerts?limit=5")).json();
+          const al = r.alerts || [];
+          if (!al.length) { setBody("sumAlerts", "🔔 최근 알림", `<div class="sub" style="margin-top:6px;">최근 알림 없음</div>`); return; }
+          setBody("sumAlerts", "🔔 최근 알림",
+            `<div style="margin-top:6px;font-size:12.5px;">${al.map((a) =>
+              `<div style="margin:2px 0;">${a.name || a.symbol} <span class="sub">${a.threshold ?? ""} · ${(a.fired_at || "").replace("T", " ").slice(5, 16)}</span></div>`).join("")}</div>`);
+        } catch { setBody("sumAlerts", "🔔 최근 알림", `<div class="sub" style="margin-top:6px;color:var(--down)">조회 실패</div>`); }
+      })();
+    }
+
+    // ===================== 💰 핀테크 탭 =====================
+    let fintechLoaded = false;
+    async function loadFintech(force) {
+      if (fintechLoaded && !force) return;
+      fintechLoaded = true;
+      const fmt = (n) => (n == null ? "-" : Number(n).toLocaleString());
+      const sign = (n) => (n == null ? "" : (n >= 0 ? "+" : ""));
+      const cls = (n) => (n == null ? "flat" : n > 0 ? "up" : n < 0 ? "down" : "flat");
+
+      // 1) 금·원자재·환율
+      (async () => {
+        const el = document.getElementById("ftMarkets");
+        try {
+          const r = await (await fetch("/api/fintech/markets")).json();
+          const items = r.items || [];
+          if (!items.length) { el.textContent = "데이터 없음"; return; }
+          el.style.cssText = "display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:8px;";
+          el.innerHTML = items.map((m) =>
+            `<div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px 12px;">
+               <div style="font-size:12px;color:var(--muted)">${m.emoji} ${m.name}</div>
+               <div style="font-size:20px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums;">${m.unit || ""}${fmt(m.value)}</div>
+               <div class="${cls(m.change_pct)}" style="font-size:12.5px;font-weight:600;">${sign(m.change_pct)}${m.change_pct ?? "-"}% <span style="color:var(--muted);font-weight:400">${m.date || ""}</span></div>
+             </div>`).join("");
+        } catch { el.innerHTML = '<span style="color:var(--down)">조회 실패</span>'; }
+      })();
+
+      // 2) 각국 금리·국채
+      (async () => {
+        const el = document.getElementById("ftRates");
+        try {
+          const r = await (await fetch("/api/fintech/rates")).json();
+          const bp = (n) => (n == null ? "" : `<span class="${cls(n)}" style="font-size:11.5px">${sign(n)}${n}bp</span>`);
+          const rowsOf = (arr) => (arr || []).map((x) =>
+            `<tr><td>${x.name}</td><td style="text-align:right;font-weight:700">${x.value ?? "-"}%</td>
+              <td style="text-align:right">${bp(x.change_bp)}</td><td style="text-align:right;color:var(--muted);font-size:11px">${x.date || ""}</td></tr>`).join("");
+          el.innerHTML =
+            `<div style="font-size:12px;color:var(--muted);margin-bottom:4px;">🇺🇸 미국 국채 수익률 곡선(일별)</div>
+             <table class="alert-table"><tbody>${rowsOf(r.us_curve)}</tbody></table>
+             <div style="font-size:12px;color:var(--muted);margin:12px 0 4px;">🌐 각국 10년 국채(월별)</div>
+             <table class="alert-table"><tbody>${rowsOf(r.global_10y)}</tbody></table>
+             ${(r.notes || []).map((n) => `<div style="font-size:11px;color:var(--muted);margin-top:6px;">· ${n}</div>`).join("")}`;
+        } catch { el.innerHTML = '<span style="color:var(--down)">조회 실패</span>'; }
+      })();
+
+      // 3) 공모주 청약 달력
+      (async () => {
+        const el = document.getElementById("ftIpo");
+        try {
+          const r = await (await fetch("/api/fintech/ipo")).json();
+          const items = r.items || [];
+          if (!items.length) { el.innerHTML = `<span style="color:var(--muted)">${r.error || "일정 없음"}</span>`; return; }
+          el.innerHTML =
+            `<div class="tbl-wrap" style="max-height:340px;overflow:auto;"><table class="alert-table">
+              <thead><tr><th>청약일</th><th>공모주</th><th>공모가</th><th>주관 증권사</th></tr></thead>
+              <tbody>${items.map((it) =>
+                `<tr><td style="white-space:nowrap;font-variant-numeric:tabular-nums;">${it.schedule}</td>
+                   <td><b>${it.name}</b></td>
+                   <td style="white-space:nowrap;">${it.price}</td>
+                   <td style="font-size:12px;color:var(--muted)">${it.underwriter}</td></tr>`).join("")}</tbody>
+            </table></div>
+            <div style="font-size:11px;color:var(--muted);margin-top:6px;">출처: ${r.source || "38커뮤니케이션"}</div>`;
+        } catch { el.innerHTML = '<span style="color:var(--down)">조회 실패</span>'; }
+      })();
+
+      // 4) 부동산 (키 필요 안내)
+      (async () => {
+        const el = document.getElementById("ftRealestate");
+        try {
+          const r = await (await fetch("/api/fintech/realestate")).json();
+          if (r.enabled && (r.items || []).length) {
+            el.innerHTML = (r.items || []).map((x) => `<div>${x.name || ""}</div>`).join("");
+          } else {
+            el.innerHTML =
+              `<div style="background:var(--panel);border:1px dashed var(--border);border-radius:10px;padding:12px;">
+                 <div style="margin-bottom:6px;">${r.message || ""}</div>
+                 ${r.howto ? `<div style="font-size:12px;color:var(--muted)">${r.howto}</div>` : ""}
+                 ${r.link ? `<a href="${r.link}" target="_blank" style="font-size:12px;color:var(--gold)">→ 국토부 실거래가 API 신청</a>` : ""}
+               </div>`;
+          }
+        } catch { el.innerHTML = '<span style="color:var(--down)">조회 실패</span>'; }
+      })();
+    }
+
     function activateTab(name) {
       if (name === "autotrade" && !unlockAutotrade()) return;   // 잠금: 통과 못하면 탭 전환 안 함
       document.querySelectorAll(".tab-btn").forEach((b) => {
@@ -2106,7 +2446,9 @@
       document.querySelectorAll(".tab-panel").forEach((p) => {
         p.classList.toggle("active", p.id === "panel-" + name);
       });
-      if (name === "dashboard") {
+      if (name === "summary") {
+        loadSummary(true);
+      } else if (name === "dashboard") {
         // 차트는 숨김 상태에서 0px 로 그려질 수 있어 보일 때 리사이즈한다.
         requestAnimationFrame(resizeCharts);
       } else if (name === "deudeumi") {
@@ -2119,6 +2461,8 @@
         loadBriefing();
       } else if (name === "marketing") {
         loadMarketing();
+      } else if (name === "fintech") {
+        loadFintech();
       } else if (name === "alarm" && !alarmLoaded) {
         alarmLoaded = true; loadAlarm();
       } else if (name === "autotrade") {
@@ -2551,6 +2895,7 @@
       await loadFundamentals();
       requestAnimationFrame(resizeCharts); // 초기 렌더 직후 차트 크기 보정
       startRealtime();                // 1초 실시간 폴링 + 세션 배지 시작
+      loadSummary(true);              // 기본 탭이 써머리이므로 초기 로드
     })();
   </script>
 </body>

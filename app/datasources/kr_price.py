@@ -26,8 +26,48 @@ _PERIOD_DAYS = {
 }
 
 
+# KRX 전체 종목명 캐시(코드→이름). FinanceDataReader StockListing 으로 1회 적재.
+_KRX_NAMES: dict[str, str] = {}
+_KRX_LOADED = False
+
+
+def _load_krx_names() -> None:
+    """KRX 전 종목 코드→이름 맵을 1회 적재(실패해도 조용히 빈 맵)."""
+    global _KRX_LOADED
+    if _KRX_LOADED:
+        return
+    _KRX_LOADED = True  # 재시도 폭주 방지: 시도 자체는 1회만
+    try:
+        import FinanceDataReader as fdr  # type: ignore
+        df = fdr.StockListing("KRX")
+        # 컬럼명이 버전마다 'Code'/'Symbol', 'Name' 등으로 다를 수 있어 방어적으로 매핑.
+        cols = {c.lower(): c for c in df.columns}
+        code_col = cols.get("code") or cols.get("symbol")
+        name_col = cols.get("name")
+        if code_col and name_col:
+            for code, name in zip(df[code_col], df[name_col]):
+                c = str(code).strip()
+                if c.isdigit():
+                    c = c.zfill(6)
+                if c and isinstance(name, str) and name.strip():
+                    _KRX_NAMES[c] = name.strip()
+    except Exception:
+        pass
+
+
+def resolve_name(symbol: str) -> str:
+    """심볼 → 표시용 종목명. 하드코딩 메타 > KRX 리스트 > 심볼 순."""
+    if symbol in KR_META:
+        return KR_META[symbol]["name"]
+    if not _KRX_LOADED:
+        _load_krx_names()
+    return _KRX_NAMES.get(symbol) or _KRX_NAMES.get(str(symbol).zfill(6)) or symbol
+
+
 def _meta(symbol: str) -> dict[str, str]:
-    return KR_META.get(symbol, {"name": symbol, "note": "코스피"})
+    if symbol in KR_META:
+        return KR_META[symbol]
+    return {"name": resolve_name(symbol), "note": "코스피/코스닥"}
 
 
 class KrPriceSource(PriceSource):

@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.core.market import current_session
 from app.datasources.intraday import get_intraday
-from app.datasources.kr_price import KR_META
+from app.datasources.kr_price import KR_META, resolve_name as _kr_name
 from app.datasources.registry import SourceRegistry
 from app.datasources.us_market import US_META
 from app.storage.db import Repository
@@ -100,7 +100,10 @@ def _start_poller() -> None:
 def _name_for(symbol: str) -> str:
     """심볼 -> 표시용 종목명. 메타에 없으면 심볼 자체를 사용."""
     meta = KR_META.get(symbol) or US_META.get(symbol)
-    return meta["name"] if meta else symbol
+    if meta:
+        return meta["name"]
+    # 국내 코드면 KRX 리스트에서 이름 동적 조회(없으면 심볼 그대로).
+    return _kr_name(symbol)
 
 
 @app.get("/api/quotes")
@@ -195,14 +198,36 @@ def refresh_marketing_api() -> JSONResponse:
 
 @app.get("/api/orderbook/{symbol}")
 def get_orderbook_api(symbol: str) -> JSONResponse:
-    """호가(매도/매수 10단계 + 잔량). 국내 종목만. 장중 실시간. 500 금지."""
+    """호가(매도/매수 10단계 + 잔량). 국내 종목만. 본장=J, 프리/애프터=NXT. 500 금지.
+
+    레버리지 종목은 시간외(NXT)가 없어 본장만 조회한다(사용자 확인). 시간외에 본장 호가가
+    비면 NXT 를 시도하고, 둘 다 없으면 available=False(+세션 안내).
+    """
+    from app.core.market import current_session
+    sess = current_session()
+    is_leverage = "레버리지" in (KR_META.get(symbol, {}).get("note", ""))
+    # 프리/애프터 + 비레버리지면 NXT(시간외) 우선, 아니면 본장(J).
+    want_nxt = sess["session"] in ("pre", "after") and not is_leverage
+    primary = "NX" if want_nxt else "J"
+    ob = None
     try:
-        ob = _registry.orderbook(symbol)
+        ob = _registry.orderbook(symbol, market_code=primary)
+        if ob is None and primary == "NX":
+            ob = _registry.orderbook(symbol, market_code="J")  # NXT 미운영 폴백
     except Exception:
         ob = None
+    base = {"symbol": symbol, "name": _name_for(symbol),
+            "session": sess["session"], "session_label": sess["label"]}
     if not ob:
-        return JSONResponse({"symbol": symbol, "name": _name_for(symbol), "available": False})
-    return JSONResponse({"name": _name_for(symbol), "available": True, **ob})
+        note = ""
+        if sess["session"] in ("pre", "after") and is_leverage:
+            note = "레버리지 종목은 시간외 호가가 없습니다(본장만)."
+        elif sess["session"] == "closed":
+            note = "휴장 — 호가 없음."
+        return JSONResponse({**base, "available": False, "note": note})
+    mc = ob.get("market_code", primary)
+    ob["market_label"] = "시간외(NXT)" if mc == "NX" else "본장(KRX)"
+    return JSONResponse({**base, "available": True, **ob})
 
 
 @app.get("/api/feed/{symbol}")
@@ -362,6 +387,41 @@ async def set_autotrade_config_api(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True, **saved})
 
 
+@app.post("/api/autotrade/ai-judge")
+async def autotrade_ai_judge_api(request: Request) -> JSONResponse:
+    """기준값·예산 기반 매수 적정성 AI 판단(적정/위험/중립 + 권장 금액). 토큰비용·잠금탭이라 비번 필수. 500 금지."""
+    from app.config import settings as _cfg
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    if not _cfg.trade_password or (data.get("password") or "") != _cfg.trade_password:
+        return JSONResponse({"ok": False, "error": "비밀번호가 올바르지 않습니다(.env TRADE_PASSWORD 설정 필요)"})
+    symbol = (data.get("symbol") or "").strip()
+    if not symbol:
+        return JSONResponse({"ok": False, "error": "symbol 필요"})
+    def _num(v):
+        try:
+            return float(v) if v not in (None, "") else None
+        except Exception:
+            return None
+    base_price = _num(data.get("base_price"))
+    budget = _num(data.get("budget"))
+    try:
+        from app.analysis.feed import compute_feed
+        from app.trading.ai_advisor import judge
+        rows = _registry.history(symbol, "1y")
+        quote = _registry.quote(symbol)
+        feed = compute_feed(symbol, rows, quote,
+                            _registry.fundamentals(symbol), _registry.investor_flow(symbol))
+        res = judge(symbol, feed, base_price, budget)
+        if res.get("error"):
+            return JSONResponse({"ok": False, **res})
+        return JSONResponse({"ok": True, **res})
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": f"판단 실패: {exc}"})
+
+
 @app.get("/api/bottom-scan")
 def bottom_scan_api(min_score: int = 2) -> JSONResponse:
     """발목(저점권) 감지 — 워치리스트 국내종목 스캔(온디맨드). 500 금지."""
@@ -383,6 +443,47 @@ def deudeumi4_api(limit: int = 60, comment: int = 0) -> JSONResponse:
         return JSONResponse(res)
     except Exception as exc:
         return JSONResponse({"ok": False, "items": [], "note": str(exc)})
+
+
+# ===== 핀테크 탭 (금·원자재·환율 / 각국 금리·국채 / 공모주 청약 / 부동산) =====
+@app.get("/api/fintech/markets")
+def fintech_markets_api() -> JSONResponse:
+    """금·은·유가·달러인덱스·환율. 500 금지."""
+    try:
+        from app.datasources import fintech
+        return JSONResponse(fintech.markets())
+    except Exception as exc:
+        return JSONResponse({"ok": False, "items": [], "error": str(exc)})
+
+
+@app.get("/api/fintech/rates")
+def fintech_rates_api() -> JSONResponse:
+    """미국 수익률 곡선 + 각국 10년 국채 금리. 500 금지."""
+    try:
+        from app.datasources import fintech
+        return JSONResponse(fintech.rates())
+    except Exception as exc:
+        return JSONResponse({"ok": False, "us_curve": [], "global_10y": [], "error": str(exc)})
+
+
+@app.get("/api/fintech/ipo")
+def fintech_ipo_api(limit: int = 30) -> JSONResponse:
+    """공모주 청약 달력(종목명·청약일·공모가·주간사). 500 금지."""
+    try:
+        from app.datasources import fintech
+        return JSONResponse(fintech.ipo_calendar(limit))
+    except Exception as exc:
+        return JSONResponse({"ok": False, "items": [], "error": str(exc)})
+
+
+@app.get("/api/fintech/realestate")
+def fintech_realestate_api() -> JSONResponse:
+    """아파트 대단지(3000세대+) 거래량 — 국토부 키 있으면 활성. 500 금지."""
+    try:
+        from app.datasources import fintech
+        return JSONResponse(fintech.real_estate())
+    except Exception as exc:
+        return JSONResponse({"ok": False, "enabled": False, "message": str(exc)})
 
 
 @app.get("/api/eod-report")

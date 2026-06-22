@@ -330,16 +330,18 @@ class KisPriceSource(PriceSource):
             return None
 
     # ---------------- 호가 (매도/매수 10단계 + 잔량) ----------------
-    def get_orderbook(self, symbol: str, levels: int = 10) -> dict | None:
+    def get_orderbook(self, symbol: str, levels: int = 10, market_code: str = "J") -> dict | None:
         """주식 호가(FHKST01010200) — 매도/매수 N단계 가격·잔량. 실패 시 None.
-        호가는 장중 실시간만 의미. 휴장엔 0/빈 값일 수 있다."""
+
+        market_code: "J"=KRX 정규장(본장), "NX"=넥스트레이드(시간외/프리·애프터).
+        호가는 해당 세션에 실시간만 의미. 휴장엔 0/빈 값일 수 있다."""
         if not settings.kis_app_key or not settings.kis_app_secret:
             return None
         try:
             token = self._ensure_token()
             resp = self._session.get(
                 f"{settings.kis_domain}/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn",
-                params={"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": symbol},
+                params={"FID_COND_MRKT_DIV_CODE": market_code, "FID_INPUT_ISCD": symbol},
                 headers={
                     "authorization": f"Bearer {token}",
                     "appkey": settings.kis_app_key,
@@ -362,6 +364,8 @@ class KisPriceSource(PriceSource):
                     asks.append({"price": ap, "qty": aq or 0})
                 if bp:
                     bids.append({"price": bp, "qty": bq or 0})
+            if not asks and not bids:
+                return None  # 빈 호가(해당 세션 미운영)면 None → 폴백/안내 가능
             return {
                 "symbol": symbol,
                 "asks": asks,  # 1=최우선 매도호가(가장 낮음) → 위로 갈수록 높음
@@ -369,6 +373,7 @@ class KisPriceSource(PriceSource):
                 "total_ask_qty": _f(o.get("total_askp_rsqn")),
                 "total_bid_qty": _f(o.get("total_bidp_rsqn")),
                 "time": o.get("aspr_acpt_hour"),
+                "market_code": market_code,
             }
         except Exception:
             return None

@@ -236,8 +236,28 @@ class OrderClient:
                     "avg_price": _f(r.get("pchs_avg_pric")),
                     "cur_price": _i(r.get("prpr")),
                     "pnl_pct": _f(r.get("evlu_pfls_rt")),
+                    "pnl_amt": _i(r.get("evlu_pfls_amt")),   # 평가손익금액(원)
+                    "eval_amt": _i(r.get("evlu_amt")),        # 평가금액(원)
+                    "buy_amt": _i(r.get("pchs_amt")),         # 매입금액(원)
                 })
-            return {"ok": True, "holdings": holdings, "paper": settings.kis_paper}
+            # output2[0] = 계좌 합계(수익현황).
+            summary = {}
+            o2 = j.get("output2") or []
+            if o2:
+                s = o2[0]
+                buy = _i(s.get("pchs_amt_smtl_amt"))
+                pnl = _i(s.get("evlu_pfls_smtl_amt"))
+                summary = {
+                    "deposit": _i(s.get("dnca_tot_amt")),          # 예수금총액
+                    "deposit_d2": _i(s.get("prvs_rcdl_excc_amt")),  # D+2 예수금
+                    "securities_eval": _i(s.get("scts_evlu_amt")),  # 유가증권 평가금액
+                    "total_eval": _i(s.get("tot_evlu_amt")),        # 총평가(유가+예수금)
+                    "buy_total": buy,                                # 매입금액 합계
+                    "pnl_total": pnl,                                # 평가손익 합계
+                    "pnl_total_pct": round(pnl / buy * 100, 2) if buy else None,
+                    "net_asset": _i(s.get("nass_amt")),             # 순자산
+                }
+            return {"ok": True, "holdings": holdings, "summary": summary, "paper": settings.kis_paper}
         except Exception as exc:
             logger.exception("잔고 조회 실패")
             return {"ok": False, "error": f"조회 예외: {exc}"}
