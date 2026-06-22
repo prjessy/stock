@@ -10,6 +10,10 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png?v=9" />
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png?v=9" />
   <meta name="theme-color" content="#142d5a" />
+  <!-- 구글 본고딕(Noto Sans KR) — 없으면 애플/시스템 폰트로 폴백 -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <!-- TradingView Lightweight Charts (standalone production build, 버전 고정) -->
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <style>
@@ -31,7 +35,7 @@
       margin: 0;
       background: radial-gradient(1200px 600px at 80% -10%, #16203020, transparent), var(--bg);
       color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", Roboto, sans-serif;
+      font-family: "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", "Malgun Gothic", Roboto, sans-serif;
       -webkit-font-smoothing: antialiased;
     }
     .wrap { max-width: 1080px; margin: 0 auto; padding: 28px 20px 56px; }
@@ -953,7 +957,7 @@
     function baseChartOptions(extra) {
       return Object.assign({
         layout: { background: { color: "transparent" }, textColor: theme.text, fontSize: 11,
-                  fontFamily: '-apple-system, "Segoe UI", "Malgun Gothic", sans-serif' },
+                  fontFamily: '"Noto Sans KR", -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif' },
         grid: { vertLines: { visible: false }, horzLines: { color: theme.grid } },
         rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.08 } },
         timeScale: { borderVisible: false, timeVisible: false, secondsVisible: false, fixLeftEdge: true, fixRightEdge: true },
@@ -2141,7 +2145,11 @@
         }
         krOpen = !!s.open;
         const rs = document.getElementById("rtSession");
-        if (rs) rs.textContent = `🇰🇷 ${s.label} (${s.now} KST)${u ? " · 🇺🇸 " + u.label : ""}`;
+        if (rs) {
+          const usDot = u ? (u.open ? "🟢" : "🔴") : "";
+          const usTxt = u ? ` · 🇺🇸 ${usDot}${u.label}${u.now ? " " + u.now : ""}` : "";
+          rs.textContent = `🇰🇷 ${s.label} (${s.now} KST)${usTxt}`;
+        }
       } catch (e) { /* 화면 유지 */ }
     }
 
@@ -2404,16 +2412,31 @@
           const r = await (await fetch("/api/fintech/ipo")).json();
           const items = r.items || [];
           if (!items.length) { el.innerHTML = `<span style="color:var(--muted)">${r.error || "일정 없음"}</span>`; return; }
+          window._ipoItems = items;
+          const td = "border-left:none;border-right:none;";
           el.innerHTML =
-            `<div class="tbl-wrap" style="max-height:340px;overflow:auto;"><table class="alert-table">
-              <thead><tr><th>청약일</th><th>공모주</th><th>공모가</th><th>주관 증권사</th></tr></thead>
-              <tbody>${items.map((it) =>
-                `<tr><td style="white-space:nowrap;font-variant-numeric:tabular-nums;">${it.schedule}</td>
-                   <td><b>${it.name}</b></td>
-                   <td style="white-space:nowrap;">${it.price}</td>
-                   <td style="font-size:12px;color:var(--muted)">${it.underwriter}</td></tr>`).join("")}</tbody>
+            `<div class="tbl-wrap" style="max-height:360px;overflow:auto;">
+             <table class="alert-table" style="border-collapse:collapse;width:100%;">
+              <thead><tr>
+                <th style="text-align:left;${td}">날짜</th>
+                <th style="text-align:left;${td}">종목명</th>
+                <th style="text-align:right;${td}">공모가</th>
+                <th style="text-align:left;${td}">주관사</th>
+                <th style="text-align:right;${td}">경쟁률</th>
+                <th style="text-align:center;${td}">상장일</th>
+              </tr></thead>
+              <tbody>${items.map((it, i) =>
+                `<tr style="cursor:pointer;" onclick="showIpoDetail(${i})" title="클릭 → 상세">
+                   <td style="white-space:nowrap;font-variant-numeric:tabular-nums;${td}">${it.schedule}</td>
+                   <td style="${td}"><b>${it.name}</b>${it.market ? ` <span style="font-size:10px;color:var(--muted)">${it.market}</span>` : ""}</td>
+                   <td style="white-space:nowrap;text-align:right;${td}">${it.price}</td>
+                   <td style="font-size:12.5px;color:var(--muted);${td}max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${it.underwriter}</td>
+                   <td style="white-space:nowrap;text-align:right;font-size:12px;${td}">${it.rate || "-"}</td>
+                   <td style="white-space:nowrap;text-align:center;font-size:11px;color:var(--muted);${td}">${it.listing || "-"}</td>
+                 </tr>`).join("")}</tbody>
             </table></div>
-            <div style="font-size:11px;color:var(--muted);margin-top:6px;">출처: ${r.source || "38커뮤니케이션"}</div>`;
+            <div id="ipoDetail" style="margin-top:8px;"></div>
+            <div style="font-size:11px;color:var(--muted);margin-top:6px;">행을 누르면 상세 · 출처: 네이버 금융</div>`;
         } catch { el.innerHTML = '<span style="color:var(--down)">조회 실패</span>'; }
       })();
 
@@ -2442,6 +2465,23 @@
           }
         } catch { el.innerHTML = '<span style="color:var(--down)">조회 실패</span>'; }
       })();
+    }
+
+    // 공모주 행 클릭 → 상세 정보 펼치기
+    function showIpoDetail(i) {
+      const el = document.getElementById("ipoDetail");
+      const it = (window._ipoItems || [])[i];
+      if (!el || !it) return;
+      const row = (k, v) => `<div style="display:flex;justify-content:space-between;gap:12px;padding:3px 0;"><span style="color:var(--muted)">${k}</span><span style="text-align:right;">${v || "-"}</span></div>`;
+      el.innerHTML =
+        `<div style="background:var(--panel);border:1px solid var(--accent);border-radius:10px;padding:12px;font-size:13px;">
+           <div style="font-weight:700;font-size:15px;margin-bottom:6px;">${it.name} <span style="font-size:11px;color:var(--muted);font-weight:400;">${it.market || ""}</span></div>
+           ${row("청약일", it.schedule)}
+           ${row("공모가", it.price)}
+           ${row("주관 증권사", it.underwriter)}
+           ${row("개인청약 경쟁률", it.rate)}
+           ${row("상장일", it.listing)}
+         </div>`;
     }
 
     // 부동산 단지 검색/필터(클라이언트). 단지명·지역에 검색어 포함된 것만 표시.

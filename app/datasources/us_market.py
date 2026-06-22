@@ -55,7 +55,7 @@ class UsMarketSource(PriceSource):
             return empty_quote(symbol, meta["name"], meta["currency"], meta["note"], self._import_error)
 
         try:
-            # 최근 5일 일봉이면 전일 종가 + 최신가 산출에 충분. timeout 으로 무한 대기 방지.
+            # 최근 5일 일봉으로 전일 종가 확보. timeout 으로 무한 대기 방지.
             ticker = yf.Ticker(symbol)
             df = ticker.history(period="5d", interval="1d", timeout=8)
             if df is None or df.empty:
@@ -65,6 +65,18 @@ class UsMarketSource(PriceSource):
                 raise ValueError("종가 없음")
             price = float(closes[-1])
             prev_close = float(closes[-2]) if len(closes) >= 2 else price
+            # 장중 실시간성: fast_info 의 최신가가 있으면 그것으로 교체(일봉은 잘 안 움직임).
+            # 전일종가도 fast_info 값이 더 정확하면 사용. 실패해도 일봉값 유지(graceful).
+            try:
+                fi = ticker.fast_info
+                lp = float(fi.get("last_price") or fi.get("lastPrice") or 0)
+                pc = float(fi.get("previous_close") or fi.get("previousClose") or 0)
+                if lp > 0:
+                    price = lp
+                if pc > 0:
+                    prev_close = pc
+            except Exception:
+                pass
             change_pct = ((price - prev_close) / prev_close * 100.0) if prev_close else 0.0
             quote = {
                 "symbol": symbol,

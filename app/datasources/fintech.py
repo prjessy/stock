@@ -119,47 +119,47 @@ def rates() -> dict:
     return _cached("rates", 6 * 3600, build)  # 6시간
 
 
-# ---- 공모주 청약 달력 (38커뮤니케이션) ------------------------------------
-def ipo_calendar(limit: int = 30) -> dict:
-    """38.co.kr 공모주 청약일정 — 종목명·청약일·공모가·주간사(증권사)."""
-    def build():
-        import requests
-        url = "http://www.38.co.kr/html/fund/index.htm?o=k"
-        try:
-            r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=12)
-            r.encoding = "euc-kr"
-            html = r.text
-        except Exception as exc:
-            return {"ok": False, "items": [], "error": f"청약 일정 조회 실패: {exc}", "source": "38.co.kr"}
+# ---- 공모주 청약 달력 (네이버 금융, VPS 접속 가능) -------------------------
+def _ipo_from_naver(limit: int) -> dict:
+    """네이버 금융 IPO 페이지 파싱 — 종목·청약일·공모가·주관사·상장일."""
+    import requests
+    import html as H
+    r = requests.get("https://finance.naver.com/sise/ipo.naver",
+                     headers={"User-Agent": "Mozilla/5.0"}, timeout=12)
+    r.encoding = "euc-kr"
+    full = re.sub(r"\s+", " ", H.unescape(re.sub("<[^>]+>", " ", r.text)))
+    # (시장)(종목명) ... 공모가 X ... 주관사 Y ... 개인청약 YY.MM.DD~MM.DD [... 상장일 YY.MM.DD]
+    blocks = re.findall(
+        r"(코스닥|코스피|코넥스)\s+([^\s]+)\s+공모가\s*([\d,]+)"
+        r".*?주관사\s*([가-힣A-Za-z0-9]+(?:증권|투자증권|금융투자)?)"
+        r"(?:.*?개인청약경쟁률\s*([\d,.]+\s*:\s*1))?"
+        r".*?개인청약\s*(\d{2}\.\d{2}\.\d{2}\s*~\s*\d{2}\.\d{2})"
+        r"(?:.*?상장일\s*(\d{2}\.\d{2}\.\d{2}))?", full)
+    items = []
+    for mk, name, price, under, rate, sched, listing in blocks[:limit]:
+        items.append({
+            "name": name,
+            "market": mk,
+            "schedule": "20" + sched.replace(" ", ""),   # YY→YYYY
+            "price": price + "원" if price else "-",
+            "underwriter": under or "-",
+            "rate": (rate.replace(" ", "") if rate else "-"),   # 개인청약 경쟁률
+            "listing": ("20" + listing) if listing else "-",
+        })
+    return {"ok": bool(items), "items": items, "source": "naver",
+            "error": "" if items else "파싱된 일정이 없습니다(구조 변경 가능)."}
 
-        import html as H
-        # 날짜 행이 가장 많은 테이블을 선택(메뉴 등과 구분).
-        tables = re.findall(r"<table[^>]*>.*?</table>", html, re.S)
-        best, best_n = None, 0
-        for tab in tables:
-            n = len(re.findall(r"\d{4}\.\d{2}\.\d{2}", tab))
-            if n > best_n:
-                best_n, best = n, tab
-        items = []
-        if best:
-            for row in re.findall(r"<tr[^>]*>(.*?)</tr>", best, re.S):
-                cells = re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, re.S)
-                txt = [re.sub(r"\s+", " ", H.unescape(re.sub("<[^>]+>", " ", c))).strip() for c in cells]
-                # 컬럼: 종목명 | 공모주일정 | 확정공모가 | 희망공모가 | 청약경쟁률 | 주간사 | 분석
-                if len(txt) < 6 or not re.search(r"\d{4}\.\d{2}\.\d{2}", txt[1] if len(txt) > 1 else ""):
-                    continue
-                fixed = txt[2].strip()
-                band = txt[3].strip()
-                price = fixed if fixed and fixed != "-" else band
-                items.append({
-                    "name": txt[0],
-                    "schedule": txt[1],
-                    "price": price or "-",
-                    "underwriter": txt[5] if len(txt) > 5 else "-",
-                })
-        items = items[:limit]
-        return {"ok": bool(items), "items": items, "source": "38.co.kr",
-                "error": "" if items else "파싱된 일정이 없습니다(사이트 구조 변경 가능)."}
+
+def ipo_calendar(limit: int = 30) -> dict:
+    """공모주 청약일정 — 종목·청약일·공모가·주관사·상장일. 네이버 우선, 실패 시 안내."""
+    def build():
+        try:
+            res = _ipo_from_naver(limit)
+            if res.get("items"):
+                return res
+        except Exception as exc:
+            return {"ok": False, "items": [], "error": f"청약 일정 조회 실패: {exc}", "source": "naver"}
+        return {"ok": False, "items": [], "error": "청약 일정을 가져오지 못했습니다.", "source": "naver"}
     return _cached(f"ipo:{limit}", 3 * 3600, build)  # 3시간
 
 
