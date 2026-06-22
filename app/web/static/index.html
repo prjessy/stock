@@ -110,7 +110,29 @@
       .panel { padding: 14px; border-radius: var(--r); }
       .grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
       #summaryGrid { grid-template-columns: 1fr !important; }
+      .pin-card { min-width: 116px; }
     }
+
+    /* 📌 핀 차트 스트립 */
+    .pin-strip { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; margin-bottom: var(--gap); }
+    .pin-strip::-webkit-scrollbar { height: 6px; }
+    .pin-strip::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .pin-card { flex: 0 0 auto; min-width: 130px; background: var(--panel); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 10px 12px; position: relative; overflow: hidden; }
+    .pin-card .nm { font-size: 11px; color: var(--muted); }
+    .pin-card .val { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; letter-spacing: -0.3px; }
+    .pin-card .chg { font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .pin-card svg { display: block; margin-top: 4px; }
+    /* 🍩 도넛(종목별 비중) — conic-gradient */
+    .donut-wrap { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+    .donut { width: 116px; height: 116px; border-radius: 50%; flex: 0 0 auto;
+      -webkit-mask: radial-gradient(circle 34px at 50% 50%, transparent 98%, #000 100%);
+              mask: radial-gradient(circle 34px at 50% 50%, transparent 98%, #000 100%); }
+    .donut-legend { font-size: 12px; flex: 1; min-width: 130px; }
+    .donut-legend .lg-row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+    .donut-legend .sw { width: 10px; height: 10px; border-radius: 2px; flex: 0 0 auto; }
+    .donut-legend .lg-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .donut-legend .lg-pct { color: var(--muted); font-variant-numeric: tabular-nums; }
 
     /* 브리핑: 방향성 카드 */
     .dir-card { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
@@ -359,8 +381,18 @@
           <button class="refresh-btn" onclick="loadSummary(true)">🔄 새로고침</button>
         </div>
       </section>
+
+      <!-- 📌 핀 차트 스트립 (지수·금·환율·BTC + 스파크라인) -->
+      <div id="pinStrip" class="pin-strip">
+        <div class="skeleton" style="height:58px;width:130px;border-radius:var(--r);"></div>
+        <div class="skeleton" style="height:58px;width:130px;border-radius:var(--r);"></div>
+        <div class="skeleton" style="height:58px;width:130px;border-radius:var(--r);"></div>
+        <div class="skeleton" style="height:58px;width:130px;border-radius:var(--r);"></div>
+      </div>
+
       <div id="summaryGrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;">
         <div class="panel" id="sumBalance"><h2 style="font-size:14px;">💼 내 계좌 손익</h2><div style="margin-top:8px;"><div class="skeleton lg"></div><div class="skeleton"></div><div class="skeleton sm"></div></div></div>
+        <div class="panel" id="sumDonut"><h2 style="font-size:14px;">🍩 종목별 비중</h2><div style="margin-top:8px;"><div class="skeleton lg"></div><div class="skeleton"></div><div class="skeleton sm"></div></div></div>
         <div class="panel" id="sumMovers"><h2 style="font-size:14px;">📊 관심종목 등락</h2><div style="margin-top:8px;"><div class="skeleton lg"></div><div class="skeleton"></div><div class="skeleton sm"></div></div></div>
         <div class="panel" id="sumBalmok"><h2 style="font-size:14px;">🦶 발목 근접</h2><div style="margin-top:8px;"><div class="skeleton lg"></div><div class="skeleton"></div><div class="skeleton sm"></div></div></div>
         <div class="panel" id="sumUs"><h2 style="font-size:14px;">🇺🇸 미국장 한줄</h2><div style="margin-top:8px;"><div class="skeleton lg"></div><div class="skeleton"></div><div class="skeleton sm"></div></div></div>
@@ -2291,6 +2323,50 @@
       return true;
     }
 
+    // ===================== 🏠 대시보드(써머리) 헬퍼 =====================
+    // 미니 스파크라인 SVG
+    function sparkSvg(data, up) {
+      const n = (data || []).length; if (n < 2) return "";
+      const w = 122, h = 24, mn = Math.min(...data), mx = Math.max(...data), rng = (mx - mn) || 1;
+      const pts = data.map((v, i) => `${(i / (n - 1) * w).toFixed(1)},${(h - (v - mn) / rng * (h - 3) - 1.5).toFixed(1)}`).join(" ");
+      const col = up ? "var(--up)" : "var(--down)";
+      return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
+    }
+    // 📌 핀 차트 스트립
+    async function loadPins() {
+      const el = document.getElementById("pinStrip"); if (!el) return;
+      try {
+        const r = await (await fetch("/api/fintech/pins")).json();
+        const items = r.items || [];
+        if (!items.length) { el.style.display = "none"; return; }
+        el.innerHTML = items.map((m) => {
+          const up = (m.change_pct || 0) >= 0, col = up ? "var(--up)" : "var(--down)";
+          return `<div class="pin-card"><div class="nm">${m.name}</div>
+            <div class="val">${m.unit || ""}${Number(m.value).toLocaleString()}</div>
+            <div class="chg" style="color:${col}">${up ? "+" : ""}${m.change_pct}%</div>
+            ${sparkSvg(m.spark, up)}</div>`;
+        }).join("");
+      } catch { el.style.display = "none"; }
+    }
+    // 🍩 종목별 비중 도넛(conic-gradient)
+    const DONUT_PALETTE = ["#4c8dff", "#2ec26b", "#e0b13a", "#ff5d6c", "#9b6cff", "#36c5d0", "#ff9f43", "#8b97a8"];
+    function renderHoldingsDonut(list) {
+      const el = document.getElementById("sumDonut"); if (!el) return;
+      const rows = (list || [])
+        .map((h) => ({ name: h.name || h.symbol, amt: (h.eval_amt != null ? h.eval_amt : (h.cur_price || 0) * (h.qty || 0)) }))
+        .filter((r) => r.amt > 0).sort((a, b) => b.amt - a.amt);
+      const total = rows.reduce((s, r) => s + r.amt, 0);
+      if (!total) { el.innerHTML = `<h2 style="font-size:14px;">🍩 종목별 비중</h2><div class="sub" style="margin-top:6px;">보유 종목 없음</div>`; return; }
+      let segs = rows.slice(0, 7);
+      const rest = rows.slice(7).reduce((s, r) => s + r.amt, 0);
+      if (rest > 0) segs.push({ name: "기타", amt: rest });
+      let acc = 0;
+      const stops = segs.map((s, i) => { const a0 = acc / total * 100; acc += s.amt; const a1 = acc / total * 100; return `${DONUT_PALETTE[i % DONUT_PALETTE.length]} ${a0.toFixed(1)}% ${a1.toFixed(1)}%`; }).join(",");
+      const legend = segs.map((s, i) => `<div class="lg-row"><span class="sw" style="background:${DONUT_PALETTE[i % DONUT_PALETTE.length]}"></span><span class="lg-name">${s.name}</span><span class="lg-pct">${(s.amt / total * 100).toFixed(1)}%</span></div>`).join("");
+      el.innerHTML = `<h2 style="font-size:14px;">🍩 종목별 비중</h2>
+        <div class="donut-wrap"><div class="donut" style="background:conic-gradient(${stops})"></div><div class="donut-legend">${legend}</div></div>`;
+    }
+
     // ===================== 🏠 써머리 탭 =====================
     let summaryLoaded = false;
     async function loadSummary(force) {
@@ -2304,24 +2380,45 @@
         if (el) el.innerHTML = `<h2 style="font-size:14px;">${title}</h2>${html}`;
       };
 
-      // 💼 계좌 손익 요약(보유 종목 합산)
+      // 📌 핀 차트 스트립
+      loadPins();
+
+      // 🏆 총자산 히어로 + 🍩 종목별 비중 도넛 (둘 다 /api/balance 한 번으로)
       (async () => {
         try {
           const r = await (await fetch("/api/balance")).json();
-          if (!r.ok) { setBody("sumBalance", "💼 내 계좌 손익", `<div class="sub" style="margin-top:6px;color:var(--muted)">${r.error || "조회 불가"}</div>`); return; }
+          if (!r.ok) {
+            setBody("sumBalance", "💼 내 계좌", `<div class="sub" style="margin-top:6px;color:var(--muted)">${r.error || "조회 불가"}</div>`);
+            setBody("sumDonut", "🍩 종목별 비중", `<div class="sub" style="margin-top:6px;color:var(--muted)">조회 불가</div>`);
+            return;
+          }
           const list = r.holdings || [];
-          if (!list.length) { setBody("sumBalance", "💼 내 계좌 손익", `<div class="sub" style="margin-top:6px;">보유 종목 없음</div>`); return; }
-          let buy = 0, evalAmt = 0;
-          list.forEach((h) => { buy += (h.avg_price || 0) * (h.qty || 0); evalAmt += (h.cur_price || 0) * (h.qty || 0); });
-          const pnl = evalAmt - buy, pnlPct = buy ? (pnl / buy * 100) : 0;
-          const top = list.slice().sort((a, b) => (b.pnl_pct || 0) - (a.pnl_pct || 0));
-          setBody("sumBalance", "💼 내 계좌 손익",
-            `<div style="margin-top:8px;font-size:22px;font-weight:700;color:${pc(pnl)}">${sgn(pnl)}${won(pnl)}원 <span style="font-size:14px">(${sgn(pnlPct)}${pnlPct.toFixed(2)}%)</span></div>
-             <div class="sub" style="margin-top:2px;">평가 ${won(evalAmt)} · 매입 ${won(buy)} · ${list.length}종목</div>
-             <div style="margin-top:6px;font-size:12.5px;">
-               ${top.slice(0, 3).map((h) => `<div style="display:flex;justify-content:space-between"><span>${h.name || h.symbol}</span><span style="color:${pc(h.pnl_pct)}">${sgn(h.pnl_pct)}${(h.pnl_pct || 0).toFixed(2)}%</span></div>`).join("")}
-             </div>`);
-        } catch { setBody("sumBalance", "💼 내 계좌 손익", `<div class="sub" style="margin-top:6px;color:var(--down)">조회 실패</div>`); }
+          const sm = r.summary || {};
+          // 합계: KIS summary 우선, 없으면 보유 합산
+          let buy = sm.buy_total, evalAmt = sm.total_eval, pnl = sm.pnl_total, pnlPct = sm.pnl_total_pct;
+          if (evalAmt == null) {
+            buy = 0; evalAmt = 0;
+            list.forEach((h) => { buy += (h.avg_price || 0) * (h.qty || 0); evalAmt += (h.cur_price || 0) * (h.qty || 0); });
+            pnl = evalAmt - buy; pnlPct = buy ? (pnl / buy * 100) : 0;
+          }
+          const totalAsset = (sm.total_eval != null) ? sm.total_eval : evalAmt;
+          if (!list.length && !totalAsset) {
+            setBody("sumBalance", "💼 내 계좌", `<div class="sub" style="margin-top:6px;">보유 종목 없음</div>`);
+            setBody("sumDonut", "🍩 종목별 비중", `<div class="sub" style="margin-top:6px;">보유 종목 없음</div>`);
+            return;
+          }
+          // 히어로: 총평가 크게 + 평가손익
+          const el = document.getElementById("sumBalance");
+          if (el) el.innerHTML =
+            `<h2 style="font-size:14px;">🏆 총자산</h2>
+             <div style="margin-top:6px;font-size:30px;font-weight:800;letter-spacing:-1px;font-variant-numeric:tabular-nums;">₩${won(totalAsset)}</div>
+             <div style="margin-top:4px;font-size:15px;font-weight:700;color:${pc(pnl)}">${sgn(pnl)}${won(pnl)}원 (${sgn(pnlPct)}${(pnlPct || 0).toFixed(2)}%)</div>
+             <div class="sub" style="margin-top:6px;">평가 ${won(evalAmt)} · 매입 ${won(buy)} · 예수금 ${won(sm.deposit)} · ${list.length}종목</div>`;
+          renderHoldingsDonut(list);
+        } catch {
+          setBody("sumBalance", "💼 내 계좌", `<div class="sub" style="margin-top:6px;color:var(--down)">조회 실패</div>`);
+          setBody("sumDonut", "🍩 종목별 비중", `<div class="sub" style="margin-top:6px;color:var(--down)">조회 실패</div>`);
+        }
       })();
 
       // 📊 관심종목 등락(인메모리 quotes 상·하위)

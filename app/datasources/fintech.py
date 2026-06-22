@@ -58,6 +58,40 @@ _MARKET_DEFS = [
 ]
 
 
+# 핀 차트 스트립(대시보드 상단) — 지수·원자재·환율·코인 + 미니 스파크라인.
+_PIN_DEFS = [
+    {"key": "kospi", "name": "KOSPI", "symbol": "KS11", "unit": ""},
+    {"key": "sp500", "name": "S&P 500", "symbol": "US500", "unit": ""},
+    {"key": "nasdaq", "name": "NASDAQ", "symbol": "IXIC", "unit": ""},
+    {"key": "usdkrw", "name": "USD/KRW", "symbol": "USD/KRW", "unit": "₩"},
+    {"key": "dxy", "name": "달러인덱스", "symbol": "DX-Y.NYB", "unit": ""},
+    {"key": "btc", "name": "비트코인", "symbol": "BTC/USD", "unit": "$"},
+    {"key": "wti", "name": "WTI", "symbol": "CL=F", "unit": "$"},
+    {"key": "gold", "name": "금", "symbol": "GC=F", "unit": "$"},
+]
+
+
+def pins() -> dict:
+    """대시보드 상단 핀 차트 — 값·등락·스파크라인(최근 20영업일 종가)."""
+    def build():
+        out = []
+        for d in _PIN_DEFS:
+            try:
+                df = _fdr().DataReader(d["symbol"]).dropna()
+                closes = [round(float(x), 2) for x in df["Close"].dropna().tolist()[-20:]]
+                if not closes:
+                    continue
+                cur = closes[-1]
+                prev = closes[-2] if len(closes) >= 2 else cur
+                chg = round((cur - prev) / prev * 100, 2) if prev else 0.0
+                out.append({"key": d["key"], "name": d["name"], "unit": d["unit"],
+                            "value": cur, "change_pct": chg, "spark": closes})
+            except Exception:
+                continue
+        return {"ok": True, "items": out}
+    return _cached("pins", 600, build)  # 10분
+
+
 def markets() -> dict:
     """금·은·유가·달러인덱스·환율 스냅샷."""
     def build():

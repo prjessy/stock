@@ -446,6 +446,16 @@ def deudeumi4_api(limit: int = 60, comment: int = 0) -> JSONResponse:
 
 
 # ===== 핀테크 탭 (금·원자재·환율 / 각국 금리·국채 / 공모주 청약 / 부동산) =====
+@app.get("/api/fintech/pins")
+def fintech_pins_api() -> JSONResponse:
+    """대시보드 상단 핀 차트(지수·금·환율·BTC + 스파크라인). 500 금지."""
+    try:
+        from app.datasources import fintech
+        return JSONResponse(fintech.pins())
+    except Exception as exc:
+        return JSONResponse({"ok": False, "items": [], "error": str(exc)})
+
+
 @app.get("/api/fintech/markets")
 def fintech_markets_api() -> JSONResponse:
     """금·은·유가·달러인덱스·환율. 500 금지."""
