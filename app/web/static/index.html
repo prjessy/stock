@@ -1931,6 +1931,10 @@
             ${fld("기준가(비우면 종가)", "at-base", r.base_price ?? "", "종가기준", "96px", 'type="number" min="0" step="any"')}
             <label class="at-fld" style="flex-direction:row;align-items:center;gap:6px;"><input class="at-ai" type="checkbox" ${r.ai_judge ? "checked" : ""}><span>AI 보조</span></label>
           </div>
+          <div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <button class="refresh-btn" onclick="cardAiJudge('${q.symbol}', this)" style="border-color:var(--accent);color:var(--accent);margin:0;">🧠 AI 판단 받기</button>
+            <span class="at-ai-result" style="font-size:12px;color:var(--muted);">기준가(또는 현재가)로 적정/위험/중립 판단</span>
+          </div>
         </div>`;
       }).join("") +
       `<div class="modal-note" style="margin-top:10px;">🔁 <b>N회 반복</b>: <b>증감율%</b>+<b>회수≥2</b> 입력 → 1차 매수(<b>기준가</b> 비우면 <b>종가기준</b>=매수%, 입력하면 그 가격) → <b>+증감율%</b> 매도 → <b>직전 매도가 −증감율%</b> 재매수 … 회수만큼. AI 보조 켜면 1차 전 위험 판단.</div>`;
@@ -2087,6 +2091,27 @@
         })).json();
         alert(r.ok ? `✅ 접수됨\n${r.msg || ""}\n주문번호 ${r.order_no || "-"}` : `❌ 실패\n${r.error || ""}`);
       } catch (e) { alert("주문 요청 실패"); }
+    }
+
+    // ===== 종목 카드 안 AI 판단 버튼 =====
+    async function cardAiJudge(sym, btn) {
+      const card = btn.closest(".at-card");
+      const out = card ? card.querySelector(".at-ai-result") : null;
+      if (!out) return;
+      const base = parseFloat((card.querySelector(".at-base") || {}).value) || null;
+      if (!autotradePw) { if (!unlockAutotrade()) return; }
+      btn.disabled = true; const old = btn.textContent; btn.textContent = "🧠 판단 중…";
+      out.textContent = "AI가 검토 중…"; out.style.color = "var(--muted)";
+      try {
+        const r = await (await fetch("/api/autotrade/ai-judge", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ symbol: sym, base_price: base, password: autotradePw }),
+        })).json();
+        if (!r.ok) { out.textContent = "실패 — " + (r.error || ""); out.style.color = "var(--down)"; return; }
+        const col = r.verdict === "적정" ? "var(--up)" : r.verdict === "위험" ? "var(--down)" : "var(--gold)";
+        out.innerHTML = `<b style="color:${col}">${r.verdict}</b> · ${r.headline || ""} <span style="color:var(--muted)">${r.buy_amount_krw ? "· 권장 " + (r.buy_amount_krw).toLocaleString() + "원" : ""}</span>`;
+      } catch { out.textContent = "요청 실패"; out.style.color = "var(--down)"; }
+      finally { btn.disabled = false; btn.textContent = old; }
     }
 
     // ===== 🧠 AI 매수 판단 — /api/autotrade/ai-judge =====
