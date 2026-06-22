@@ -28,12 +28,17 @@
       --down: #ff5d6c;
       --accent: #4c8dff;
       --gold: #e0b13a;
-      --shadow: 0 1px 0 rgba(255,255,255,0.03), 0 8px 24px rgba(0,0,0,0.35);
+      --shadow: 0 1px 0 rgba(255,255,255,0.02), 0 6px 18px rgba(0,0,0,0.28);
+      /* 정돈용 토큰 — 라운드/여백 한 벌로 통일 */
+      --r: 12px;        /* 카드/패널 기본 라운드 */
+      --r-sm: 8px;      /* 버튼/인풋 */
+      --pad: 18px;      /* 패널 안쪽 여백 */
+      --gap: 14px;      /* 패널 사이 간격 */
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      background: radial-gradient(1200px 600px at 80% -10%, #16203020, transparent), var(--bg);
+      background: var(--bg);
       color: var(--text);
       font-family: "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", "Malgun Gothic", Roboto, sans-serif;
       -webkit-font-smoothing: antialiased;
@@ -45,8 +50,9 @@
     header h1 .brand-mark { width: 42px; height: 42px; border-radius: 22%; vertical-align: middle; }
     header .meta { color: var(--muted); font-size: 13px; }
     header .meta b { color: var(--text); font-weight: 600; }
-    .refresh-btn { margin-left: 10px; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 4px 11px; font-size: 12px; cursor: pointer; transition: all .12s; }
-    .refresh-btn:hover { border-color: var(--accent); }
+    .refresh-btn { margin-left: 10px; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 5px 12px; font-size: 12px; cursor: pointer; transition: all .12s; }
+    .refresh-btn:hover { border-color: var(--gold); color: var(--text); }
+    .refresh-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
     .refresh-btn:disabled { opacity: .55; cursor: default; }
     .badge {
       display: inline-flex; align-items: center; gap: 6px;
@@ -68,16 +74,43 @@
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
 
-    /* 일반 패널 / 빈 상태 (브리핑·마케팅·알람) */
+    /* 일반 패널 / 빈 상태 — 그라데이션 대신 플랫(깔끔) */
     .panel {
-      background: linear-gradient(180deg, var(--panel-2), var(--panel));
-      border: 1px solid var(--border); border-radius: 16px; padding: 18px 20px; box-shadow: var(--shadow);
-      margin-bottom: 16px;
+      background: var(--panel);
+      border: 1px solid var(--border); border-radius: var(--r); padding: var(--pad); box-shadow: var(--shadow);
+      margin-bottom: var(--gap);
     }
-    .panel h2 { font-size: 15px; font-weight: 640; margin: 0 0 12px; }
+    .panel h2 { font-size: 15px; font-weight: 640; margin: 0 0 12px; letter-spacing: -0.2px; }
     .panel .sub { color: var(--muted); font-size: 12.5px; margin-bottom: 14px; }
     .empty-state { color: var(--muted); font-size: 13.5px; line-height: 1.7; padding: 26px 8px; text-align: center; }
     .note-line { color: var(--muted); font-size: 12.5px; line-height: 1.7; margin-top: 12px; }
+
+    /* ===== 디자인 폴리시 ===== */
+    /* #5 로딩 스켈레톤 */
+    .skeleton { display: block; height: 14px; border-radius: 6px; margin: 8px 0;
+      background: linear-gradient(90deg, var(--panel-2) 25%, #232d3e 37%, var(--panel-2) 63%);
+      background-size: 400% 100%; animation: shimmer 1.4s ease infinite; }
+    .skeleton.lg { height: 26px; width: 60%; }
+    .skeleton.sm { height: 10px; width: 80%; }
+    @keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+    /* #3 시각적 계층 — 대시보드 '내 계좌 손익'을 가장 크게(맨 위 강조) */
+    #sumBalance { grid-column: 1 / -1; background: linear-gradient(135deg, #18233a, var(--panel)); border-color: #2c3b58; }
+    #sumBalance h2 { font-size: 15px; }
+    /* 포커스 접근성(키보드) */
+    .tab-btn:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+    @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
+
+    /* #4 모바일 — 좁은 화면 정돈 */
+    @media (max-width: 640px) {
+      .wrap { padding: 16px 12px 44px; }
+      header h1 { font-size: 19px; }
+      .tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; gap: 4px; }
+      .tabs::-webkit-scrollbar { display: none; }
+      .tab-btn { white-space: nowrap; padding: 8px 12px; font-size: 13px; }
+      .panel { padding: 14px; border-radius: var(--r); }
+      .grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+      #summaryGrid { grid-template-columns: 1fr !important; }
+    }
 
     /* 브리핑: 방향성 카드 */
     .dir-card { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
@@ -99,8 +132,10 @@
     .chip-list { display: flex; gap: 6px; flex-wrap: wrap; }
     .chip-static { font-size: 12px; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; }
     .alert-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .alert-table th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11.5px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
-    .alert-table td { padding: 9px 10px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+    .alert-table th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11.5px; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+    .alert-table td { padding: 11px 12px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+    .alert-table tbody tr { transition: background .12s; }
+    .alert-table tbody tr:hover { background: rgba(255,255,255,0.02); }
     .alert-table tr:last-child td { border-bottom: none; }
     .alert-table .th-up { color: var(--up); font-weight: 600; }
     .alert-table .th-down { color: var(--down); font-weight: 600; }
@@ -112,9 +147,9 @@
       margin-bottom: 28px;
     }
     .card {
-      background: linear-gradient(180deg, var(--panel-2), var(--panel));
+      background: var(--panel);
       border: 1px solid var(--border);
-      border-radius: 14px;
+      border-radius: var(--r);
       padding: 16px 16px 14px;
       cursor: pointer;
       transition: border-color .15s ease, transform .1s ease;
@@ -183,7 +218,7 @@
     .card .warn-lev { font-size: 10.5px; color: #f0b73d; margin-top: 9px; line-height: 1.45; border-top: 1px dashed var(--border); padding-top: 7px; }
 
     .chart-panel {
-      background: linear-gradient(180deg, var(--panel-2), var(--panel));
+      background: var(--panel);
       border: 1px solid var(--border);
       border-radius: 16px;
       padding: 18px 18px 14px;
@@ -227,7 +262,7 @@
 
     /* 재무 요약 패널 */
     .fin-panel {
-      margin-top: 18px; background: linear-gradient(180deg, var(--panel-2), var(--panel));
+      margin-top: 18px; background: var(--panel);
       border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px; box-shadow: var(--shadow);
     }
     .fin-head { font-size: 14px; font-weight: 620; margin-bottom: 12px; display: flex; align-items: baseline; gap: 8px; }
@@ -279,7 +314,7 @@
     .gear-btn { margin-left: 6px; }
     .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 50; align-items: center; justify-content: center; padding: 20px; }
     .modal-overlay.open { display: flex; }
-    .modal { width: 100%; max-width: 380px; max-height: 88vh; overflow-y: auto; background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--border); border-radius: 16px; padding: 18px 20px; box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
+    .modal { width: 100%; max-width: 380px; max-height: 88vh; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 18px 20px; box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
     .modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
     .modal-head h2 { font-size: 16px; font-weight: 640; margin: 0; }
     .modal-x { background: transparent; border: none; color: var(--muted); font-size: 16px; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
@@ -325,13 +360,13 @@
         </div>
       </section>
       <div id="summaryGrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;">
-        <div class="panel" id="sumBalance"><h2 style="font-size:14px;">💼 내 계좌 손익</h2><div class="sub" style="margin-top:6px;">불러오는 중…</div></div>
-        <div class="panel" id="sumMovers"><h2 style="font-size:14px;">📊 관심종목 등락</h2><div class="sub" style="margin-top:6px;">불러오는 중…</div></div>
-        <div class="panel" id="sumBalmok"><h2 style="font-size:14px;">🦶 발목 근접</h2><div class="sub" style="margin-top:6px;">불러오는 중…</div></div>
-        <div class="panel" id="sumUs"><h2 style="font-size:14px;">🇺🇸 미국장 한줄</h2><div class="sub" style="margin-top:6px;">불러오는 중…</div></div>
-        <div class="panel" id="sumIpo"><h2 style="font-size:14px;">🗓️ 청약 임박</h2><div class="sub" style="margin-top:6px;">불러오는 중…</div></div>
-        <div class="panel" id="sumFx"><h2 style="font-size:14px;">🥇 금·환율</h2><div class="sub" style="margin-top:6px;">불러오는 중…</div></div>
-        <div class="panel" id="sumAlerts"><h2 style="font-size:14px;">🔔 최근 알림</h2><div class="sub" style="margin-top:6px;">불러오는 중…</div></div>
+        <div class="panel" id="sumBalance"><h2 style="font-size:14px;">💼 내 계좌 손익</h2><div style="margin-top:8px;"><div class="skeleton lg"></div><div class="skeleton"></div><div class="skeleton sm"></div></div></div>
+        <div class="panel" id="sumMovers"><h2 style="font-size:14px;">📊 관심종목 등락</h2><div style="margin-top:8px;"><div class="skeleton lg"></div><div class="skeleton"></div><div class="skeleton sm"></div></div></div>
+        <div class="panel" id="sumBalmok"><h2 style="font-size:14px;">🦶 발목 근접</h2><div style="margin-top:8px;"><div class="skeleton lg"></div><div class="skeleton"></div><div class="skeleton sm"></div></div></div>
+        <div class="panel" id="sumUs"><h2 style="font-size:14px;">🇺🇸 미국장 한줄</h2><div style="margin-top:8px;"><div class="skeleton lg"></div><div class="skeleton"></div><div class="skeleton sm"></div></div></div>
+        <div class="panel" id="sumIpo"><h2 style="font-size:14px;">🗓️ 청약 임박</h2><div style="margin-top:8px;"><div class="skeleton lg"></div><div class="skeleton"></div><div class="skeleton sm"></div></div></div>
+        <div class="panel" id="sumFx"><h2 style="font-size:14px;">🥇 금·환율</h2><div style="margin-top:8px;"><div class="skeleton lg"></div><div class="skeleton"></div><div class="skeleton sm"></div></div></div>
+        <div class="panel" id="sumAlerts"><h2 style="font-size:14px;">🔔 최근 알림</h2><div style="margin-top:8px;"><div class="skeleton lg"></div><div class="skeleton"></div><div class="skeleton sm"></div></div></div>
       </div>
     </div>
 
