@@ -37,6 +37,7 @@ class AutoTradeWatcher:
         self._thread: threading.Thread | None = None
         self._done: dict[str, set] = {}   # {거래일: {"종목:행위"}} — 발동 완료
         self._last_balmok = None           # 발목 스캔 throttle(10분)
+        self._grid: dict[str, dict] = {}   # {거래일: {종목: 그리드상태}} — 반복매매 사이클
 
     def start(self) -> None:
         if self._thread is not None:
@@ -101,6 +102,13 @@ class AutoTradeWatcher:
             cp = q.get("change_pct")
             price = q.get("price") or 0
             name = q.get("name") or sym
+            # 🔁 반복 그리드(완전자동) 모드 — 매도가 기준 N회 반복
+            if rule.get("mode") == "grid":
+                try:
+                    self._check_grid(client, sym, name, rule, q, held.get(sym))
+                except Exception:
+                    logger.exception("grid 틱 실패 %s", sym)
+                continue
             # ① 매수 (등락률 밴드) — 보유 여부와 무관
             bp = rule.get("buy_pct")
             if (bp is not None and cp is not None and price > 0
@@ -216,3 +224,106 @@ class AutoTradeWatcher:
         else:
             notify_all("⚠️ 자동 매도 실패",
                        f"{name}({sym}) 매도 시도 실패\n사유: {reason}\n오류: {res.get('error','')}")
+
+    # ===== 🔁 반복 그리드(완전자동) — 1차 기준 후 '매도가 기준' N회 반복 =====
+    def _grid_state(self, sym: str) -> dict:
+        """종목별 그리드 상태(오늘). {phase, cycle, ref_buy, ref_sell}. 날짜 바뀌면 리셋."""
+        today = self._today()
+        day = self._grid.get(today)
+        if day is None:
+            self._grid.clear()
+            day = self._grid[today] = {}
+        return day.setdefault(sym, {"phase": "wait_buy", "cycle": 0, "ref_buy": None, "ref_sell": None})
+
+    def _check_grid(self, client, sym, name, rule, q, held) -> None:
+        st = self._grid_state(sym)
+        repeat = int(rule.get("repeat") or 1)
+        step = float(rule.get("step_pct") or 0)
+        if step <= 0 or st["cycle"] >= repeat:
+            return
+        price = q.get("price") or 0
+        cp = q.get("change_pct")
+        if price <= 0:
+            return
+
+        if st["phase"] == "wait_buy":
+            # 1차(cycle 0): 사용자 기준가(base_price) 또는 종가기준 등락률(buy_pct).
+            # 2차~: 직전 매도가 × (1 - step%) 이하면 재매수.
+            if st["cycle"] == 0:
+                base = rule.get("base_price")
+                if base is not None:
+                    trigger = price <= base
+                    why = f"기준가 {int(base):,}원 이하(현재 {int(price):,})"
+                else:
+                    bp = rule.get("buy_pct")
+                    trigger = bp is not None and cp is not None and cp <= bp
+                    why = f"전일대비 {cp:+.2f}% ≤ {bp:g}%"
+            else:
+                tgt = st["ref_sell"] * (1 - step / 100)
+                trigger = st["ref_sell"] and price <= tgt
+                why = f"직전 매도가 {int(st['ref_sell']):,} 대비 -{step:g}%({int(tgt):,}) 이하"
+            if not trigger:
+                return
+            # 1차 매수 전 AI 판단(옵션): 위험이면 보류
+            if st["cycle"] == 0 and rule.get("ai_judge"):
+                ok, verdict = self._grid_ai_ok(sym, q)
+                if not ok:
+                    if not self._done_action(sym, "grid-ai-hold"):
+                        self._mark(sym, "grid-ai-hold")
+                        notify_all("🔁 반복매매 · AI 보류",
+                                   f"{name}({sym}) 1차 매수 조건이나 AI 판단='{verdict}' → 보류")
+                    return
+            qty = int(rule.get("qty") or 1)
+            res = client.place_order(sym, "buy", qty, price=int(price), cap=qty)
+            if res.get("ok"):
+                st["phase"] = "holding"
+                st["ref_buy"] = price
+                notify_all("🔁 반복매매 매수",
+                           f"{name}({sym}) {st['cycle']+1}/{repeat}회차 {qty}주 매수\n사유: {why}\n"
+                           f"지정가 {int(price):,}원 · 주문번호 {res.get('order_no','-')}")
+            else:
+                notify_all("⚠️ 반복매매 매수 실패", f"{name}({sym})\n{res.get('error','')}")
+
+        elif st["phase"] == "holding":
+            if not held or held.get("qty", 0) <= 0:
+                return
+            target = st["ref_buy"] * (1 + step / 100) if st["ref_buy"] else None
+            # 익절(증감율 도달) 또는 손절(설정 시)
+            reason = None
+            if target and price >= target:
+                reason = f"매수가 {int(st['ref_buy']):,} 대비 +{step:g}%({int(target):,}) 도달"
+            else:
+                sr = self._sell_reason(rule, cp, price, held.get("avg_price") or 0,
+                                       datetime.now(_KST).strftime("%H:%M"))
+                if sr:
+                    reason = sr
+            if not reason:
+                return
+            qty = int(held["qty"])
+            cap = int(rule.get("qty") or 1)
+            res = client.place_order(sym, "sell", qty, price=int(price), cap=cap)
+            if res.get("ok"):
+                st["phase"] = "wait_buy"
+                st["ref_sell"] = price
+                st["cycle"] += 1
+                done = st["cycle"] >= repeat
+                notify_all("🔁 반복매매 매도",
+                           f"{name}({sym}) {st['cycle']}/{repeat}회차 매도\n사유: {reason}\n"
+                           f"지정가 {int(price):,}원 · 주문번호 {res.get('order_no','-')}"
+                           + ("\n✅ 설정 회수 완료 — 오늘 종료" if done else "\n→ 다음 회차는 이 매도가 기준 재매수"))
+            else:
+                notify_all("⚠️ 반복매매 매도 실패", f"{name}({sym})\n{res.get('error','')}")
+
+    def _grid_ai_ok(self, sym: str, q: dict) -> tuple[bool, str]:
+        """1차 매수 전 AI 판단(ai_advisor). '위험'이면 (False, ...). 실패 시 보수적 통과."""
+        try:
+            from app.analysis.feed import compute_feed
+            from app.trading.ai_advisor import judge
+            rows = self._registry.history(sym, "1y")
+            feed = compute_feed(sym, rows, q or self._registry.quote(sym),
+                                self._registry.fundamentals(sym), self._registry.investor_flow(sym))
+            res = judge(sym, feed)
+            v = res.get("verdict") or "?"
+            return (v != "위험", v)
+        except Exception:
+            return (True, "판단생략")

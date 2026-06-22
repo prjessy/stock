@@ -1887,7 +1887,8 @@
       box.innerHTML = `<div class="tbl-wrap"><table class="alert-table" style="width:100%;font-size:13px;white-space:nowrap;">
         <thead><tr><th style="text-align:left;">종목</th>
           <th style="color:var(--up)">매수% ▼</th><th style="color:var(--down)">매도% ▲</th>
-          <th>손절가</th><th>손절%</th><th>매도시각</th><th>수량</th></tr></thead>
+          <th>손절가</th><th>손절%</th><th>매도시각</th><th>수량</th>
+          <th title="증감율% 채우면 반복(그리드) 모드">증감율%🔁</th><th title="비우면 종가기준(매수%), 채우면 지정가">기준가</th><th title="반복 회수">회수</th><th title="1차 매수 전 AI 적정/위험 보조">AI</th></tr></thead>
         <tbody>${syms.map((q) => {
           const r = autotradeCfg.rules[q.symbol] || {};
           return `<tr data-sym="${q.symbol}">
@@ -1898,8 +1899,13 @@
             <td><input class="at-spct" type="number" step="any" value="${r.stop_pct ?? ""}" placeholder="-3" style="${inp}width:52px;"></td>
             <td><input class="at-time" type="time" value="${r.sell_time ?? ""}" style="${inp}width:96px;"></td>
             <td><input class="at-qty" type="number" min="1" step="1" value="${r.qty ?? 1}" style="${inp}width:50px;"></td>
+            <td><input class="at-step" type="number" min="0" step="any" value="${r.step_pct ?? ""}" placeholder="2" style="${inp}width:50px;"></td>
+            <td><input class="at-base" type="number" min="0" step="any" value="${r.base_price ?? ""}" placeholder="종가기준" style="${inp}width:78px;"></td>
+            <td><input class="at-rep" type="number" min="1" max="20" step="1" value="${r.repeat ?? 1}" style="${inp}width:46px;"></td>
+            <td style="text-align:center;"><input class="at-ai" type="checkbox" ${r.ai_judge ? "checked" : ""}></td>
           </tr>`;
-        }).join("")}</tbody></table></div>`;
+        }).join("")}</tbody></table></div>
+        <div class="modal-note" style="margin-top:8px;">🔁 <b>반복(그리드)</b>: <b>증감율%</b>를 채우고 <b>회수≥2</b>면 자동 반복 — 1차는 <b>기준가</b>(비우면 <b>종가기준</b>=매수%) 매수 → <b>+증감율%</b> 매도 → <b>직전 매도가 −증감율%</b> 재매수 … 회수만큼. 증감율% 비우면 기존 <b>1회 밴드</b>.</div>`;
     }
     async function saveAutotrade(btn) {
       const pw = (document.getElementById("autotradePw") || {}).value || "";
@@ -1912,9 +1918,14 @@
         const spct = tr.querySelector(".at-spct").value;
         const t = tr.querySelector(".at-time").value;
         const qty = tr.querySelector(".at-qty").value;
-        if (buy || sell || sp || spct || t) rules[sym] = {
+        const step = tr.querySelector(".at-step").value;
+        const base = tr.querySelector(".at-base").value;
+        const rep = tr.querySelector(".at-rep").value;
+        const ai = tr.querySelector(".at-ai").checked;
+        if (buy || sell || sp || spct || t || step || base) rules[sym] = {
           buy_pct: buy || null, sell_pct: sell || null, stop_price: sp || null,
           stop_pct: spct || null, sell_time: t || null, qty: qty || 1,
+          step_pct: step || null, base_price: base || null, repeat: rep || 1, ai_judge: ai,
         };
       });
       const enabled = document.getElementById("autotradeEnabled").checked;

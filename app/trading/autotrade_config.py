@@ -78,9 +78,20 @@ def _clean_rules(rules: dict) -> dict:
         }
         q = _pos(r.get("qty"))
         clean["qty"] = int(q) if q and q >= 1 else 1
-        # 매수/매도 조건이 하나도 없으면 저장 안 함
-        if clean["buy_pct"] is None and all(clean[k] is None for k in _SELL_KEYS):
+        # 반복 회수(N): 매수→매도 사이클 최대 N회. 기본 1(1회).
+        rp = _pos(r.get("repeat"))
+        clean["repeat"] = min(int(rp), 20) if rp and rp >= 1 else 1
+        # 반복 그리드(완전자동): 증감율%(매수/매도 간격) + 회수. 1차 진입 기준은 두 옵션:
+        #   ① base_price(사용자 지정가) ② buy_pct(전일종가 대비 등락률, 자동·기준가 불필요)
+        #   매도 후 2차~는 항상 '직전 매도가' 기준으로 ±step% 반복.
+        clean["base_price"] = _pos(r.get("base_price"))
+        clean["step_pct"] = _pos(r.get("step_pct"))
+        clean["ai_judge"] = bool(r.get("ai_judge", False))  # 1차 매수 전 AI 적정/위험 보조
+        # step_pct가 있고(반복), 1차 기준(base_price 또는 buy_pct)이 있으면 그리드 모드
+        is_grid = clean["step_pct"] is not None and (clean["base_price"] is not None or clean["buy_pct"] is not None)
+        if not is_grid and clean["buy_pct"] is None and all(clean[k] is None for k in _SELL_KEYS):
             continue
+        clean["mode"] = "grid" if is_grid else "band"
         out[str(sym)] = clean
     return out
 
