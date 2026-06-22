@@ -359,6 +359,13 @@
     .alarm-opt { display: flex; align-items: center; gap: 8px; padding: 7px 0; font-size: 14px; cursor: pointer; }
     .alarm-opt input { width: 16px; height: 16px; flex: 0 0 auto; }
     .opt-tag { margin-left: auto; font-size: 10.5px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+    /* 자동매매 종목별 카드 (가로 스크롤 없이 줄바꿈) */
+    .at-card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--r); padding: 12px 14px; margin-bottom: 10px; }
+    .at-card-name { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; font-size: 14px; }
+    .at-card-sec { font-size: 11.5px; color: var(--muted); margin: 8px 0 4px; }
+    .at-fields { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+    .at-fld { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); }
+    .at-fld span { white-space: nowrap; }
     .modal-note { color: var(--muted); font-size: 12px; line-height: 1.6; margin-top: 8px; border-top: 1px solid var(--border); padding-top: 12px; }
   </style>
 </head>
@@ -1890,34 +1897,44 @@
       if (!box) return;
       const syms = Object.values(quotesById).filter((q) => q.currency === "KRW");
       if (!syms.length) { box.innerHTML = '<div class="sub">종목 로딩 중… 대시보드를 먼저 열어 주세요.</div>'; return; }
-      const inp = "background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:3px 5px;font-size:13px;font-variant-numeric:tabular-nums;";
-      box.innerHTML = `<div class="tbl-wrap"><table class="alert-table" style="width:100%;font-size:13px;white-space:nowrap;">
-        <thead><tr><th style="text-align:left;">종목</th>
-          <th style="color:var(--up)">매수% ▼</th><th style="color:var(--down)">매도% ▲</th>
-          <th>손절가</th><th>손절%</th><th>매도시각</th><th>수량</th>
-          <th title="증감율% 채우면 반복(그리드) 모드">증감율%🔁</th><th title="비우면 종가기준(매수%), 채우면 지정가">기준가</th><th title="반복 회수">회수</th><th title="1차 매수 전 AI 적정/위험 보조">AI</th></tr></thead>
-        <tbody>${syms.map((q) => {
-          const r = autotradeCfg.rules[q.symbol] || {};
-          return `<tr data-sym="${q.symbol}">
-            <td style="text-align:left;">${q.name}</td>
-            <td><input class="at-buy" type="number" step="any" value="${r.buy_pct ?? ""}" placeholder="-2" style="${inp}width:52px;"></td>
-            <td><input class="at-sell" type="number" step="any" value="${r.sell_pct ?? ""}" placeholder="2" style="${inp}width:52px;"></td>
-            <td><input class="at-sp" type="number" min="0" step="any" value="${r.stop_price ?? ""}" placeholder="—" style="${inp}width:78px;"></td>
-            <td><input class="at-spct" type="number" step="any" value="${r.stop_pct ?? ""}" placeholder="-3" style="${inp}width:52px;"></td>
-            <td><input class="at-time" type="time" value="${r.sell_time ?? ""}" style="${inp}width:96px;"></td>
-            <td><input class="at-qty" type="number" min="1" step="1" value="${r.qty ?? 1}" style="${inp}width:50px;"></td>
-            <td><input class="at-step" type="number" min="0" step="any" value="${r.step_pct ?? ""}" placeholder="2" style="${inp}width:50px;"></td>
-            <td><input class="at-base" type="number" min="0" step="any" value="${r.base_price ?? ""}" placeholder="종가기준" style="${inp}width:78px;"></td>
-            <td><input class="at-rep" type="number" min="1" max="20" step="1" value="${r.repeat ?? 1}" style="${inp}width:46px;"></td>
-            <td style="text-align:center;"><input class="at-ai" type="checkbox" ${r.ai_judge ? "checked" : ""}></td>
-          </tr>`;
-        }).join("")}</tbody></table></div>
-        <div class="modal-note" style="margin-top:8px;">🔁 <b>반복(그리드)</b>: <b>증감율%</b>를 채우고 <b>회수≥2</b>면 자동 반복 — 1차는 <b>기준가</b>(비우면 <b>종가기준</b>=매수%) 매수 → <b>+증감율%</b> 매도 → <b>직전 매도가 −증감율%</b> 재매수 … 회수만큼. 증감율% 비우면 기존 <b>1회 밴드</b>.</div>`;
+      const inp = "background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px;font-variant-numeric:tabular-nums;";
+      const fld = (label, cls, val, ph, w, extra = "") =>
+        `<label class="at-fld"><span>${label}</span><input class="${cls}" ${extra} value="${val}" placeholder="${ph}" style="${inp}width:${w};"></label>`;
+      box.innerHTML = syms.map((q) => {
+        const r = autotradeCfg.rules[q.symbol] || {};
+        const on = r.on !== false && Object.keys(r).length > 0;  // 규칙 있고 on이면 체크
+        return `<div class="at-card" data-sym="${q.symbol}">
+          <div class="at-card-name">
+            <label style="display:flex;align-items:center;gap:7px;cursor:pointer;">
+              <input class="at-on" type="checkbox" ${on ? "checked" : ""} style="width:17px;height:17px;">
+              <b>${q.name}</b> <span style="font-size:11px;color:var(--muted)">${q.symbol}</span>
+            </label>
+            <span class="at-on-tag" style="font-size:11px;color:var(--muted)">이 종목 자동매매</span>
+          </div>
+          <div class="at-card-sec">📉 1회 밴드 (증감율% 비우면 이 방식)</div>
+          <div class="at-fields">
+            ${fld("매수%▼", "at-buy", r.buy_pct ?? "", "-2", "58px", 'type="number" step="any"')}
+            ${fld("매도%▲", "at-sell", r.sell_pct ?? "", "2", "58px", 'type="number" step="any"')}
+            ${fld("손절가", "at-sp", r.stop_price ?? "", "—", "84px", 'type="number" min="0" step="any"')}
+            ${fld("손절%", "at-spct", r.stop_pct ?? "", "-3", "58px", 'type="number" step="any"')}
+            ${fld("매도시각", "at-time", r.sell_time ?? "", "", "104px", 'type="time"')}
+            ${fld("수량", "at-qty", r.qty ?? 1, "1", "54px", 'type="number" min="1" step="1"')}
+          </div>
+          <div class="at-card-sec">🔁 N회 반복 (증감율% + 회수 입력 시 작동)</div>
+          <div class="at-fields">
+            ${fld("증감율%🔁", "at-step", r.step_pct ?? "", "0.5", "62px", 'type="number" min="0" step="any"')}
+            ${fld("회수", "at-rep", r.repeat ?? 1, "1", "54px", 'type="number" min="1" max="20" step="1"')}
+            ${fld("기준가(비우면 종가)", "at-base", r.base_price ?? "", "종가기준", "96px", 'type="number" min="0" step="any"')}
+            <label class="at-fld" style="flex-direction:row;align-items:center;gap:6px;"><input class="at-ai" type="checkbox" ${r.ai_judge ? "checked" : ""}><span>AI 보조</span></label>
+          </div>
+        </div>`;
+      }).join("") +
+      `<div class="modal-note" style="margin-top:10px;">🔁 <b>N회 반복</b>: <b>증감율%</b>+<b>회수≥2</b> 입력 → 1차 매수(<b>기준가</b> 비우면 <b>종가기준</b>=매수%, 입력하면 그 가격) → <b>+증감율%</b> 매도 → <b>직전 매도가 −증감율%</b> 재매수 … 회수만큼. AI 보조 켜면 1차 전 위험 판단.</div>`;
     }
     async function saveAutotrade(btn) {
       const pw = (document.getElementById("autotradePw") || {}).value || "";
       const rules = {};
-      document.querySelectorAll("#autotradeRules tr[data-sym]").forEach((tr) => {
+      document.querySelectorAll("#autotradeRules [data-sym]").forEach((tr) => {
         const sym = tr.dataset.sym;
         const buy = tr.querySelector(".at-buy").value;
         const sell = tr.querySelector(".at-sell").value;
@@ -1929,10 +1946,12 @@
         const base = tr.querySelector(".at-base").value;
         const rep = tr.querySelector(".at-rep").value;
         const ai = tr.querySelector(".at-ai").checked;
+        const on = (tr.querySelector(".at-on") || {}).checked;
         if (buy || sell || sp || spct || t || step || base) rules[sym] = {
           buy_pct: buy || null, sell_pct: sell || null, stop_price: sp || null,
           stop_pct: spct || null, sell_time: t || null, qty: qty || 1,
           step_pct: step || null, base_price: base || null, repeat: rep || 1, ai_judge: ai,
+          on: !!on,
         };
       });
       const enabled = document.getElementById("autotradeEnabled").checked;

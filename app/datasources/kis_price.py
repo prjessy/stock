@@ -21,7 +21,7 @@ import requests
 
 from app.config import settings
 from app.datasources.base import PriceSource, TTLCache, empty_quote
-from app.datasources.kr_price import KR_META, KrPriceSource
+from app.datasources.kr_price import KR_META, KrPriceSource, resolve_name as _kr_resolve
 
 _TOKEN_PATH = Path(settings.db_path).resolve().parent / "kis_token.json"
 # 만료 이만큼 전이면 미리 재발급(초).
@@ -32,7 +32,10 @@ _TIMEOUT = 8.0
 
 
 def _meta(symbol: str) -> dict[str, str]:
-    return KR_META.get(symbol, {"name": symbol, "note": "코스피"})
+    if symbol in KR_META:
+        return KR_META[symbol]
+    # 하드코딩에 없으면 KRX 전종목 리스트에서 이름 동적 조회(케이뱅크 등).
+    return {"name": _kr_resolve(symbol), "note": "코스피/코스닥"}
 
 
 class KisPriceSource(PriceSource):

@@ -78,6 +78,7 @@ def _clean_rules(rules: dict) -> dict:
         }
         q = _pos(r.get("qty"))
         clean["qty"] = int(q) if q and q >= 1 else 1
+        clean["on"] = bool(r.get("on", True))   # 종목별 ON/OFF(전체 ON과 별개, 둘 다 켜야 동작)
         # 반복 회수(N): 매수→매도 사이클 최대 N회. 기본 1(1회).
         rp = _pos(r.get("repeat"))
         clean["repeat"] = min(int(rp), 20) if rp and rp >= 1 else 1

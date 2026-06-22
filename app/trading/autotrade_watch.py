@@ -99,6 +99,8 @@ class AutoTradeWatcher:
             q = quotes.get(sym)
             if not q:
                 continue
+            if not rule.get("on", True):
+                continue   # 종목별 OFF — 전체 ON이어도 이 종목은 건너뜀
             cp = q.get("change_pct")
             price = q.get("price") or 0
             name = q.get("name") or sym
