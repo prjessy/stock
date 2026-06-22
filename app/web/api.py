@@ -477,11 +477,11 @@ def fintech_ipo_api(limit: int = 30) -> JSONResponse:
 
 
 @app.get("/api/fintech/realestate")
-def fintech_realestate_api() -> JSONResponse:
-    """아파트 대단지(3000세대+) 거래량 — 국토부 키 있으면 활성. 500 금지."""
+def fintech_realestate_api(mode: str = "top", sido: str = "", lawd: str = "", q: str = "") -> JSONResponse:
+    """전국 아파트 실거래 — mode=top(시/도 거래량 TOP10) | search(시군구/단지명). 500 금지."""
     try:
         from app.datasources import fintech
-        return JSONResponse(fintech.real_estate())
+        return JSONResponse(fintech.real_estate(mode=mode, sido=sido or None, lawd=lawd or None, q=q or None))
     except Exception as exc:
         return JSONResponse({"ok": False, "enabled": False, "message": str(exc)})
 

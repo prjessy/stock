@@ -306,8 +306,8 @@
     </header>
 
     <nav class="tabs" id="tabs" role="tablist">
-      <button class="tab-btn active" data-tab="summary" role="tab" aria-selected="true">🏠 써머리</button>
-      <button class="tab-btn" data-tab="dashboard" role="tab" aria-selected="false">📊 대시보드</button>
+      <button class="tab-btn active" data-tab="summary" role="tab" aria-selected="true">📊 대시보드</button>
+      <button class="tab-btn" data-tab="dashboard" role="tab" aria-selected="false">📈 차트</button>
       <button class="tab-btn" data-tab="briefing" role="tab" aria-selected="false">🇺🇸 미국 시장 동향</button>
       <button class="tab-btn" data-tab="marketing" role="tab" aria-selected="false">🍡 찰떡 써머리</button>
       <button class="tab-btn" data-tab="deudeumi" role="tab" aria-selected="false">🐜 더듬이</button>
@@ -320,7 +320,7 @@
     <div class="tab-panel active" id="panel-summary" role="tabpanel">
       <section class="panel" style="margin-bottom:14px;">
         <div class="chart-head">
-          <h2 style="font-size:15px;margin:0;">🏠 써머리 <span style="color:var(--muted);font-weight:500;font-size:12px;margin-left:6px;">오늘 꼭 봐야 할 것만</span></h2>
+          <h2 style="font-size:15px;margin:0;">📊 대시보드 <span style="color:var(--muted);font-weight:500;font-size:12px;margin-left:6px;">오늘 꼭 봐야 할 것만</span></h2>
           <button class="refresh-btn" onclick="loadSummary(true)">🔄 새로고침</button>
         </div>
       </section>
@@ -2440,31 +2440,111 @@
         } catch { el.innerHTML = '<span style="color:var(--down)">조회 실패</span>'; }
       })();
 
-      // 4) 부동산 (키 필요 안내)
+      // 4) 부동산 — 전국 실거래(거래량 TOP10 + 시/도·시군구·단지명 검색)
       (async () => {
         const el = document.getElementById("ftRealestate");
         try {
-          const r = await (await fetch("/api/fintech/realestate")).json();
-          if (r.enabled && (r.items || []).length) {
-            window._reItems = r.items;  // 검색 필터용 보관
-            const head =
-              `<div style="font-size:12px;color:var(--muted);margin-bottom:6px;">기간 ${r.period || ""} · ${r.note || ""}</div>
-               <input id="reSearch" type="text" placeholder="🔍 단지명·지역 검색 (예: 잠실, 헬리오)" oninput="filterRealEstate()"
-                 style="width:100%;max-width:320px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:13px;margin-bottom:8px;">
-               <div id="reTableWrap"></div>
-               <div style="font-size:11px;color:var(--muted);margin-top:6px;">출처: ${r.source || "국토교통부"}</div>`;
-            el.innerHTML = head;
-            filterRealEstate();
-          } else {
+          const r = await (await fetch("/api/fintech/realestate?mode=top&sido=서울")).json();
+          if (!r.enabled) {
             el.innerHTML =
               `<div style="background:var(--panel);border:1px dashed var(--border);border-radius:10px;padding:12px;">
                  <div style="margin-bottom:6px;">${r.message || ""}</div>
                  ${r.howto ? `<div style="font-size:12px;color:var(--muted)">${r.howto}</div>` : ""}
                  ${r.link ? `<a href="${r.link}" target="_blank" style="font-size:12px;color:var(--gold)">→ 국토부 실거래가 API 신청</a>` : ""}
                </div>`;
+            return;
           }
+          window._reRegions = r.regions || {};
+          const sidos = Object.keys(window._reRegions);
+          const opt = (v, sel) => `<option value="${v}"${v === sel ? " selected" : ""}>${v}</option>`;
+          el.innerHTML =
+            `<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;">
+               <button class="refresh-btn" id="reTabTop" onclick="reShow('top')">📊 거래량 TOP10</button>
+               <button class="refresh-btn" id="reTabSearch" onclick="reShow('search')">🔍 아파트 검색</button>
+             </div>
+             <div id="reControls" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;font-size:13px;">
+               <span>시/도</span>
+               <select id="reSido" onchange="reSidoChange()" style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:4px 8px;font-size:13px;">${sidos.map((s) => opt(s, "서울")).join("")}</select>
+               <select id="reGu" style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:4px 8px;font-size:13px;display:none;"></select>
+               <input id="reQ" type="text" placeholder="단지명(예: 헬리오)" style="display:none;width:130px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:4px 8px;font-size:13px;">
+               <button class="refresh-btn" id="reGoBtn" onclick="reSearch()" style="display:none;">검색</button>
+             </div>
+             <div id="reResult"></div>
+             <div style="font-size:11px;color:var(--muted);margin-top:6px;">출처: 국토교통부 실거래가</div>`;
+          reFillGu();
+          window._reTopCache = r;
+          reShow("top");
         } catch { el.innerHTML = '<span style="color:var(--down)">조회 실패</span>'; }
       })();
+    }
+
+    // 부동산 뷰 전환(top/search)
+    let reMode = "top";
+    function reShow(mode) {
+      reMode = mode;
+      const isS = mode === "search";
+      document.getElementById("reGu").style.display = isS ? "" : "none";
+      document.getElementById("reQ").style.display = isS ? "" : "none";
+      document.getElementById("reGoBtn").style.display = isS ? "" : "none";
+      const tabTop = document.getElementById("reTabTop"), tabS = document.getElementById("reTabSearch");
+      tabTop.style.borderColor = isS ? "var(--border)" : "var(--accent)";
+      tabS.style.borderColor = isS ? "var(--accent)" : "var(--border)";
+      if (isS) { document.getElementById("reResult").innerHTML = '<span class="sub">시/도·시군구 고르고 검색하세요(단지명은 선택).</span>'; }
+      else { reLoadTop(); }
+    }
+    function reFillGu() {
+      const sido = document.getElementById("reSido").value;
+      const gus = (window._reRegions[sido] || []);
+      document.getElementById("reGu").innerHTML =
+        `<option value="">${sido} 전체</option>` + gus.map((g) => `<option value="${g.code}">${g.name}</option>`).join("");
+    }
+    function reSidoChange() { reFillGu(); if (reMode === "top") reLoadTop(); }
+    const reEok = (v) => (v == null ? "-" : v + "억");
+    async function reLoadTop() {
+      const box = document.getElementById("reResult");
+      const sido = document.getElementById("reSido").value;
+      box.innerHTML = '<span class="sub">집계 중…(최초 수십 초 소요, 이후 캐시)</span>';
+      try {
+        const r = await (await fetch(`/api/fintech/realestate?mode=top&sido=${encodeURIComponent(sido)}`)).json();
+        const items = r.items || [];
+        if (!items.length) { box.innerHTML = '<span class="sub">데이터 없음</span>'; return; }
+        const td = "border-left:none;border-right:none;";
+        box.innerHTML =
+          `<div style="font-size:12px;color:var(--muted);margin-bottom:4px;">${sido} · ${r.period} 거래량 TOP10</div>
+           <div class="tbl-wrap" style="max-height:360px;overflow:auto;"><table class="alert-table" style="width:100%;">
+             <thead><tr><th style="text-align:left;${td}">단지</th><th style="text-align:left;${td}">지역</th><th style="text-align:right;${td}">거래량</th><th style="text-align:right;${td}">평균가</th></tr></thead>
+             <tbody>${items.map((x) =>
+               `<tr><td style="${td}"><b>${x.apt}</b>${x.households ? ` <span style="font-size:10px;color:var(--gold)">${(x.households).toLocaleString()}세대</span>` : ""}</td>
+                  <td style="font-size:12px;${td}">${x.gu}</td>
+                  <td style="text-align:right;font-weight:700;color:var(--up);${td}">${x.trades}건</td>
+                  <td style="text-align:right;${td}">${reEok(x.avg_eok)}</td></tr>`).join("")}</tbody>
+           </table></div>`;
+      } catch { box.innerHTML = '<span style="color:var(--down)">조회 실패</span>'; }
+    }
+    async function reSearch() {
+      const box = document.getElementById("reResult");
+      const sido = document.getElementById("reSido").value;
+      const lawd = document.getElementById("reGu").value;
+      const q = document.getElementById("reQ").value.trim();
+      box.innerHTML = '<span class="sub">실거래 조회 중…</span>';
+      try {
+        const url = `/api/fintech/realestate?mode=search&sido=${encodeURIComponent(sido)}&lawd=${lawd}&q=${encodeURIComponent(q)}`;
+        const r = await (await fetch(url)).json();
+        const items = r.items || [];
+        if (!items.length) { box.innerHTML = `<span class="sub">실거래 없음 — ${r.scope || ""} ${q ? "'" + q + "'" : ""}</span>`; return; }
+        const td = "border-left:none;border-right:none;";
+        box.innerHTML =
+          `<div style="font-size:12px;color:var(--muted);margin-bottom:4px;">${r.scope} · ${r.period} · ${r.count}건${r.count > 200 ? " (상위 200)" : ""}</div>
+           <div class="tbl-wrap" style="max-height:360px;overflow:auto;"><table class="alert-table" style="width:100%;">
+             <thead><tr><th style="text-align:left;${td}">거래일</th><th style="text-align:left;${td}">단지</th><th style="text-align:right;${td}">전용</th><th style="text-align:right;${td}">층</th><th style="text-align:right;${td}">거래가</th></tr></thead>
+             <tbody>${items.map((t) =>
+               `<tr><td style="white-space:nowrap;font-variant-numeric:tabular-nums;${td}">${t.date}</td>
+                  <td style="${td}"><b>${t.apt}</b> <span style="font-size:10px;color:var(--muted)">${t.gu} ${t.dong}</span>${t.households ? ` <span style="font-size:10px;color:var(--gold)">${(t.households).toLocaleString()}세대</span>` : ""}</td>
+                  <td style="text-align:right;font-size:12px;${td}">${t.area || "-"}㎡</td>
+                  <td style="text-align:right;font-size:12px;${td}">${t.floor}</td>
+                  <td style="text-align:right;font-weight:600;${td}">${t.amount_eok != null ? t.amount_eok + "억" : "-"}</td></tr>`).join("")}</tbody>
+           </table></div>`;
+      } catch { box.innerHTML = '<span style="color:var(--down)">조회 실패</span>'; }
     }
 
     // 공모주 행 클릭 → 상세 정보 펼치기

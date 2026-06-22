@@ -181,7 +181,100 @@ _BIG_COMPLEXES = [
     {"name": "마포래미안푸르지오", "lawd": "11440", "region": "마포 아현", "households": 3885},
 ]
 
+# 전국 시/도 → {시군구명: LAWD_CD(5자리)}. API로 검증된 코드(강원=51·전북=52 특별자치도 반영).
+_REGIONS: dict[str, dict[str, str]] = {
+    "서울": {"종로구": "11110", "중구": "11140", "용산구": "11170", "성동구": "11200",
+            "광진구": "11215", "동대문구": "11230", "중랑구": "11260", "성북구": "11290",
+            "강북구": "11305", "도봉구": "11320", "노원구": "11350", "은평구": "11380",
+            "서대문구": "11410", "마포구": "11440", "양천구": "11470", "강서구": "11500",
+            "구로구": "11530", "금천구": "11545", "영등포구": "11560", "동작구": "11590",
+            "관악구": "11620", "서초구": "11650", "강남구": "11680", "송파구": "11710", "강동구": "11740"},
+    "부산": {"중구": "26110", "서구": "26140", "동구": "26170", "영도구": "26200", "부산진구": "26230",
+            "동래구": "26260", "남구": "26290", "북구": "26320", "해운대구": "26350", "사하구": "26380",
+            "금정구": "26410", "강서구": "26440", "연제구": "26470", "수영구": "26500", "사상구": "26530", "기장군": "26710"},
+    "대구": {"중구": "27110", "동구": "27140", "서구": "27170", "남구": "27200", "북구": "27230",
+            "수성구": "27260", "달서구": "27290", "달성군": "27710"},
+    "인천": {"중구": "28110", "동구": "28140", "미추홀구": "28177", "연수구": "28185", "남동구": "28200",
+            "부평구": "28237", "계양구": "28245", "서구": "28260"},
+    "광주": {"동구": "29110", "서구": "29140", "남구": "29155", "북구": "29170", "광산구": "29200"},
+    "대전": {"동구": "30110", "중구": "30140", "서구": "30170", "유성구": "30200", "대덕구": "30230"},
+    "울산": {"중구": "31110", "남구": "31140", "동구": "31170", "북구": "31200", "울주군": "31710"},
+    "세종": {"세종시": "36110"},
+    "경기": {"수원장안": "41111", "수원권선": "41113", "수원팔달": "41115", "수원영통": "41117",
+            "성남수정": "41131", "성남중원": "41133", "성남분당": "41135", "고양덕양": "41281",
+            "고양일산동": "41285", "고양일산서": "41287", "용인처인": "41461", "용인기흥": "41463",
+            "용인수지": "41465", "부천원미": "41192", "부천소사": "41196", "안양만안": "41171",
+            "안양동안": "41173", "안산상록": "41271", "안산단원": "41273", "남양주": "41360",
+            "의정부": "41150", "평택시": "41220", "시흥시": "41390", "김포시": "41570",
+            "광명시": "41210", "광주시": "41610", "군포시": "41410", "하남시": "41450",
+            "오산시": "41370", "이천시": "41500"},
+    "강원": {"춘천시": "51110", "원주시": "51130", "강릉시": "51150", "동해시": "51170", "속초시": "51210"},
+    "충북": {"청주상당": "43111", "청주서원": "43112", "청주흥덕": "43113", "청주청원": "43114",
+            "충주시": "43130", "제천시": "43150"},
+    "충남": {"천안동남": "44131", "천안서북": "44133", "공주시": "44150", "아산시": "44200",
+            "서산시": "44210", "논산시": "44230", "당진시": "44270"},
+    "전북": {"전주완산": "52111", "전주덕진": "52113", "군산시": "52130", "익산시": "52140", "정읍시": "52180"},
+    "전남": {"목포시": "46110", "여수시": "46130", "순천시": "46150", "나주시": "46170", "광양시": "46230"},
+    "경북": {"포항남구": "47111", "포항북구": "47113", "경주시": "47130", "구미시": "47190",
+            "경산시": "47290", "안동시": "47170"},
+    "경남": {"창원의창": "48121", "창원성산": "48123", "창원마산합포": "48125", "창원마산회원": "48127",
+            "창원진해": "48129", "진주시": "48170", "김해시": "48250", "양산시": "48330", "거제시": "48310"},
+    "제주": {"제주시": "50110", "서귀포시": "50130"},
+}
+# code → (시도, 시군구명) 평탄화
+_GU = {code: (sido, gu) for sido, d in _REGIONS.items() for gu, code in d.items()}
+
 _MOLIT_URL = "https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev"
+
+
+def _household_of(apt_name: str):
+    """아는 대단지면 세대수 반환(배지용), 모르면 None."""
+    for c in _BIG_COMPLEXES:
+        if c["name"] in (apt_name or ""):
+            return c["households"]
+    return None
+
+
+def _molit_key():
+    """MOLIT 키: .env > env > 로컬 key3.txt(개발용) 순."""
+    import os
+    from app.config import settings
+    key = getattr(settings, "molit_api_key", None) or os.environ.get("MOLIT_API_KEY")
+    if key:
+        return key
+    try:
+        from pathlib import Path
+        p = Path(__file__).resolve().parents[2] / "key3.txt"
+        if p.exists():
+            for ln in (x.strip() for x in p.read_text(encoding="utf-8").splitlines()):
+                if len(ln) >= 32 and "://" not in ln and "/" not in ln:
+                    return ln
+    except Exception:
+        pass
+    return None
+
+
+def _norm_trade(r: dict) -> dict:
+    """실거래 1건 → 표시용 정규화."""
+    try:
+        amt = int((r.get("dealAmount") or "0").replace(",", ""))
+    except Exception:
+        amt = 0
+    try:
+        area = round(float(r.get("excluUseAr") or 0), 1)
+    except Exception:
+        area = None
+    y, m, d = r.get("dealYear", ""), r.get("dealMonth") or 0, r.get("dealDay") or 0
+    return {
+        "apt": r.get("aptNm") or "",
+        "dong": r.get("umdNm") or r.get("estateAgentSggNm") or "",
+        "area": area,                         # 전용면적 ㎡
+        "floor": r.get("floor") or "",
+        "amount_eok": round(amt / 10000, 2) if amt else None,  # 만원→억
+        "date": f"{y}.{int(m):02d}.{int(d):02d}" if y else "",
+        "build_year": r.get("buildYear") or "",
+        "households": _household_of(r.get("aptNm") or ""),
+    }
 
 
 def _recent_ymd(n: int = 2) -> list[str]:
@@ -221,72 +314,90 @@ def _molit_trades(key: str, lawd: str, ymd: str) -> list[dict]:
         return []
 
 
-def real_estate() -> dict:
-    """아파트 3000세대+ 대단지 거래량(국토부 실거래가). 키 없으면 안내만."""
-    import os
-    from app.config import settings
-    key = getattr(settings, "molit_api_key", None) or os.environ.get("MOLIT_API_KEY")
-    # 키가 .env에 없으면 PC 로컬 key3.txt 폴백(개발 편의 · VPS엔 .env).
+def _gu_trades(key: str, lawd: str, months: list[str]) -> list[dict]:
+    """한 자치구의 최근 months 실거래 raw(캐시). 구별 6시간."""
+    def build():
+        rows = []
+        for ymd in months:
+            rows += _molit_trades(key, lawd, ymd)
+        return rows
+    return _cached(f"re:{lawd}:{','.join(months)}", 6 * 3600, build)
+
+
+_KEY_NEEDED = {
+    "ok": False, "enabled": False,
+    "message": "부동산 실거래는 국토교통부 실거래가 OpenAPI 키가 필요합니다.",
+    "howto": "data.go.kr '아파트매매 실거래가 상세자료' 활용신청(무료) → 키를 .env MOLIT_API_KEY 에.",
+    "link": "https://www.data.go.kr/data/15058747/openapi.do",
+}
+
+
+def real_estate(mode: str = "top", sido: str | None = None,
+                lawd: str | None = None, q: str | None = None) -> dict:
+    """전국 아파트 실거래(국토부).
+    - mode=top: 선택 시/도(기본 서울)의 최근월 거래량 단지 TOP10.
+    - mode=search: 시군구(lawd) 또는 시/도(sido) 범위에서 단지명(q) 실거래 목록.
+    항상 regions(시/도→시군구) 동봉(캐스케이딩 드롭다운용).
+    """
+    key = _molit_key()
+    regions = {sd: [{"code": c, "name": n} for n, c in d.items()] for sd, d in _REGIONS.items()}
     if not key:
-        try:
-            from pathlib import Path
-            p = Path(__file__).resolve().parents[2] / "key3.txt"
-            if p.exists():
-                lines = [x.strip() for x in p.read_text(encoding="utf-8").splitlines() if x.strip()]
-                for ln in lines:
-                    if len(ln) >= 32 and "://" not in ln and "/" not in ln:
-                        key = ln
-                        break
-        except Exception:
-            pass
-    if not key:
+        return {**_KEY_NEEDED, "regions": regions}
+
+    q = (q or "").strip()
+    sido = sido if (sido in _REGIONS) else "서울"
+
+    if mode == "search":
+        months = _recent_ymd(2)
+        if lawd and lawd in _GU:
+            targets, scope = [lawd], f"{_GU[lawd][0]} {_GU[lawd][1]}"
+        else:
+            targets, scope = list(_REGIONS[sido].values()), f"{sido} 전체"
+        trades = []
+        for gu in targets:
+            for r in _gu_trades(key, gu, months):
+                apt = r.get("aptNm") or ""
+                if q and q not in apt:
+                    continue
+                t = _norm_trade(r)
+                t["gu"] = _GU.get(gu, ("", ""))[1]
+                trades.append(t)
+        trades.sort(key=lambda x: x["date"], reverse=True)
         return {
-            "ok": False, "enabled": False,
-            "message": "부동산 거래량(아파트 3000세대+ 대단지)은 국토교통부 실거래가 OpenAPI 키가 필요합니다.",
-            "howto": "data.go.kr '아파트매매 실거래가 상세자료' 활용신청(무료) → 키를 .env MOLIT_API_KEY 에.",
-            "link": "https://www.data.go.kr/data/15058747/openapi.do",
+            "ok": True, "enabled": True, "mode": "search",
+            "items": trades[:200], "count": len(trades),
+            "period": f"{months[-1]}~{months[0]}", "scope": scope,
+            "query": q, "regions": regions, "source": "국토교통부 실거래가",
         }
 
-    def build():
-        months = _recent_ymd(2)
-        lawds = sorted({c["lawd"] for c in _BIG_COMPLEXES})
-        # 지역·월별 실거래를 모아둔다(중복 호출 방지).
-        cache: dict[str, list[dict]] = {}
-        for lawd in lawds:
-            rows = []
-            for ymd in months:
-                rows += _molit_trades(key, lawd, ymd)
-            cache[lawd] = rows
-
-        items = []
-        for c in _BIG_COMPLEXES:
-            rows = cache.get(c["lawd"], [])
-            matched = [r for r in rows if c["name"] in (r.get("aptNm") or "")]
-            if not matched:
-                items.append({**c, "trades": 0, "avg_eok": None, "min_eok": None,
-                              "max_eok": None, "last_deal": None})
-                continue
-            amts = []
-            last = ""
-            for r in matched:
+    # mode=top — 선택 시/도 최근월 단지별 거래량 TOP10
+    def build_top():
+        months = _recent_ymd(1)
+        agg: dict[str, dict] = {}
+        for gu in _REGIONS[sido].values():
+            for r in _gu_trades(key, gu, months):
+                apt = r.get("aptNm") or ""
+                if not apt:
+                    continue
+                k = f"{gu}|{apt}"
+                a = agg.setdefault(k, {"apt": apt, "gu": _GU[gu][1], "trades": 0,
+                                       "amts": [], "households": _household_of(apt)})
+                a["trades"] += 1
                 try:
-                    amts.append(int((r.get("dealAmount") or "0").replace(",", "")))  # 만원
+                    a["amts"].append(int((r.get("dealAmount") or "0").replace(",", "")))
                 except Exception:
                     pass
-                d = f"{r.get('dealYear','')}-{int(r.get('dealMonth') or 0):02d}-{int(r.get('dealDay') or 0):02d}"
-                last = max(last, d)
-            eok = lambda v: round(v / 10000, 1) if v else None  # 만원→억
-            items.append({
-                **c, "trades": len(matched),
-                "avg_eok": eok(sum(amts) // len(amts)) if amts else None,
-                "min_eok": eok(min(amts)) if amts else None,
-                "max_eok": eok(max(amts)) if amts else None,
-                "last_deal": last or None,
-            })
+        items = []
+        for a in agg.values():
+            amts = a.pop("amts")
+            a["avg_eok"] = round(sum(amts) / len(amts) / 10000, 1) if amts else None
+            items.append(a)
         items.sort(key=lambda x: x["trades"], reverse=True)
         return {
-            "ok": True, "enabled": True, "items": items,
-            "period": f"{months[-1]}~{months[0]}", "source": "국토교통부 실거래가",
-            "note": "세대수 3000+ 주요 대단지(서울)만. 거래 API엔 세대수가 없어 대표 단지를 선별 집계.",
+            "ok": True, "enabled": True, "mode": "top", "items": items[:10],
+            "period": months[0], "sido": sido, "source": "국토교통부 실거래가",
+            "note": f"{sido} 최근월 거래량 상위 단지. 3000세대+ 대단지는 세대수 배지.",
         }
-    return _cached("realestate", 6 * 3600, build)  # 6시간
+    res = _cached(f"re:top:{sido}", 6 * 3600, build_top)
+    res["regions"] = regions
+    return res
