@@ -1911,6 +1911,10 @@
             </label>
             <span class="at-on-tag" style="font-size:11px;color:var(--muted)">이 종목 자동매매</span>
           </div>
+          <div class="at-card-px" style="font-size:11.5px;color:var(--muted);margin-bottom:6px;font-variant-numeric:tabular-nums;">
+            전일종가 <b style="color:var(--text)">${(q.prev_close ?? 0).toLocaleString()}원</b> · 현재 <b style="color:var(--text)">${(q.price ?? 0).toLocaleString()}원</b>
+            <span style="margin-left:4px;">(종가기준 매수%는 이 전일종가 대비)</span>
+          </div>
           <div class="at-card-sec">📉 1회 밴드 (증감율% 비우면 이 방식)</div>
           <div class="at-fields">
             ${fld("매수%▼", "at-buy", r.buy_pct ?? "", "-2", "58px", 'type="number" step="any"')}
