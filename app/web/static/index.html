@@ -110,6 +110,8 @@
       .panel { padding: 14px; border-radius: var(--r); }
       .grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
       #summaryGrid { grid-template-columns: 1fr !important; }
+      /* 수급 카드의 grid-column:span 2(데스크탑용)가 모바일서 2열을 만들지 않도록 1열 강제 */
+      #summaryGrid > * { grid-column: auto !important; }
       .pin-card { min-width: 116px; }
     }
 
