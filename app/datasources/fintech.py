@@ -163,22 +163,130 @@ def ipo_calendar(limit: int = 30) -> dict:
     return _cached(f"ipo:{limit}", 3 * 3600, build)  # 3시간
 
 
-# ---- 부동산 거래량 (국토부 실거래가, 키 필요) -----------------------------
-def real_estate() -> dict:
-    """아파트(3000세대+ 대단지) 거래량. 국토부 실거래가 API 키가 있어야 활성.
+# ---- 부동산 거래량 (국토부 아파트매매 실거래가, 3000세대+ 대단지만) ----------
+# 거래 API에는 세대수가 없어, 잘 알려진 3000세대 이상 대단지를 화이트리스트로 둔다.
+# {name: aptNm 매칭 키워드, lawd: 법정동 시군구 5자리, region: 표시, households: 세대수}
+_BIG_COMPLEXES = [
+    {"name": "헬리오시티", "lawd": "11710", "region": "송파 가락", "households": 9510},
+    {"name": "파크리오", "lawd": "11710", "region": "송파 신천", "households": 6864},
+    {"name": "잠실엘스", "lawd": "11710", "region": "송파 잠실", "households": 5678},
+    {"name": "리센츠", "lawd": "11710", "region": "송파 잠실", "households": 5563},
+    {"name": "트리지움", "lawd": "11710", "region": "송파 잠실", "households": 3696},
+    {"name": "올림픽선수기자촌", "lawd": "11710", "region": "송파 방이", "households": 5540},
+    {"name": "올림픽파크포레온", "lawd": "11740", "region": "강동 둔촌", "households": 12032},
+    {"name": "고덕그라시움", "lawd": "11740", "region": "강동 고덕", "households": 4932},
+    {"name": "고덕아르테온", "lawd": "11740", "region": "강동 고덕", "households": 4066},
+    {"name": "은마", "lawd": "11680", "region": "강남 대치", "households": 4424},
+    {"name": "개포자이프레지던스", "lawd": "11680", "region": "강남 개포", "households": 3375},
+    {"name": "마포래미안푸르지오", "lawd": "11440", "region": "마포 아현", "households": 3885},
+]
 
-    무료지만 data.go.kr 키 발급 + 단지별 세대수 매칭이 필요해 키 미설정 시 안내만 반환.
-    """
+_MOLIT_URL = "https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev"
+
+
+def _recent_ymd(n: int = 2) -> list[str]:
+    """최근 n개월 YYYYMM (당월 포함, 최신순). datetime 사용(서버 기준)."""
+    import datetime as _dt
+    today = _dt.date.today()
+    out = []
+    y, m = today.year, today.month
+    for _ in range(n):
+        out.append(f"{y}{m:02d}")
+        m -= 1
+        if m == 0:
+            m = 12
+            y -= 1
+    return out
+
+
+def _molit_trades(key: str, lawd: str, ymd: str) -> list[dict]:
+    """국토부 실거래 1지역·1개월 조회 → item dict 목록(XML 파싱). 실패 시 []."""
+    import requests
+    import xml.etree.ElementTree as ET
+    try:
+        r = requests.get(_MOLIT_URL, params={
+            "serviceKey": key, "LAWD_CD": lawd, "DEAL_YMD": ymd,
+            "numOfRows": "1000", "pageNo": "1",
+        }, timeout=15)
+        if r.status_code != 200:
+            return []
+        root = ET.fromstring(r.text)
+        if (root.findtext(".//resultCode") or "") not in ("000", "00"):
+            return []
+        rows = []
+        for it in root.iter("item"):
+            rows.append({c.tag: (c.text or "").strip() for c in it})
+        return rows
+    except Exception:
+        return []
+
+
+def real_estate() -> dict:
+    """아파트 3000세대+ 대단지 거래량(국토부 실거래가). 키 없으면 안내만."""
     import os
     from app.config import settings
     key = getattr(settings, "molit_api_key", None) or os.environ.get("MOLIT_API_KEY")
+    # 키가 .env에 없으면 PC 로컬 key3.txt 폴백(개발 편의 · VPS엔 .env).
+    if not key:
+        try:
+            from pathlib import Path
+            p = Path(__file__).resolve().parents[2] / "key3.txt"
+            if p.exists():
+                lines = [x.strip() for x in p.read_text(encoding="utf-8").splitlines() if x.strip()]
+                for ln in lines:
+                    if len(ln) >= 32 and "://" not in ln and "/" not in ln:
+                        key = ln
+                        break
+        except Exception:
+            pass
     if not key:
         return {
-            "ok": False,
-            "enabled": False,
+            "ok": False, "enabled": False,
             "message": "부동산 거래량(아파트 3000세대+ 대단지)은 국토교통부 실거래가 OpenAPI 키가 필요합니다.",
-            "howto": "data.go.kr에서 '아파트매매 실거래가' 활용신청(무료) → 받은 키를 .env MOLIT_API_KEY 에 넣으면 활성화됩니다.",
+            "howto": "data.go.kr '아파트매매 실거래가 상세자료' 활용신청(무료) → 키를 .env MOLIT_API_KEY 에.",
             "link": "https://www.data.go.kr/data/15058747/openapi.do",
         }
-    # 키가 있으면 여기서 국토부 API 호출 + 3000세대+ 단지 필터링(후속 구현).
-    return {"ok": False, "enabled": True, "message": "키 감지됨 — 거래량 조회 구현 예정.", "items": []}
+
+    def build():
+        months = _recent_ymd(2)
+        lawds = sorted({c["lawd"] for c in _BIG_COMPLEXES})
+        # 지역·월별 실거래를 모아둔다(중복 호출 방지).
+        cache: dict[str, list[dict]] = {}
+        for lawd in lawds:
+            rows = []
+            for ymd in months:
+                rows += _molit_trades(key, lawd, ymd)
+            cache[lawd] = rows
+
+        items = []
+        for c in _BIG_COMPLEXES:
+            rows = cache.get(c["lawd"], [])
+            matched = [r for r in rows if c["name"] in (r.get("aptNm") or "")]
+            if not matched:
+                items.append({**c, "trades": 0, "avg_eok": None, "min_eok": None,
+                              "max_eok": None, "last_deal": None})
+                continue
+            amts = []
+            last = ""
+            for r in matched:
+                try:
+                    amts.append(int((r.get("dealAmount") or "0").replace(",", "")))  # 만원
+                except Exception:
+                    pass
+                d = f"{r.get('dealYear','')}-{int(r.get('dealMonth') or 0):02d}-{int(r.get('dealDay') or 0):02d}"
+                last = max(last, d)
+            eok = lambda v: round(v / 10000, 1) if v else None  # 만원→억
+            items.append({
+                **c, "trades": len(matched),
+                "avg_eok": eok(sum(amts) // len(amts)) if amts else None,
+                "min_eok": eok(min(amts)) if amts else None,
+                "max_eok": eok(max(amts)) if amts else None,
+                "last_deal": last or None,
+            })
+        items.sort(key=lambda x: x["trades"], reverse=True)
+        return {
+            "ok": True, "enabled": True, "items": items,
+            "period": f"{months[-1]}~{months[0]}", "source": "국토교통부 실거래가",
+            "note": "세대수 3000+ 주요 대단지(서울)만. 거래 API엔 세대수가 없어 대표 단지를 선별 집계.",
+        }
+    return _cached("realestate", 6 * 3600, build)  # 6시간

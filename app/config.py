@@ -71,6 +71,9 @@ class Settings:
     # 더듬이2·3 자동 감시 주기(분). 0=비활성(기본). 본장(09:00~15:30)에만 동작.
     deudeumi_interval_min: int = 0
 
+    # 국토부 아파트매매 실거래가 OpenAPI(핀테크 탭 부동산). 값은 .env 에서만.
+    molit_api_key: str = ""
+
     # 카카오톡 '나에게 보내기'(무료). REST API 키·리다이렉트는 .env 에서만.
     kakao_rest_api_key: str = ""
     kakao_redirect_uri: str = "https://jessystock.com/api/kakao/callback"
@@ -109,6 +112,7 @@ def load_settings() -> Settings:
         trade_max_qty=int(os.getenv("TRADE_MAX_QTY", "1")),
         trade_password=os.getenv("TRADE_PASSWORD", ""),
         anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
+        molit_api_key=os.getenv("MOLIT_API_KEY", ""),
         deudeumi_model=os.getenv("DEUDEUMI_MODEL", "claude-haiku-4-5"),
         deudeumi_interval_min=int(os.getenv("DEUDEUMI_INTERVAL_MIN", "0")),
         kakao_rest_api_key=os.getenv("KAKAO_REST_API_KEY", ""),
