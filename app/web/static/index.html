@@ -112,6 +112,8 @@
       #summaryGrid { grid-template-columns: 1fr !important; }
       /* 수급 카드의 grid-column:span 2(데스크탑용)가 모바일서 2열을 만들지 않도록 1열 강제 */
       #summaryGrid > * { grid-column: auto !important; }
+      /* 포트폴리오 탭 총자산+비중 그리드도 모바일은 1열 */
+      #pfGrid { grid-template-columns: 1fr !important; }
       .pin-card { min-width: 116px; }
     }
 
@@ -552,7 +554,7 @@
           <button class="refresh-btn" onclick="loadPortfolio(true)">🔄 새로고침</button>
         </div>
       </section>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:14px;">
+      <div id="pfGrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:14px;">
         <div class="panel" id="pfHero"><h2 style="font-size:14px;">🏆 총자산</h2><div style="margin-top:8px;"><div class="skeleton lg"></div><div class="skeleton"></div></div></div>
         <div class="panel" id="pfDonut"><h2 style="font-size:14px;">🍩 종목별 비중</h2><div style="margin-top:8px;"><div class="skeleton lg"></div><div class="skeleton"></div></div></div>
       </div>
