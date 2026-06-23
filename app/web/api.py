@@ -754,9 +754,36 @@ def get_alerts(limit: int = 50) -> JSONResponse:
 # 세션은 랜덤 sid 를 httponly 쿠키로 내려 DB sessions 테이블과 연결한다.
 # 키(GOOGLE_CLIENT_ID/SECRET)는 .env 에만(공개 레포라 커밋 금지).
 import secrets as _secrets
+import time as _time
 from datetime import datetime as _dt, timedelta as _td, timezone as _tz
 
 _SESSION_DAYS = 30
+
+# OAuth state(CSRF 방지) 서버측 보관. iOS Safari(ITP)는 교차 사이트 리디렉션 직전에 심은
+# 쿠키를 콜백에 안 실어줘서(cookie_present=False), 쿠키만으론 검증 불가 → 아이폰 로그인 실패.
+# 앱은 단일 프로세스(uvicorn 1 worker)라 로그인→콜백 사이 프로세스 메모리 보관이 유효하다.
+# state -> 만료(epoch). 콜백서 1회 검증 후 삭제. 재시작 시 비지만(드묾) 재시도로 해결.
+_OAUTH_STATES: dict[str, float] = {}
+_OAUTH_STATE_TTL = 600.0
+
+
+def _remember_state(state: str) -> None:
+    now = _time.time()
+    for k in [k for k, exp in _OAUTH_STATES.items() if exp < now]:
+        _OAUTH_STATES.pop(k, None)            # 만료 정리
+    if len(_OAUTH_STATES) > 500:
+        _OAUTH_STATES.clear()                 # 과도 증가 방지(상한)
+    _OAUTH_STATES[state] = now + _OAUTH_STATE_TTL
+
+
+def _check_state(state: str, cookie_state: str) -> bool:
+    """state 1회용 검증: 서버 보관에 존재(아이폰=쿠키 유실 대비) 또는 쿠키 일치(PC)면 통과."""
+    if not state:
+        return False
+    exp = _OAUTH_STATES.pop(state, None)
+    server_ok = exp is not None and exp >= _time.time()
+    cookie_ok = bool(cookie_state) and state == cookie_state
+    return server_ok or cookie_ok
 
 # 구글 인증 적용 모드(사용자가 ⚙️설정에서 토글). 서버 파일에 저장해 재시작에도 유지.
 #   off     = 미사용(로그인 버튼·매매일지 탭 숨김)
@@ -852,9 +879,9 @@ def auth_google_login():
     if not configured():
         return JSONResponse({"ok": False, "error": "GOOGLE_CLIENT_ID/SECRET 미설정"})
     state = _secrets.token_urlsafe(24)
+    _remember_state(state)  # 서버측 보관(아이폰 쿠키 유실 대비 1차 검증 수단)
     resp = RedirectResponse(authorize_url(state))
-    # SameSite=None(+Secure): 구글→콜백은 교차 사이트 top-level 리디렉션이라, 일부 브라우저
-    # (모바일·Safari ITP 등)에서 Lax 쿠키가 콜백에 안 실려 'state 불일치'가 났다. None 으로 보장.
+    # 쿠키도 함께 심는다(PC 등 정상 브라우저의 추가 방어). SameSite=None+Secure.
     resp.set_cookie("oauth_state", state, max_age=600, httponly=True, samesite="none", secure=True)
     print(f"[oauth] login: issued state len={len(state)}", flush=True)
     return resp
@@ -866,11 +893,10 @@ def auth_google_callback(request: Request, code: str = "", state: str = "", erro
     from app.auth.google_auth import exchange_code
     if error or not code:
         return HTMLResponse(f"<h3>구글 로그인 실패</h3><pre>{error or '코드 없음'}</pre><p>창을 닫고 다시 시도하세요.</p>")
-    # state 검증(CSRF): httponly 쿠키(login 때 발급)와 쿼리 state 가 일치하면 통과.
-    # 이전엔 서버 메모리 셋(_OAUTH_STATES) 일치도 요구했으나, 재시작·멀티워커 시 셋이
-    # 비어 정상 로그인이 'state 불일치'로 실패했다 → 쿠키 더블서밋만으로 CSRF 방지 충분.
+    # state 검증(CSRF): 서버 보관(아이폰) 또는 httponly 쿠키 일치(PC). iOS Safari 는
+    # 콜백에 쿠키를 안 실어줘 쿠키만으론 검증 불가 → 서버측 1회용 state 로 통과시킨다.
     cookie_state = request.cookies.get("oauth_state", "")
-    if not state or state != cookie_state:
+    if not _check_state(state, cookie_state):
         print(f"[oauth] STATE MISMATCH q_len={len(state)} cookie_present={bool(cookie_state)}", flush=True)
         return HTMLResponse("<h3>로그인 실패</h3><p>state 불일치(보안). 다시 시도하세요.</p>")
     info = exchange_code(code)
