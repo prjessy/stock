@@ -818,18 +818,48 @@ def _save_auth_mode(mode: str) -> None:
         pass
 
 
-def _current_user(request: Request) -> dict | None:
-    """요청 쿠키(sid)로 로그인 사용자를 찾는다. 비로그인/실패 시 None."""
-    sid = request.cookies.get("sid", "")
-    if not sid:
-        return None
+def _auth_bypass() -> bool:
+    """임시 인증 우회. data/auth_config.json 의 bypass=true 면 로그인 없이 '소유자(첫 사용자)'로
+    동작시킨다. ⚠️ 공개 사이트라 켜는 동안 누구나 매매일지 접근 — 정식 로그인 복구 전 임시 전용."""
+    try:
+        if _AUTH_CFG_FILE.exists():
+            return bool(_json.loads(_AUTH_CFG_FILE.read_text(encoding="utf-8")).get("bypass"))
+    except Exception:
+        pass
+    return False
+
+
+def _owner_user() -> dict | None:
+    """가입된 첫 사용자(소유자) — bypass 시 이 사용자로 동작."""
     repo = Repository()
     try:
-        return repo.user_by_session(sid)
+        row = repo.conn.execute(
+            "SELECT id, email, name, picture FROM users ORDER BY id LIMIT 1"
+        ).fetchone()
+        return dict(row) if row else None
     except Exception:
         return None
     finally:
         repo.close()
+
+
+def _current_user(request: Request) -> dict | None:
+    """요청 쿠키(sid)로 로그인 사용자를 찾는다. 비로그인/실패 시 None.
+    단, bypass 가 켜져 있으면 세션이 없어도 소유자로 동작(임시)."""
+    sid = request.cookies.get("sid", "")
+    if sid:
+        repo = Repository()
+        try:
+            u = repo.user_by_session(sid)
+        except Exception:
+            u = None
+        finally:
+            repo.close()
+        if u:
+            return u
+    if _auth_bypass():
+        return _owner_user()
+    return None
 
 
 @app.get("/api/auth/me")
