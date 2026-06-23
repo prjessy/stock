@@ -853,7 +853,10 @@ def auth_google_login():
         return JSONResponse({"ok": False, "error": "GOOGLE_CLIENT_ID/SECRET 미설정"})
     state = _secrets.token_urlsafe(24)
     resp = RedirectResponse(authorize_url(state))
-    resp.set_cookie("oauth_state", state, max_age=600, httponly=True, samesite="lax", secure=True)
+    # SameSite=None(+Secure): 구글→콜백은 교차 사이트 top-level 리디렉션이라, 일부 브라우저
+    # (모바일·Safari ITP 등)에서 Lax 쿠키가 콜백에 안 실려 'state 불일치'가 났다. None 으로 보장.
+    resp.set_cookie("oauth_state", state, max_age=600, httponly=True, samesite="none", secure=True)
+    print(f"[oauth] login: issued state len={len(state)}", flush=True)
     return resp
 
 
@@ -868,10 +871,13 @@ def auth_google_callback(request: Request, code: str = "", state: str = "", erro
     # 비어 정상 로그인이 'state 불일치'로 실패했다 → 쿠키 더블서밋만으로 CSRF 방지 충분.
     cookie_state = request.cookies.get("oauth_state", "")
     if not state or state != cookie_state:
+        print(f"[oauth] STATE MISMATCH q_len={len(state)} cookie_present={bool(cookie_state)}", flush=True)
         return HTMLResponse("<h3>로그인 실패</h3><p>state 불일치(보안). 다시 시도하세요.</p>")
     info = exchange_code(code)
     if not info.get("ok"):
+        print(f"[oauth] EXCHANGE FAIL: {info.get('error')}", flush=True)
         return HTMLResponse(f"<h3>로그인 실패</h3><pre>{info.get('error')}</pre>")
+    print("[oauth] LOGIN OK", flush=True)
     repo = Repository()
     try:
         uid = repo.upsert_user(info["sub"], info["email"], info["name"], info["picture"])
