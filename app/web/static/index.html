@@ -24,8 +24,10 @@
       --border: #25303f;
       --text: #e6ebf2;
       --muted: #8b97a8;
-      --up: #2ec26b;
-      --down: #ff5d6c;
+      --up: #f6465d;    /* 상승=빨강 (한국식: 적색 오를때) */
+      --down: #4c8dff;  /* 하락=파랑 (한국식: 청색 내릴때) */
+      --good: #2ec26b;  /* 비(非)가격 '좋음/적정' = 초록 (색 반전과 무관하게 고정) */
+      --bad: #f6465d;   /* 비(非)가격 '위험/경고' = 빨강 */
       --accent: #4c8dff;
       --gold: #e0b13a;
       --shadow: 0 1px 0 rgba(255,255,255,0.02), 0 6px 18px rgba(0,0,0,0.28);
@@ -242,8 +244,8 @@
     .ob-tbl td { padding: 3px 8px; border-bottom: 1px solid var(--border); }
     .ob-tbl .obp { text-align: right; font-weight: 600; }
     .ob-tbl .obq { text-align: right; color: var(--muted); }
-    .ob-tbl .ask .obp { color: var(--down); }
-    .ob-tbl .bid .obp { color: var(--up); }
+    .ob-tbl .ask .obp { color: var(--up); }   /* 매도호가=빨강(--up) — 호가 안내 '빨강=매도'와 일치 */
+    .ob-tbl .bid .obp { color: var(--down); } /* 매수호가=파랑(--down) */
     .ob-tbl .mid td { text-align: center; color: var(--muted); font-size: 11px; background: var(--panel-2); }
     .ob-bar { display: inline-block; height: 8px; border-radius: 3px; vertical-align: middle; margin-left: 6px; }
     .ob-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
@@ -468,7 +470,7 @@
       <div class="chart-head">
         <div class="title" style="font-size:15px;">📐 호가창 — 매수/매도 대기 잔량 <span style="color:var(--muted);font-weight:500;font-size:12px;margin-left:6px;">지금 얼마에 얼마나 대기중 · 실시간</span></div>
       </div>
-      <div class="sub">각 가격에 걸려있는 <b>아직 체결 안 된(대기)</b> 주문 수량. <span style="color:var(--down)">빨강=매도 대기</span> / <span style="color:var(--up)">파랑=매수 대기</span> · 장중 3초 갱신 (삼성전자·하이닉스·삼전레버·하닉레버)</div>
+      <div class="sub">각 가격에 걸려있는 <b>아직 체결 안 된(대기)</b> 주문 수량. <span style="color:var(--up)">빨강=매도 대기</span> / <span style="color:var(--down)">파랑=매수 대기</span> · 장중 3초 갱신 (삼성전자·하이닉스·삼전레버·하닉레버)</div>
       <div id="flowOrderbook" class="empty-state">불러오는 중…</div>
     </section>
 
@@ -1675,7 +1677,7 @@
       try {
         const d = await (await fetch("/api/kakao/status")).json();
         if (!d.configured) { st.textContent = "(운영자가 .env에 카카오 키 설정 필요)"; if (btn) btn.disabled = true; return; }
-        if (d.linked) { st.innerHTML = '<b style="color:var(--up)">✅ 연동됨</b>'; if (btn) btn.textContent = "다시 연동"; }
+        if (d.linked) { st.innerHTML = '<b style="color:var(--good)">✅ 연동됨</b>'; if (btn) btn.textContent = "다시 연동"; }
         else { st.textContent = "미연동 — '카카오 연동'을 누르세요"; if (btn) btn.textContent = "카카오 연동"; }
       } catch (e) { st.textContent = "상태 확인 실패"; }
     }
@@ -1747,7 +1749,7 @@
       try {
         const s = await (await fetch("/api/order/status")).json();
         if (!s.configured) { el.innerHTML = "❌ 미설정 — VPS <code>.env</code>에 <b>KIS_CANO</b>(계좌번호) 추가 필요"; return; }
-        el.innerHTML = `✅ 사용 가능 · ${s.paper ? "모의투자" : "<b style='color:var(--down)'>실전</b>"} · 1회 최대 ${s.max_qty}주`;
+        el.innerHTML = `✅ 사용 가능 · ${s.paper ? "모의투자" : "<b style='color:var(--bad)'>실전</b>"} · 1회 최대 ${s.max_qty}주`;
       } catch (e) { el.textContent = "상태 확인 실패"; }
     }
     // ===== 더듬이4 · ETF 수급 신규 유입 — /api/deudeumi4 =====
@@ -1857,7 +1859,7 @@
       const inp = document.getElementById("wlCode");
       const msg = document.getElementById("wlMsg");
       const code = (inp.value || "").trim();
-      if (!/^\d{6}$/.test(code)) { msg.textContent = "6자리 숫자 코드를 입력하세요"; msg.style.color = "var(--down)"; return; }
+      if (!/^\d{6}$/.test(code)) { msg.textContent = "6자리 숫자 코드를 입력하세요"; msg.style.color = "var(--bad)"; return; }
       if (btn) btn.disabled = true;
       msg.textContent = "확인 중…"; msg.style.color = "var(--muted)";
       try {
@@ -1865,9 +1867,9 @@
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "add", symbol: code }),
         })).json();
-        if (r.ok) { msg.textContent = `✅ ${r.name || code} 추가됨`; msg.style.color = "var(--up)"; inp.value = ""; loadWatchlist(); }
-        else { msg.textContent = "❌ " + (r.error || "추가 실패"); msg.style.color = "var(--down)"; }
-      } catch (e) { msg.textContent = "요청 실패"; msg.style.color = "var(--down)"; }
+        if (r.ok) { msg.textContent = `✅ ${r.name || code} 추가됨`; msg.style.color = "var(--good)"; inp.value = ""; loadWatchlist(); }
+        else { msg.textContent = "❌ " + (r.error || "추가 실패"); msg.style.color = "var(--bad)"; }
+      } catch (e) { msg.textContent = "요청 실패"; msg.style.color = "var(--bad)"; }
       finally { if (btn) btn.disabled = false; }
     }
     async function removeWatchlist(code) {
@@ -1878,8 +1880,8 @@
           body: JSON.stringify({ action: "remove", symbol: code }),
         })).json();
         if (r.ok) { msg.textContent = "🗑️ 삭제됨"; msg.style.color = "var(--muted)"; loadWatchlist(); }
-        else { msg.textContent = "❌ " + (r.error || "삭제 실패"); msg.style.color = "var(--down)"; }
-      } catch (e) { msg.textContent = "요청 실패"; msg.style.color = "var(--down)"; }
+        else { msg.textContent = "❌ " + (r.error || "삭제 실패"); msg.style.color = "var(--bad)"; }
+      } catch (e) { msg.textContent = "요청 실패"; msg.style.color = "var(--bad)"; }
     }
 
     // ===== 토큰 사용량(이 앱) — /api/token-usage =====
@@ -1983,6 +1985,11 @@
     // ===== 자동매매(등락률 밴드·손절·예약) — /api/autotrade/config =====
     let autotradeCfg = { enabled: false, rules: {}, balmok: {} };
     async function loadAutotrade() {
+      // 종가/현재가는 quotesById 에서 읽는다. 자동매매 탭으로 바로 들어오면(써머리를 안 거치면)
+      // 시세가 아직 없어 '0원'으로 보이므로, 국내 시세가 없으면 먼저 한 번 로딩한다.
+      if (!Object.values(quotesById).some((q) => q && q.currency === "KRW" && q.price != null)) {
+        try { await loadQuotes(); } catch (e) { /* 시세 실패해도 설정은 계속 로딩 */ }
+      }
       try {
         const r = await (await fetch("/api/autotrade/config")).json();
         if (r.ok) autotradeCfg = { enabled: !!r.enabled, rules: r.rules || {}, balmok: r.balmok || {} };
@@ -2015,7 +2022,7 @@
             <span class="at-on-tag" style="font-size:11px;color:var(--muted)">이 종목 자동매매</span>
           </div>
           <div class="at-card-px" style="font-size:11.5px;color:var(--muted);margin-bottom:6px;font-variant-numeric:tabular-nums;">
-            전일종가 <b style="color:var(--text)">${(q.prev_close ?? 0).toLocaleString()}원</b> · 현재 <b style="color:var(--text)">${(q.price ?? 0).toLocaleString()}원</b>
+            전일종가 <b style="color:var(--text)">${q.prev_close != null ? q.prev_close.toLocaleString() + "원" : "—"}</b> · 현재 <b style="color:var(--text)">${q.price != null ? q.price.toLocaleString() + "원" : "—"}</b>
             <span style="margin-left:4px;">(종가기준 매수%는 이 전일종가 대비)</span>
           </div>
           <div class="at-card-sec">📉 1회 밴드 (증감율% 비우면 이 방식)</div>
@@ -2086,9 +2093,9 @@
           document.getElementById("autotradeEnabled").checked = autotradeCfg.enabled;
           renderAutotradeRules();
           msg.textContent = "✅ 저장됨" + (autotradeCfg.enabled ? " · 자동매매 ON" : " · OFF");
-          msg.style.color = "var(--up)";
-        } else { msg.textContent = "❌ " + (r.error || "저장 실패"); msg.style.color = "var(--down)"; }
-      } catch (e) { msg.textContent = "요청 실패"; msg.style.color = "var(--down)"; }
+          msg.style.color = "var(--good)";
+        } else { msg.textContent = "❌ " + (r.error || "저장 실패"); msg.style.color = "var(--bad)"; }
+      } catch (e) { msg.textContent = "요청 실패"; msg.style.color = "var(--bad)"; }
       finally { if (btn) btn.disabled = false; }
     }
     async function scanBalmok(btn) {
@@ -2210,10 +2217,10 @@
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ symbol: sym, base_price: base, password: autotradePw }),
         })).json();
-        if (!r.ok) { out.textContent = "실패 — " + (r.error || ""); out.style.color = "var(--down)"; return; }
-        const col = r.verdict === "적정" ? "var(--up)" : r.verdict === "위험" ? "var(--down)" : "var(--gold)";
+        if (!r.ok) { out.textContent = "실패 — " + (r.error || ""); out.style.color = "var(--bad)"; return; }
+        const col = r.verdict === "적정" ? "var(--good)" : r.verdict === "위험" ? "var(--bad)" : "var(--gold)";
         out.innerHTML = `<b style="color:${col}">${r.verdict}</b> · ${r.headline || ""} <span style="color:var(--muted)">${r.buy_amount_krw ? "· 권장 " + (r.buy_amount_krw).toLocaleString() + "원" : ""}</span>`;
-      } catch { out.textContent = "요청 실패"; out.style.color = "var(--down)"; }
+      } catch { out.textContent = "요청 실패"; out.style.color = "var(--bad)"; }
       finally { btn.disabled = false; btn.textContent = old; }
     }
 
@@ -2233,7 +2240,7 @@
           body: JSON.stringify({ symbol: sym, base_price, budget, password: autotradePw }),
         })).json();
         if (!r.ok) { el.innerHTML = `<span style="color:var(--down)">판단 실패 — ${r.error || ""}</span>`; return; }
-        const color = r.verdict === "적정" ? "var(--up)" : r.verdict === "위험" ? "var(--down)" : "var(--gold)";
+        const color = r.verdict === "적정" ? "var(--good)" : r.verdict === "위험" ? "var(--bad)" : "var(--gold)";
         const won = (n) => (n || 0).toLocaleString();
         el.innerHTML =
           `<div style="background:var(--panel);border:1px solid ${color};border-radius:10px;padding:12px;">
@@ -2249,7 +2256,7 @@
             </div>
             <div style="font-size:12.5px;color:var(--muted);margin-bottom:6px;">진입대 ${r.entry_zone || "-"} · 손절참고 ${r.stop_ref || "-"}</div>
             <div style="font-size:12.5px;">${(r.reasons || []).map((x) => `• ${x}`).join("<br>")}</div>
-            <div style="margin-top:8px;font-size:12px;color:var(--down);">⚠️ ${r.risk_note || ""}</div>
+            <div style="margin-top:8px;font-size:12px;color:var(--bad);">⚠️ ${r.risk_note || ""}</div>
             <div style="margin-top:6px;font-size:11px;color:var(--muted);">Claude(Haiku) 판단 보조 · 예측 아님 · 투자 책임 본인.</div>
           </div>`;
       } catch (e) { el.innerHTML = '<span style="color:var(--down)">판단 요청 실패</span>'; }
@@ -2473,8 +2480,8 @@
       const asks = d.asks.slice(0, 5), bids = d.bids.slice(0, 5);
       const maxq = Math.max(1, ...asks.map((a) => a.qty), ...bids.map((b) => b.qty));
       const bar = (q, c) => `<span class="ob-bar" style="width:${Math.round(q / maxq * 28)}px;background:${c}"></span>`;
-      const ar = asks.slice().reverse().map((a) => `<tr class="ask"><td class="obp">${a.price.toLocaleString()}</td><td class="obq">${a.qty.toLocaleString()}${bar(a.qty, "var(--down)")}</td></tr>`).join("");
-      const br = bids.map((b) => `<tr class="bid"><td class="obp">${b.price.toLocaleString()}</td><td class="obq">${b.qty.toLocaleString()}${bar(b.qty, "var(--up)")}</td></tr>`).join("");
+      const ar = asks.slice().reverse().map((a) => `<tr class="ask"><td class="obp">${a.price.toLocaleString()}</td><td class="obq">${a.qty.toLocaleString()}${bar(a.qty, "var(--up)")}</td></tr>`).join("");
+      const br = bids.map((b) => `<tr class="bid"><td class="obp">${b.price.toLocaleString()}</td><td class="obq">${b.qty.toLocaleString()}${bar(b.qty, "var(--down)")}</td></tr>`).join("");
       // 시간외(NXT)면 노란 라벨로 구분.
       const isNxt = d.market_code === "NX";
       const tag = d.market_label ? `<span style="font-size:9px;font-weight:700;color:${isNxt ? "var(--gold)" : "var(--muted)"};margin-left:4px;">${d.market_label}</span>` : "";
@@ -2576,13 +2583,15 @@
     }
 
     // ===================== 📊 대시보드 수급 요약(외국인·기관·개인) =====================
-    async function loadSummarySupply() {
+    async function loadSummarySupply(retry = 0) {
       const el = document.getElementById("sumSupply"); if (!el) return;
       try {
         const rows = await Promise.all(SUPPLY_SYMS.map((s) =>
           fetch(`/api/investor/${s}`).then((r) => r.json()).catch(() => null)));
         const ok = rows.filter((r) => r && r.available);
         if (!ok.length) {
+          // KIS 일시 실패/빈응답으로 비는 경우가 있어 한 번 더 시도(전송 폭주 방지로 1회만).
+          if (retry < 1) { setTimeout(() => loadSummarySupply(retry + 1), 1500); return; }
           el.innerHTML = `<h2 style="font-size:14px;">📊 수급 — 외국인·기관·개인</h2><div class="sub" style="margin-top:6px;">수급 데이터 없음(장중·평일 표시)</div>`;
           return;
         }
@@ -3104,7 +3113,7 @@
            <button class="refresh-btn" onclick="ipoNav(1)" style="margin:0;">▶</button>
            <button class="refresh-btn" onclick="renderIpoTable(null)" style="margin-left:auto;">전체 보기</button>
          </div>
-         <div class="cal-grid">${wd.map((w, i) => `<div class="cal-wd" style="color:${i === 0 ? "var(--down)" : i === 6 ? "var(--accent)" : "var(--muted)"}">${w}</div>`).join("")}${cells}</div>`;
+         <div class="cal-grid">${wd.map((w, i) => `<div class="cal-wd" style="color:${i === 0 ? "var(--bad)" : i === 6 ? "var(--accent)" : "var(--muted)"}">${w}</div>`).join("")}${cells}</div>`;
     }
     function ipoNav(delta) { let { y, m } = window._ipoYM; m += delta; if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; } window._ipoYM = { y, m }; renderIpoCal(); }
     // 표 렌더 — dateStr 있으면 그날 청약만, 없으면 전체

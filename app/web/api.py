@@ -757,8 +757,6 @@ import secrets as _secrets
 from datetime import datetime as _dt, timedelta as _td, timezone as _tz
 
 _SESSION_DAYS = 30
-# OAuth state(CSRF 방지) 임시 보관 — 단일 프로세스 메모리. 콜백에서 1회 검증 후 삭제.
-_OAUTH_STATES: set[str] = set()
 
 # 구글 인증 적용 모드(사용자가 ⚙️설정에서 토글). 서버 파일에 저장해 재시작에도 유지.
 #   off     = 미사용(로그인 버튼·매매일지 탭 숨김)
@@ -779,7 +777,10 @@ def _auth_mode() -> str:
                 return m
     except Exception:
         pass
-    return "full" if settings.require_login else "journal"
+    # 설정 파일이 없으면(예: 재배포로 data/ 초기화) 항상 journal 로 시작한다.
+    # full(사이트 전체 로그인)은 ⚙️설정에서 명시적으로 토글했을 때만 — 의도치 않게
+    # 전체 화면 로그인 게이트가 '갑자기' 뜨는 것을 방지(REQUIRE_LOGIN env 폴백 제거).
+    return "journal"
 
 
 def _save_auth_mode(mode: str) -> None:
@@ -846,12 +847,11 @@ async def auth_config_set(request: Request) -> JSONResponse:
 
 @app.get("/api/auth/google/login")
 def auth_google_login():
-    """구글 로그인 동의 페이지로 리다이렉트. state 를 쿠키+메모리에 심어 CSRF 방지."""
+    """구글 로그인 동의 페이지로 리다이렉트. state 를 httponly 쿠키에 심어 CSRF 방지."""
     from app.auth.google_auth import authorize_url, configured
     if not configured():
         return JSONResponse({"ok": False, "error": "GOOGLE_CLIENT_ID/SECRET 미설정"})
     state = _secrets.token_urlsafe(24)
-    _OAUTH_STATES.add(state)
     resp = RedirectResponse(authorize_url(state))
     resp.set_cookie("oauth_state", state, max_age=600, httponly=True, samesite="lax", secure=True)
     return resp
@@ -863,11 +863,12 @@ def auth_google_callback(request: Request, code: str = "", state: str = "", erro
     from app.auth.google_auth import exchange_code
     if error or not code:
         return HTMLResponse(f"<h3>구글 로그인 실패</h3><pre>{error or '코드 없음'}</pre><p>창을 닫고 다시 시도하세요.</p>")
-    # state 검증(CSRF): 쿠키와 쿼리, 그리고 서버 메모리 셋이 일치해야 통과.
+    # state 검증(CSRF): httponly 쿠키(login 때 발급)와 쿼리 state 가 일치하면 통과.
+    # 이전엔 서버 메모리 셋(_OAUTH_STATES) 일치도 요구했으나, 재시작·멀티워커 시 셋이
+    # 비어 정상 로그인이 'state 불일치'로 실패했다 → 쿠키 더블서밋만으로 CSRF 방지 충분.
     cookie_state = request.cookies.get("oauth_state", "")
-    if not state or state != cookie_state or state not in _OAUTH_STATES:
+    if not state or state != cookie_state:
         return HTMLResponse("<h3>로그인 실패</h3><p>state 불일치(보안). 다시 시도하세요.</p>")
-    _OAUTH_STATES.discard(state)
     info = exchange_code(code)
     if not info.get("ok"):
         return HTMLResponse(f"<h3>로그인 실패</h3><pre>{info.get('error')}</pre>")
