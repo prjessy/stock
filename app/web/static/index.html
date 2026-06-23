@@ -2688,10 +2688,12 @@
         const u = authState.user;
         const pic = u.picture ? `<img src="${u.picture}" alt="" referrerpolicy="no-referrer">` : "";
         box.innerHTML = `${pic}<span class="who" title="${u.email || ""}">${u.name || u.email || "사용자"}</span><button class="btn-link" onclick="logout()">로그아웃</button>`;
-      } else if (authState.configured) {
+      } else if (authState.configured && authState.mode === "full") {
+        // full 모드(사이트 전체 로그인)에서만 헤더에 로그인 버튼을 둔다.
+        // journal 모드에선 홈화면 헤더 버튼을 숨기고, 로그인은 📔 매매일지 탭의 자체 버튼으로만 진입.
         box.innerHTML = `<a class="btn-google" href="/api/auth/google/login"><span class="g">G</span> 로그인</a>`;
       } else {
-        box.innerHTML = "";  // 키 미설정 시 버튼 숨김(대시보드는 그대로 동작)
+        box.innerHTML = "";  // journal/off/키미설정: 헤더 로그인 버튼 숨김(대시보드는 그대로 동작)
       }
     }
     async function logout() {

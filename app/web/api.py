@@ -887,7 +887,9 @@ def auth_google_callback(request: Request, code: str = "", state: str = "", erro
     finally:
         repo.close()
     resp = RedirectResponse("/?login=ok")
-    resp.set_cookie("sid", sid, max_age=_SESSION_DAYS * 86400, httponly=True, samesite="lax", secure=True)
+    # SameSite=None(+Secure): 구글 콜백(교차 사이트)에서 세션 쿠키를 세팅하므로, iOS
+    # Safari/ITP 가 Lax sid 를 버려 'PC는 되는데 아이폰은 로그인 안 풀림'이 났다. None 으로 보장.
+    resp.set_cookie("sid", sid, max_age=_SESSION_DAYS * 86400, httponly=True, samesite="none", secure=True)
     resp.delete_cookie("oauth_state")
     return resp
 
