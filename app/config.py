@@ -65,11 +65,21 @@ class Settings:
     # 비어 있으면(미설정) 모든 수동/자동 주문을 거부한다(fail-closed, 안전).
     trade_password: str = ""
 
-    # Anthropic Claude API (더듬이 2·3 AI 분석). 값은 .env 에서만.
+    # Anthropic Claude API (레거시). 아래 LLM_* 가 설정되면 그쪽을 쓴다.
     anthropic_api_key: str = ""
     deudeumi_model: str = "claude-haiku-4-5"
     # 더듬이2·3 자동 감시 주기(분). 0=비활성(기본). 본장(09:00~15:30)에만 동작.
     deudeumi_interval_min: int = 0
+
+    # 사설/로컬 OpenAI 호환 LLM (.env LLM_*). 설정 시 모든 AI 분석이 이 엔드포인트를 쓴다.
+    # 값은 .env 에서만(커밋 금지). 엔드포인트/키 비면 AI 기능 비활성(다른 기능엔 영향 없음).
+    llm_provider: str = "openai"
+    llm_endpoint: str = ""
+    llm_api_key: str = ""
+    llm_model: str = ""
+    llm_timeout_ms: int = 90000
+    llm_max_retries: int = 1
+    llm_concurrency: int = 1
 
     # 국토부 아파트매매 실거래가 OpenAPI(핀테크 탭 부동산). 값은 .env 에서만.
     molit_api_key: str = ""
@@ -88,6 +98,10 @@ class Settings:
 
     # 접근 제어: 허용된 Telegram chat id 목록
     allowed_chat_ids: list[str] = field(default_factory=list)
+
+    # 자동 알람을 받을 Telegram chat id 목록(.env ALERT_TELEGRAM_IDS, 콤마).
+    # 비어 있으면 Hermes 홈채널 1곳(기존 동작). 값이 있으면 그 id 들 전체로 팬아웃 발송.
+    alert_telegram_ids: list[str] = field(default_factory=list)
 
     # Hermes 게이트웨이 (localhost 내부 통신)
     hermes_base_url: str = "http://localhost:8080"
@@ -123,6 +137,13 @@ def load_settings() -> Settings:
         molit_api_key=os.getenv("MOLIT_API_KEY", ""),
         deudeumi_model=os.getenv("DEUDEUMI_MODEL", "claude-haiku-4-5"),
         deudeumi_interval_min=int(os.getenv("DEUDEUMI_INTERVAL_MIN", "0")),
+        llm_provider=os.getenv("LLM_PROVIDER", "openai"),
+        llm_endpoint=os.getenv("LLM_ENDPOINT", ""),
+        llm_api_key=os.getenv("LLM_API_KEY", ""),
+        llm_model=os.getenv("LLM_MODEL", ""),
+        llm_timeout_ms=int(os.getenv("LLM_TIMEOUT_MS", "90000")),
+        llm_max_retries=int(os.getenv("LLM_MAX_RETRIES", "1")),
+        llm_concurrency=int(os.getenv("LLM_CONCURRENCY", "1")),
         kakao_rest_api_key=os.getenv("KAKAO_REST_API_KEY", ""),
         kakao_redirect_uri=os.getenv("KAKAO_REDIRECT_URI", "https://jessystock.com/api/kakao/callback"),
         google_client_id=os.getenv("GOOGLE_CLIENT_ID", ""),
@@ -130,6 +151,7 @@ def load_settings() -> Settings:
         google_redirect_uri=os.getenv("GOOGLE_REDIRECT_URI", "https://jessystock.com/api/auth/google/callback"),
         require_login=os.getenv("REQUIRE_LOGIN", "false").lower() in ("1", "true", "yes"),
         allowed_chat_ids=_split_csv(os.getenv("ALLOWED_CHAT_IDS", "")),
+        alert_telegram_ids=_split_csv(os.getenv("ALERT_TELEGRAM_IDS", "")),
         hermes_base_url=os.getenv("HERMES_BASE_URL", "http://localhost:8080"),
         db_path=os.getenv("DB_PATH", "data/stock.db"),
     )

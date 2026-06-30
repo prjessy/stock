@@ -33,6 +33,53 @@ class RealtimePoller:
         self._pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="rt")
         self._kr = list(settings.kr_symbols)
         self._us = list(settings.us_symbols)
+        self._sym_refresh_interval = 30.0  # 사용자 종목 합집합을 DB 에서 다시 읽는 주기(초)
+        self._transient: dict[str, float] = {}  # 비로그인(로컬저장) 사용자가 요청한 심볼 {sym: last_seen}
+
+    def note_symbols(self, symbols: list[str]) -> None:
+        """비로그인 사용자가 /api/quotes 로 요청한 심볼을 임시 등록(다음 갱신부터 미리 받아둠)."""
+        now = time.time()
+        with self._lock:
+            for s in symbols:
+                if s:
+                    self._transient[s] = now
+
+    def refresh_symbols(self) -> None:
+        """폴링 대상 = .env 기본종목 ∪ 모든 사용자의 관심종목. 런타임 추가분도 주기적으로 반영.
+
+        한 명이 종목을 추가하면 그 종목 시세도 미리 받아둬야(=스냅샷) /api/quotes 가
+        즉시 응답한다. 사용자별 필터링은 API 층에서 한다(여기선 합집합만 받아둠).
+        """
+        kr = list(settings.kr_symbols)
+        us = list(settings.us_symbols)
+        try:
+            from app.storage.db import Repository
+            repo = Repository()
+            try:
+                for sym, market in repo.all_watchlist_symbols():
+                    if market == "US":
+                        if sym not in us:
+                            us.append(sym)
+                    elif sym not in kr:
+                        kr.append(sym)
+            finally:
+                repo.close()
+        except Exception:
+            pass
+        # 비로그인 임시 심볼(최근 10분 내 요청분)도 폴링 대상에 포함, 오래된 건 정리.
+        cutoff = time.time() - 600
+        with self._lock:
+            self._transient = {s: t for s, t in self._transient.items() if t >= cutoff}
+            trans = list(self._transient.keys())
+        for s in trans:
+            if s.isdigit():
+                if s not in kr:
+                    kr.append(s)
+            elif s not in us:
+                us.append(s)
+        with self._lock:
+            self._kr = kr
+            self._us = us
 
     def _fetch(self, symbol: str) -> tuple[str, dict | None]:
         try:
@@ -50,15 +97,21 @@ class RealtimePoller:
     def start(self) -> None:
         if self._thread is not None:
             return
-        # 첫 페이지 로드가 빈 화면이 되지 않도록 1회 동기 시드(한 번만 ~수 초).
+        # 폴링 대상에 사용자 관심종목 합집합을 먼저 반영한 뒤 1회 동기 시드(한 번만 ~수 초).
+        self.refresh_symbols()
         self._refresh(self._kr + self._us)
         self._thread = threading.Thread(target=self._loop, daemon=True, name="rt-poller")
         self._thread.start()
 
     def _loop(self) -> None:
-        last_us = time.time()  # 시드에서 막 받았으므로 기준 시각으로
+        now = time.time()
+        last_us = now          # 시드에서 막 받았으므로 기준 시각으로
+        last_sym = now         # 종목 합집합 갱신 기준 시각
         while not self._stop.is_set():
             cycle = time.time()
+            if cycle - last_sym >= self._sym_refresh_interval:
+                self.refresh_symbols()
+                last_sym = cycle
             symbols = list(self._kr)
             if cycle - last_us >= self._us_interval:
                 symbols += self._us
@@ -71,7 +124,12 @@ class RealtimePoller:
         self._stop.set()
 
     def quotes(self) -> list[dict]:
-        """워치리스트 순서대로 최신 스냅샷. 아직 못 받은 심볼은 생략."""
+        """워치리스트(기본) 순서대로 최신 스냅샷. 아직 못 받은 심볼은 생략."""
         with self._lock:
             return [self._snapshot[s] for s in self._registry.watchlist()
                     if s in self._snapshot]
+
+    def quotes_for(self, symbols: list[str]) -> list[dict]:
+        """주어진 심볼 순서대로 최신 스냅샷(사용자별 시세). 아직 못 받은 심볼은 생략."""
+        with self._lock:
+            return [self._snapshot[s] for s in symbols if s in self._snapshot]

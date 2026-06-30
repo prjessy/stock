@@ -39,11 +39,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 사용자 추가 종목(watchlist.json)을 기본 .env 종목 위에 병합 — registry/poller 생성 전에.
-from app.core import watchlist as _watchlist
-for _xc in _watchlist.load_extra():
-    if _xc not in settings.kr_symbols:
-        settings.kr_symbols.append(_xc)
+# 관심종목은 사용자별로 DB(watchlist 테이블)에 저장한다. .env KR_SYMBOLS/US_SYMBOLS 는
+# 신규 사용자 시드 + 비로그인 방문자에게 보여줄 기본 목록 역할만 한다(전역 watchlist.json 폐지).
 
 # 출처 디스패처 (각 소스의 TTL 캐시 내장) — 앱 수명 동안 재사용.
 _registry = SourceRegistry()
@@ -109,19 +106,44 @@ def _name_for(symbol: str) -> str:
     meta = KR_META.get(symbol) or US_META.get(symbol)
     if meta:
         return meta["name"]
+    # KIS 기본조회로 한글명(동적 추가 종목 · KRX 리스트 차단된 VPS 대비).
+    try:
+        src = _registry.source_for(symbol)
+        nm = getattr(src, "get_name", lambda _s: None)(symbol)
+        if nm:
+            return nm
+    except Exception:
+        pass
     # 국내 코드면 KRX 리스트에서 이름 동적 조회(없으면 심볼 그대로).
     return _kr_name(symbol)
 
 
 @app.get("/api/quotes")
-def get_quotes(fresh: bool = False) -> JSONResponse:
-    """워치리스트 전체 시세 — 백그라운드 폴러의 메모리 스냅샷에서 즉시 반환.
+def get_quotes(request: Request, fresh: bool = False, symbols: str = "") -> JSONResponse:
+    """관심종목 시세 — 폴러 메모리 스냅샷에서 즉시 반환.
 
-    폴러가 아직 시드 전이거나 빈 경우에만 출처에서 직접 받아 폴백한다.
+    - symbols=a,b,c 가 오면 그 목록을 쓴다(비로그인=브라우저 로컬저장 개인화용, 폴러에 임시 등록).
+    - 없으면 로그인 사용자 DB 워치리스트(비로그인은 .env 기본)를 쓴다.
+    스냅샷에 아직 없는 심볼(방금 추가 등)만 출처에서 직접 받아 폴백한다.
     """
-    quotes = _poller.quotes()
-    if not quotes:
-        quotes = _registry.all_quotes()
+    req = [s.strip() for s in symbols.split(",") if s.strip()][:60]  # 안전 상한 60
+    if req:
+        _poller.note_symbols(req)
+        symbols = req
+    else:
+        symbols = [r["symbol"] for r in _user_watchlist(request)]
+    quotes = _poller.quotes_for(symbols)
+    if len(quotes) < len(symbols):
+        have = {q.get("symbol") for q in quotes}
+        for s in symbols:
+            if s not in have:
+                try:
+                    quotes.append(_registry.quote(s))
+                except Exception:
+                    pass
+        # 사용자 순서대로 정렬
+        order = {s: i for i, s in enumerate(symbols)}
+        quotes.sort(key=lambda q: order.get(q.get("symbol"), 1_000_000))
     return JSONResponse({"quotes": quotes})
 
 
@@ -300,6 +322,16 @@ async def notify_api(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True, **notify_all(subject, msg)})
 
 
+@app.get("/api/alert-recipients")
+def alert_recipients_api() -> JSONResponse:
+    """시황 알람을 받는 지인 목록(id+이름). 표시·헷갈림 방지용. 500 금지."""
+    try:
+        from app.notify.dispatch import alert_recipients
+        return JSONResponse({"ok": True, "recipients": alert_recipients()})
+    except Exception:
+        return JSONResponse({"ok": True, "recipients": []})
+
+
 @app.post("/api/order")
 async def order_api(request: Request) -> JSONResponse:
     """수동 테스트 주문(1주 시장가). 실거래 — 1주 하드캡(settings.trade_max_qty). 500 금지.
@@ -340,8 +372,10 @@ async def order_api(request: Request) -> JSONResponse:
 
 
 @app.get("/api/order/status")
-def order_status_api() -> JSONResponse:
-    """주문 기능 사용 가능 여부(계좌 설정·모의/실전). 500 금지."""
+def order_status_api(request: Request) -> JSONResponse:
+    """주문 기능 사용 가능 여부(계좌 설정·모의/실전). 소유자만. 500 금지."""
+    if not _is_owner(request):
+        return JSONResponse({"configured": False, "owner_only": True})
     src = _registry.kr_source()
     from app.config import settings as _s
     return JSONResponse({
@@ -353,8 +387,10 @@ def order_status_api() -> JSONResponse:
 
 
 @app.get("/api/order/history")
-def order_history_api(days: int = 7) -> JSONResponse:
-    """최근 N일 체결/미체결 주문 내역(자동매매봇 탭). 500 금지."""
+def order_history_api(request: Request, days: int = 7) -> JSONResponse:
+    """최근 N일 체결/미체결 주문 내역(자동매매봇 탭). 소유자(내 실계좌)만. 500 금지."""
+    if not _is_owner(request):
+        return JSONResponse({"ok": False, "owner_only": True, "error": "소유자만"})
     from app.trading.kis_order import OrderClient
     src = _registry.kr_source()
     if not hasattr(src, "_ensure_token"):
@@ -363,8 +399,10 @@ def order_history_api(days: int = 7) -> JSONResponse:
 
 
 @app.get("/api/balance")
-def balance_api() -> JSONResponse:
-    """현재 보유 종목(수량·평균단가·현재가·손익률). 자동매매봇 탭 표시·손절 기준. 500 금지."""
+def balance_api(request: Request) -> JSONResponse:
+    """현재 보유 종목(수량·평균단가·현재가·손익률). 소유자(내 실계좌)만 — 잔고 유출 방지. 500 금지."""
+    if not _is_owner(request):
+        return JSONResponse({"ok": False, "owner_only": True, "error": "소유자만 볼 수 있습니다"})
     from app.trading.kis_order import OrderClient
     src = _registry.kr_source()
     if not hasattr(src, "_ensure_token"):
@@ -373,8 +411,10 @@ def balance_api() -> JSONResponse:
 
 
 @app.get("/api/autotrade/config")
-def get_autotrade_config_api() -> JSONResponse:
-    """자동매매(등락률 밴드·손절·예약) 설정 조회. 500 금지."""
+def get_autotrade_config_api(request: Request) -> JSONResponse:
+    """자동매매(등락률 밴드·손절·예약) 설정 조회. 소유자(내 실계좌)만. 500 금지."""
+    if not _is_owner(request):
+        return JSONResponse({"ok": False, "owner_only": True})
     from app.trading import autotrade_config
     return JSONResponse({"ok": True, **autotrade_config.load()})
 
@@ -473,6 +513,16 @@ def fintech_markets_api() -> JSONResponse:
         return JSONResponse({"ok": False, "items": [], "error": str(exc)})
 
 
+@app.get("/api/fintech/btc")
+def fintech_btc_api() -> JSONResponse:
+    """비트코인 실시간(업비트 KRW-BTC). 프론트가 수초마다 폴링해 BTC만 실시간 갱신. 500 금지."""
+    try:
+        from app.datasources import fintech
+        return JSONResponse(fintech.btc_live())
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)})
+
+
 @app.get("/api/fintech/rates")
 def fintech_rates_api() -> JSONResponse:
     """미국 수익률 곡선 + 각국 10년 국채 금리. 500 금지."""
@@ -484,11 +534,11 @@ def fintech_rates_api() -> JSONResponse:
 
 
 @app.get("/api/fintech/ipo")
-def fintech_ipo_api(limit: int = 30) -> JSONResponse:
-    """공모주 청약 달력(종목명·청약일·공모가·주간사). 500 금지."""
+def fintech_ipo_api(limit: int = 40, q: str = "") -> JSONResponse:
+    """공모주 일정(종목명·청약일·공모가·주간사·경쟁률·상장일). q 주어지면 종목명 검색. 500 금지."""
     try:
         from app.datasources import fintech
-        return JSONResponse(fintech.ipo_calendar(limit))
+        return JSONResponse(fintech.ipo_calendar(limit, q=q or ""))
     except Exception as exc:
         return JSONResponse({"ok": False, "items": [], "error": str(exc)})
 
@@ -520,55 +570,76 @@ def run_eod_report_api() -> JSONResponse:
         return JSONResponse({"ok": False, "error": str(exc)})
 
 
+def _norm_symbol(raw: str) -> tuple[str, str] | None:
+    """입력 종목코드를 (정규화심볼, market) 으로. 6자리 숫자→('005930','KR'),
+    그 외 영문 티커→대문자('AAPL','US'). 형식이 아니면 None."""
+    s = (raw or "").strip()
+    if not s:
+        return None
+    if s.isdigit():
+        return (s, "KR") if len(s) == 6 else None
+    su = s.upper()
+    # 미국 티커/지수/선물(예: AAPL, ^SOX, NQ=F, BRK.B). 공백/한글 등은 거부.
+    import re
+    if re.fullmatch(r"[A-Z0-9.\-^=]{1,15}", su):
+        return su, "US"
+    return None
+
+
 @app.get("/api/watchlist")
-def get_watchlist_api() -> JSONResponse:
-    """현재 국내 워치리스트(기본+추가). removable=사용자 추가분만. 500 금지."""
-    from app.core import watchlist
-    extra = set(watchlist.load_extra())
+def get_watchlist_api(request: Request) -> JSONResponse:
+    """현재 사용자 관심종목(국내+미국). 로그인 시 removable=True(자기 종목이라 삭제 가능).
+    비로그인은 .env 기본종목을 읽기전용으로 보여준다. 500 금지."""
+    user = _current_user(request)
+    rows = _user_watchlist(request)
     items = []
-    for code in settings.kr_symbols:
+    for r in rows:
+        code = r["symbol"]
         snap = _poller._snapshot.get(code) or {}
-        items.append({"symbol": code, "name": snap.get("name") or _name_for(code),
-                      "removable": code in extra})
-    return JSONResponse({"ok": True, "items": items})
+        items.append({"symbol": code, "market": r.get("market") or "KR",
+                      "name": snap.get("name") or _name_for(code),
+                      "removable": bool(user)})
+    return JSONResponse({"ok": True, "authenticated": bool(user), "items": items})
 
 
 @app.post("/api/watchlist")
 async def set_watchlist_api(request: Request) -> JSONResponse:
-    """국내 종목 추가/삭제(런타임, 재시작 불필요). action: add|remove, symbol: 6자리. 500 금지."""
-    from app.core import watchlist
+    """관심종목 추가/삭제(런타임). action: add|remove, symbol: 국내 6자리 또는 미국 티커.
+    로그인 필요(사용자별 DB 저장). 500 금지."""
+    user = _current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "로그인이 필요합니다"})
     try:
         data = await request.json()
     except Exception:
         data = {}
     action = data.get("action")
-    code = (data.get("symbol") or "").strip()
-    if not (code.isdigit() and len(code) == 6):
-        return JSONResponse({"ok": False, "error": "6자리 숫자 종목코드를 입력하세요"})
-    if action == "add":
-        if code in settings.kr_symbols:
-            return JSONResponse({"ok": False, "error": "이미 있는 종목입니다"})
-        try:
-            q = _registry.quote(code)
-        except Exception:
-            q = None
-        if not q or q.get("price") in (None, 0):
-            return JSONResponse({"ok": False, "error": "시세 조회 실패 — 코드를 확인하세요(상장 종목 6자리)"})
-        watchlist.add(code)
-        settings.kr_symbols.append(code)
-        if code not in _poller._kr:
-            _poller._kr.append(code)
-        return JSONResponse({"ok": True, "added": code, "name": q.get("name"), "price": q.get("price")})
-    if action == "remove":
-        if code not in watchlist.load_extra():
-            return JSONResponse({"ok": False, "error": "기본 종목은 삭제 불가(.env에서 관리)"})
-        watchlist.remove(code)
-        if code in settings.kr_symbols:
-            settings.kr_symbols.remove(code)
-        if code in _poller._kr:
-            _poller._kr.remove(code)
-        return JSONResponse({"ok": True, "removed": code})
-    return JSONResponse({"ok": False, "error": "action=add|remove 필요"})
+    norm = _norm_symbol(data.get("symbol") or "")
+    if not norm:
+        return JSONResponse({"ok": False, "error": "국내 6자리 코드 또는 미국 티커를 입력하세요"})
+    code, market = norm
+    repo = Repository()
+    try:
+        if action == "add":
+            existing = {x["symbol"] for x in repo.list_watchlist(user["id"])}
+            if code in existing:
+                return JSONResponse({"ok": False, "error": "이미 있는 종목입니다"})
+            try:
+                q = _registry.quote(code)
+            except Exception:
+                q = None
+            if not q or q.get("price") in (None, 0):
+                return JSONResponse({"ok": False, "error": "시세 조회 실패 — 종목코드/티커를 확인하세요"})
+            repo.add_watchlist(user["id"], code, market)
+            _poller.refresh_symbols()  # 새 종목 시세를 곧바로 받아두도록
+            return JSONResponse({"ok": True, "added": code, "market": market,
+                                 "name": q.get("name"), "price": q.get("price")})
+        if action == "remove":
+            repo.remove_watchlist(user["id"], code)
+            return JSONResponse({"ok": True, "removed": code})
+        return JSONResponse({"ok": False, "error": "action=add|remove 필요"})
+    finally:
+        repo.close()
 
 
 @app.get("/api/weekly-review")
@@ -627,7 +698,9 @@ def get_alert_config_api() -> JSONResponse:
 
 @app.post("/api/alert-config")
 async def set_alert_config_api(request: Request) -> JSONResponse:
-    """알림 설정 저장(부분 갱신). 저장된 전체 설정 반환. 500 금지."""
+    """알림 설정 저장(부분 갱신). 서버 푸시(카톡/텔레그램)는 소유자 단일채널이라 소유자만 변경. 500 금지."""
+    if not _is_owner(request):
+        return JSONResponse({"ok": False, "owner_only": True, "error": "서버 알림 설정은 소유자만 변경"})
     from app.core import alert_config
     try:
         data = await request.json()
@@ -763,24 +836,48 @@ _SESSION_DAYS = 30
 # 쿠키를 콜백에 안 실어줘서(cookie_present=False), 쿠키만으론 검증 불가 → 아이폰 로그인 실패.
 # 앱은 단일 프로세스(uvicorn 1 worker)라 로그인→콜백 사이 프로세스 메모리 보관이 유효하다.
 # state -> 만료(epoch). 콜백서 1회 검증 후 삭제. 재시작 시 비지만(드묾) 재시도로 해결.
-_OAUTH_STATES: dict[str, float] = {}
-_OAUTH_STATE_TTL = 600.0
+# state 는 '파일'에 보관한다(앱 재시작에도 생존). 프로세스 메모리면 재배포·재시작 시
+# 진행 중이던 로그인이 STATE MISMATCH 로 실패했다(특히 iOS: 쿠키 미전송이라 서버 state 가
+# 유일한 검증 수단). 단일 프로세스라 파일 보관으로 충분하다.
+from pathlib import Path as _Path2
+_OAUTH_STATE_FILE = _Path2(settings.db_path).resolve().parent / "oauth_states.json"
+_OAUTH_STATE_TTL = 3600.0  # 1시간(모바일 동의·재인증·앱 재시작 여유)
+
+
+def _load_oauth_states() -> dict:
+    try:
+        if _OAUTH_STATE_FILE.exists():
+            return _json.loads(_OAUTH_STATE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
+
+
+def _save_oauth_states(d: dict) -> None:
+    try:
+        _OAUTH_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _OAUTH_STATE_FILE.write_text(_json.dumps(d), encoding="utf-8")
+    except Exception:
+        pass
 
 
 def _remember_state(state: str) -> None:
     now = _time.time()
-    for k in [k for k, exp in _OAUTH_STATES.items() if exp < now]:
-        _OAUTH_STATES.pop(k, None)            # 만료 정리
-    if len(_OAUTH_STATES) > 500:
-        _OAUTH_STATES.clear()                 # 과도 증가 방지(상한)
-    _OAUTH_STATES[state] = now + _OAUTH_STATE_TTL
+    d = {k: v for k, v in _load_oauth_states().items() if v > now}  # 만료 정리
+    if len(d) > 500:
+        d = {}
+    d[state] = now + _OAUTH_STATE_TTL
+    _save_oauth_states(d)
 
 
 def _check_state(state: str, cookie_state: str) -> bool:
-    """state 1회용 검증: 서버 보관에 존재(아이폰=쿠키 유실 대비) 또는 쿠키 일치(PC)면 통과."""
+    """state 1회용 검증: 서버 파일 보관에 존재(아이폰=쿠키 유실 대비) 또는 쿠키 일치(PC)면 통과."""
     if not state:
         return False
-    exp = _OAUTH_STATES.pop(state, None)
+    d = _load_oauth_states()
+    exp = d.pop(state, None)
+    if exp is not None:
+        _save_oauth_states(d)  # 1회용: 검증 후 제거
     server_ok = exp is not None and exp >= _time.time()
     cookie_ok = bool(cookie_state) and state == cookie_state
     return server_ok or cookie_ok
@@ -862,17 +959,51 @@ def _current_user(request: Request) -> dict | None:
     return None
 
 
+def _is_owner(request: Request) -> bool:
+    """현재 사용자가 소유자(첫 가입자=내 계좌 주인)인가. 포트폴리오·자동매매 등 실계좌 기능 보호용."""
+    u = _current_user(request)
+    if not u:
+        return False
+    owner = _owner_user()
+    return bool(owner and owner.get("id") == u.get("id"))
+
+
+def _user_watchlist(request: Request) -> list[dict]:
+    """요청자의 관심종목 [{symbol, market}].
+
+    로그인 사용자: 자기 DB 워치리스트(비어 있으면 .env 기본종목으로 1회 시드).
+    비로그인 방문자: .env 기본종목(KR→US)을 읽기전용으로 보여준다.
+    """
+    user = _current_user(request)
+    if user:
+        repo = Repository()
+        try:
+            rows = repo.list_watchlist(user["id"])
+            if not rows:
+                repo.seed_watchlist_if_empty(user["id"], list(settings.kr_symbols),
+                                             list(settings.us_symbols))
+                rows = repo.list_watchlist(user["id"])
+        finally:
+            repo.close()
+        return rows
+    return [{"symbol": s, "market": "KR"} for s in settings.kr_symbols] + \
+           [{"symbol": s, "market": "US"} for s in settings.us_symbols]
+
+
 @app.get("/api/auth/me")
 def auth_me(request: Request) -> JSONResponse:
     """현재 로그인 상태 + 인증 적용 모드(off/journal/full) + 키 설정 여부."""
     from app.auth.google_auth import configured
+    from app.auth import kakao_auth
     mode = _auth_mode()
     user = _current_user(request)
-    base = {"configured": configured(), "mode": mode}
+    base = {"configured": configured(), "kakao_configured": kakao_auth.configured(), "mode": mode}
     if user:
-        return JSONResponse({**base, "authenticated": True,
+        owner = _owner_user()
+        is_owner = bool(owner and owner.get("id") == user.get("id"))
+        return JSONResponse({**base, "authenticated": True, "is_owner": is_owner,
                              "user": {"name": user["name"], "email": user["email"], "picture": user["picture"]}})
-    return JSONResponse({**base, "authenticated": False})
+    return JSONResponse({**base, "authenticated": False, "is_owner": False})
 
 
 @app.get("/api/auth-config")
@@ -942,10 +1073,81 @@ def auth_google_callback(request: Request, code: str = "", state: str = "", erro
         repo.create_session(sid, uid, expires)
     finally:
         repo.close()
-    resp = RedirectResponse("/?login=ok")
-    # SameSite=None(+Secure): 구글 콜백(교차 사이트)에서 세션 쿠키를 세팅하므로, iOS
-    # Safari/ITP 가 Lax sid 를 버려 'PC는 되는데 아이폰은 로그인 안 풀림'이 났다. None 으로 보장.
-    resp.set_cookie("sid", sid, max_age=_SESSION_DAYS * 86400, httponly=True, samesite="none", secure=True)
+    # iOS Safari/ITP 는 교차 사이트 콜백의 '307 리다이렉트'에 실린 Set-Cookie 를 종종
+    # 버린다('계속 로그인' 증상). 그래서 RedirectResponse 대신 먼저 1st-party 200 HTML
+    # 문서에 쿠키를 확실히 심은 뒤, 그 문서에서 클라이언트측으로 / 로 이동시킨다(영속성↑).
+    # SameSite=None(+Secure): 콜백이 교차 사이트 흐름이라 쿠키 세팅을 보장하려면 None 필요.
+    html = (
+        "<!doctype html><meta charset='utf-8'><title>로그인 완료</title>"
+        "<body style='font-family:sans-serif;background:#0e0e12;color:#eee;text-align:center;padding-top:40px'>"
+        "<p>✅ 로그인 완료 — 이동 중…</p>"
+        "<script>setTimeout(function(){location.replace('/?login=ok');},150);</script>"
+        "<noscript><a href='/?login=ok' style='color:#6cf'>여기를 눌러 계속</a></noscript>"
+        "</body>"
+    )
+    resp = HTMLResponse(html)
+    _set_sid_cookie(resp, sid)
+    resp.delete_cookie("oauth_state")
+    return resp
+
+
+def _set_sid_cookie(resp, sid: str) -> None:
+    """세션 쿠키(sid) 일관 설정.
+    - Max-Age + **Expires 둘 다**: Safari 가 Max-Age 만 있으면 '세션 쿠키'로 취급해 창 닫으면 삭제.
+    - **SameSite=Lax**: 콜백을 1st-party HTML 로 심으므로 Lax 로 충분하고, iOS Safari ITP 가
+      SameSite=None 1st-party 쿠키를 앱 종료 시 공격적으로 지우는 문제(=아이폰 재로그인)를 피한다."""
+    exp = _dt.now(_tz.utc) + _td(days=_SESSION_DAYS)
+    resp.set_cookie("sid", sid, max_age=_SESSION_DAYS * 86400, expires=exp,
+                    httponly=True, samesite="lax", secure=True, path="/")
+
+
+def _login_success_html() -> str:
+    return (
+        "<!doctype html><meta charset='utf-8'><title>로그인 완료</title>"
+        "<body style='font-family:sans-serif;background:#0e0e12;color:#eee;text-align:center;padding-top:40px'>"
+        "<p>✅ 로그인 완료 — 이동 중…</p>"
+        "<script>setTimeout(function(){location.replace('/?login=ok');},150);</script>"
+        "<noscript><a href='/?login=ok' style='color:#6cf'>여기를 눌러 계속</a></noscript></body>"
+    )
+
+
+@app.get("/api/auth/kakao/login")
+def auth_kakao_login():
+    """카카오 로그인 동의 페이지로 리다이렉트(구글과 병행). state 쿠키+서버보관(아이폰 대비)."""
+    from app.auth import kakao_auth
+    if not kakao_auth.configured():
+        return JSONResponse({"ok": False, "error": "KAKAO_REST_API_KEY 미설정"})
+    state = _secrets.token_urlsafe(24)
+    _remember_state(state)
+    resp = RedirectResponse(kakao_auth.authorize_url(state))
+    resp.set_cookie("oauth_state", state, max_age=600, httponly=True, samesite="none", secure=True)
+    print("[oauth-kakao] login: issued state", flush=True)
+    return resp
+
+
+@app.get("/api/auth/kakao/callback")
+def auth_kakao_callback(request: Request, code: str = "", state: str = "", error: str = ""):
+    """카카오 OAuth 콜백 → code 교환 → 사용자 생성/갱신('kakao:<id>') → 세션 쿠키 발급."""
+    from app.auth import kakao_auth
+    if error or not code:
+        return HTMLResponse(f"<h3>카카오 로그인 실패</h3><pre>{error or '코드 없음'}</pre><p>창을 닫고 다시 시도하세요.</p>")
+    cookie_state = request.cookies.get("oauth_state", "")
+    if not _check_state(state, cookie_state):
+        return HTMLResponse("<h3>로그인 실패</h3><p>state 불일치(보안). 다시 시도하세요.</p>")
+    info = kakao_auth.exchange_code(code)
+    if not info.get("ok"):
+        print(f"[oauth-kakao] EXCHANGE FAIL: {info.get('error')}", flush=True)
+        return HTMLResponse(f"<h3>로그인 실패</h3><pre>{info.get('error')}</pre>")
+    repo = Repository()
+    try:
+        uid = repo.upsert_user(info["sub"], info["email"], info["name"], info["picture"])
+        sid = _secrets.token_urlsafe(32)
+        expires = (_dt.now(_tz.utc) + _td(days=_SESSION_DAYS)).isoformat()
+        repo.create_session(sid, uid, expires)
+    finally:
+        repo.close()
+    resp = HTMLResponse(_login_success_html())
+    _set_sid_cookie(resp, sid)
     resp.delete_cookie("oauth_state")
     return resp
 
@@ -972,16 +1174,39 @@ def _journal_fields(body: dict) -> dict:
             return float(v) if v not in (None, "") else None
         except (TypeError, ValueError):
             return None
+    cur = (str(body.get("currency") or "KRW")).strip().upper()
+    # 빈 문자열은 NULL 로(공백만 입력해도 종목 정보 없는 것으로 취급)
+    if cur not in ("KRW", "USD"):
+        cur = "KRW"
+    cat = (str(body.get("category") or "일반주")).strip()
+    if cat not in ("일반주", "공모주"):
+        cat = "일반주"
+    fx = _num(body.get("fx_rate"))
     return {
         "trade_date": (str(body.get("trade_date") or "")).strip() or _dt.now().strftime("%Y-%m-%d"),
-        "symbol": (str(body.get("symbol") or "")).strip()[:32],
-        "name": (str(body.get("name") or "")).strip()[:64],
-        "side": (str(body.get("side") or "")).strip()[:16],   # 매수/매도/메모 등
+        "symbol": ((str(body.get("symbol") or "")).strip()[:32] or None),
+        "name": ((str(body.get("name") or "")).strip()[:64] or None),
+        "side": (str(body.get("side") or "")).strip()[:16],   # 매수/매도/배당/메모
         "price": _num(body.get("price")),
         "qty": _num(body.get("qty")),
+        "category": cat,                                      # 일반주/공모주
+        "currency": cur,
+        "fx_rate": fx if (fx and fx > 0) else 1.0,            # KRW=1, USD=환율(원/달러)
+        "tax": _num(body.get("tax")) or 0.0,                  # 세금(원)
         "reason": (str(body.get("reason") or "")).strip()[:2000],
         "memo": (str(body.get("memo") or "")).strip()[:2000],
     }
+
+
+def _journal_validate(fields: dict) -> str | None:
+    """저장 전 검증. 통과면 None, 막아야 하면 오류 메시지 반환.
+
+    종목 정보(종목명·코드)가 비어 있으면 저장하지 않는다. 단, 순수 '메모'는
+    특정 종목이 없어도 되므로 예외.
+    """
+    if fields.get("side") != "메모" and not (fields.get("symbol") or fields.get("name")):
+        return "종목 정보(종목명)를 입력하세요. 비어 있으면 저장되지 않습니다."
+    return None
 
 
 @app.get("/api/journal")
@@ -1007,9 +1232,13 @@ async def journal_create(request: Request) -> JSONResponse:
         body = await request.json()
     except Exception:
         body = {}
+    fields = _journal_fields(body or {})
+    err = _journal_validate(fields)
+    if err:
+        return JSONResponse({"ok": False, "error": err}, status_code=400)
     repo = Repository()
     try:
-        eid = repo.add_journal(user["id"], _journal_fields(body or {}))
+        eid = repo.add_journal(user["id"], fields)
         return JSONResponse({"ok": True, "id": eid})
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc)})
@@ -1027,9 +1256,13 @@ async def journal_update(entry_id: int, request: Request) -> JSONResponse:
         body = await request.json()
     except Exception:
         body = {}
+    fields = _journal_fields(body or {})
+    err = _journal_validate(fields)
+    if err:
+        return JSONResponse({"ok": False, "error": err}, status_code=400)
     repo = Repository()
     try:
-        ok = repo.update_journal(user["id"], entry_id, _journal_fields(body or {}))
+        ok = repo.update_journal(user["id"], entry_id, fields)
         return JSONResponse({"ok": ok})
     finally:
         repo.close()
@@ -1107,6 +1340,18 @@ def index() -> FileResponse:
 def favicon() -> FileResponse:
     # 브라우저가 루트 /favicon.ico 를 자동 요청 — 32px PNG 로 응답(캐시 강함).
     return FileResponse(STATIC_DIR / "icon-32.png")
+
+
+@app.get("/sw.js")
+def service_worker() -> FileResponse:
+    # 서비스워커는 루트(/)에서 서빙해야 사이트 전체 스코프를 가진다(PWA/홈화면 설치 요건).
+    return FileResponse(STATIC_DIR / "sw.js", media_type="application/javascript")
+
+
+@app.get("/manifest.webmanifest")
+def web_manifest() -> FileResponse:
+    # PWA 매니페스트 — 정확한 콘텐츠타입으로 서빙(설치형 웹앱 인식).
+    return FileResponse(STATIC_DIR / "manifest.webmanifest", media_type="application/manifest+json")
 
 
 # 정적 파일(css/js) 마운트. index 는 위 라우트가 우선.

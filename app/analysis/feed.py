@@ -162,6 +162,10 @@ def _supply_section(supply):
         note = "수급 혼조"
     return {
         "date": supply.get("date"),
+        "asof": supply.get("asof") or supply.get("date"),
+        "is_today": supply.get("is_today"),
+        "confirmed": supply.get("confirmed"),
+        "session_label": supply.get("session_label"),
         "foreign_net_today": supply.get("frgn_ntby_qty"),
         "inst_net_today": supply.get("orgn_ntby_qty"),
         "foreign_net_5d": fs,

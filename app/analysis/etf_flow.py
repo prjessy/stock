@@ -85,12 +85,8 @@ def ai_comment(items: list[dict]) -> str:
     """포착된 종목 수급 흐름을 Claude가 한두 줄로 코멘트. 종목 없거나 키 없으면 ''. 절대 raise 안 함."""
     if not items:
         return ""
-    key = settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")
-    if not key:
-        return ""
-    try:
-        import anthropic
-    except Exception:
+    from app import llm
+    if not llm.configured():
         return ""
     lines = [f"[{i['theme']}] {i['name']} {i['who']} {i.get('reason', '')} +{i['qty']:,}주"
              for i in items[:15]]
@@ -98,17 +94,7 @@ def ai_comment(items: list[dict]) -> str:
               "\n\n위 수급 흐름을 한국 주식 '판단 보조' 분석가로서 한두 문장(80자 이내)으로 코멘트해라. "
               "어느 테마·주체에 매수가 쏠렸는지 중심으로. 단정·예측·투자권유 금지.")
     try:
-        client = anthropic.Anthropic(api_key=key)
-        resp = client.messages.create(
-            model=settings.deudeumi_model, max_tokens=200,
-            system="간결한 한국 주식 수급 코멘트. 1~2문장, 과신 금지.",
-            messages=[{"role": "user", "content": prompt}],
-        )
-        try:
-            from app.analysis.token_usage import record
-            record(resp, settings.deudeumi_model, "deudeumi4")
-        except Exception:
-            pass
-        return next((b.text for b in resp.content if b.type == "text"), "").strip()
+        return llm.chat_text("간결한 한국 주식 수급 코멘트. 1~2문장, 과신 금지.",
+                             prompt, max_tokens=200, source="deudeumi4")
     except Exception:
         return ""

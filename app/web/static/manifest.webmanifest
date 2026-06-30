@@ -1,0 +1,15 @@
+{
+  "name": "주식 레이더 (Stock Watchdog)",
+  "short_name": "주식레이더",
+  "description": "실시간 시세·수급·AI 분석 · 내 관심종목과 매매일지",
+  "start_url": "/?src=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b0f1a",
+  "theme_color": "#142d5a",
+  "icons": [
+    { "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

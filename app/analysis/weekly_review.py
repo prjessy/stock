@@ -48,12 +48,8 @@ def _gather(registry) -> dict:
 
 
 def _ai_review(data: dict) -> str:
-    key = settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")
-    if not key:
-        return ""
-    try:
-        import anthropic
-    except Exception:
+    from app import llm
+    if not llm.configured():
         return ""
     parts = []
     od = data["orders"]
@@ -76,18 +72,8 @@ def _ai_review(data: dict) -> str:
               "1) 이번주 한 줄 총평\n2) 잘한 점 / 아쉬운 점\n3) 다음주 점검 포인트 2~3개\n"
               "간결하게(400자 내외), 단정·예측·투자권유 금지.")
     try:
-        client = anthropic.Anthropic(api_key=key)
-        resp = client.messages.create(
-            model=settings.deudeumi_model, max_tokens=800,
-            system="간결하고 균형 잡힌 주간 매매 복기. 과신·투자권유 금지.",
-            messages=[{"role": "user", "content": prompt}],
-        )
-        try:
-            from app.analysis.token_usage import record
-            record(resp, settings.deudeumi_model, "weekly_review")
-        except Exception:
-            pass
-        return next((b.text for b in resp.content if b.type == "text"), "").strip()
+        return llm.chat_text("간결하고 균형 잡힌 주간 매매 복기. 과신·투자권유 금지.",
+                             prompt, max_tokens=800, source="weekly_review")
     except Exception:
         return ""
 

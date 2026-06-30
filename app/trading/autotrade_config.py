@@ -48,18 +48,40 @@ def _clean_balmok(b) -> dict:
     }
 
 
+def _clean_splits(splits) -> list:
+    """분할 매수/매도 스케줄 [{symbol, time(HH:MM), side(buy|sell), qty}]. 잘못된 항목은 버림."""
+    out = []
+    if not isinstance(splits, list):
+        return out
+    for s in splits:
+        if not isinstance(s, dict):
+            continue
+        sym = str(s.get("symbol") or "").strip()
+        t = _hhmm(s.get("time"))
+        side = s.get("side")
+        q = _pos(s.get("qty"))
+        if not sym or not t or side not in ("buy", "sell") or not q:
+            continue
+        out.append({"symbol": sym, "time": t, "side": side, "qty": int(q)})
+    return out
+
+
 def load() -> dict:
     try:
         if _FILE.exists():
             d = json.loads(_FILE.read_text(encoding="utf-8"))
             return {
                 "enabled": bool(d.get("enabled", False)),
+                "trade_time_start": _hhmm(d.get("trade_time_start")),  # 자동매매 시작 시각(없으면 장 시작)
+                "trade_time_end": _hhmm(d.get("trade_time_end")),      # 자동매매 종료 시각(없으면 장 마감)
                 "rules": _clean_rules(d.get("rules") or {}),
                 "balmok": _clean_balmok(d.get("balmok")),
+                "splits": _clean_splits(d.get("splits")),
             }
     except Exception:
         pass
-    return {"enabled": False, "rules": {}, "balmok": dict(_BALMOK_DEFAULT)}
+    return {"enabled": False, "trade_time_start": None, "trade_time_end": None,
+            "rules": {}, "balmok": dict(_BALMOK_DEFAULT), "splits": []}
 
 
 def _clean_rules(rules: dict) -> dict:
@@ -90,7 +112,10 @@ def _clean_rules(rules: dict) -> dict:
         clean["ai_judge"] = bool(r.get("ai_judge", False))  # 1차 매수 전 AI 적정/위험 보조
         # step_pct가 있고(반복), 1차 기준(base_price 또는 buy_pct)이 있으면 그리드 모드
         is_grid = clean["step_pct"] is not None and (clean["base_price"] is not None or clean["buy_pct"] is not None)
-        if not is_grid and clean["buy_pct"] is None and all(clean[k] is None for k in _SELL_KEYS):
+        # 밴드 모드 트리거: 매수%(등락률) 또는 기준가(가격 이하) 또는 매도/손절/예약 중 하나라도 있으면 유지.
+        has_trigger = (clean["buy_pct"] is not None or clean["base_price"] is not None
+                       or any(clean[k] is not None for k in _SELL_KEYS))
+        if not is_grid and not has_trigger:
             continue
         clean["mode"] = "grid" if is_grid else "band"
         out[str(sym)] = clean
@@ -126,10 +151,16 @@ def save(cfg: dict) -> dict:
     cur = load()
     if "enabled" in cfg:
         cur["enabled"] = bool(cfg.get("enabled"))
+    if "trade_time_start" in cfg:
+        cur["trade_time_start"] = _hhmm(cfg.get("trade_time_start"))
+    if "trade_time_end" in cfg:
+        cur["trade_time_end"] = _hhmm(cfg.get("trade_time_end"))
     if isinstance(cfg.get("rules"), dict):
         cur["rules"] = _clean_rules(cfg["rules"])
     if isinstance(cfg.get("balmok"), dict):
         cur["balmok"] = _clean_balmok(cfg["balmok"])
+    if isinstance(cfg.get("splits"), list):
+        cur["splits"] = _clean_splits(cfg["splits"])
     try:
         _FILE.parent.mkdir(parents=True, exist_ok=True)
         _FILE.write_text(json.dumps(cur, ensure_ascii=False, indent=2), encoding="utf-8")

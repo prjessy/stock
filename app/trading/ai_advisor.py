@@ -44,13 +44,9 @@ def judge(symbol: str, feed: dict, base_price: float | None = None,
     """기준값·예산 기반 매수 적정성 판단. 실패 시 {error:...}."""
     if not feed or feed.get("error"):
         return {"symbol": symbol, "error": feed.get("error") if feed else "지표 없음"}
-    key = settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")
-    if not key:
-        return {"symbol": symbol, "error": "ANTHROPIC_API_KEY 미설정"}
-    try:
-        import anthropic
-    except Exception:
-        return {"symbol": symbol, "error": "anthropic 패키지 미설치"}
+    from app import llm
+    if not llm.configured():
+        return {"symbol": symbol, "error": "LLM 미설정(.env LLM_ENDPOINT/LLM_MODEL)"}
 
     price = feed.get("price")
     ctx = [f"현재가: {price}"]
@@ -77,21 +73,7 @@ def judge(symbol: str, feed: dict, base_price: float | None = None,
     )
 
     try:
-        client = anthropic.Anthropic(api_key=key)
-        resp = client.messages.create(
-            model=settings.deudeumi_model,
-            max_tokens=900,
-            system=_SYSTEM,
-            output_config={"format": {"type": "json_schema", "schema": _SCHEMA}},
-            messages=[{"role": "user", "content": prompt}],
-        )
-        try:
-            from app.analysis.token_usage import record as _rec_usage
-            _rec_usage(resp, settings.deudeumi_model, "ai_advisor")
-        except Exception:
-            pass
-        text = next((b.text for b in resp.content if b.type == "text"), "{}")
-        data = json.loads(text)
+        data = llm.chat_json(_SYSTEM, prompt, _SCHEMA, max_tokens=900, source="ai_advisor")
     except Exception as exc:
         return {"symbol": symbol, "error": f"AI 판단 실패: {exc}"}
 

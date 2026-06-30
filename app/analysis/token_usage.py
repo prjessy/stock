@@ -17,8 +17,10 @@ from app.config import settings
 
 _FILE = Path(settings.db_path).resolve().parent / "token_usage.json"
 
-# 모델별 추정 단가(USD / 1M tokens) — (입력, 출력). 미상 모델은 sonnet 으로 추정.
+# 모델별 추정 단가(USD / 1M tokens) — (입력, 출력).
+# 사설/로컬 LLM(qwen 등)은 자체 호스팅이라 비용 0 으로 본다.
 _PRICES = {
+    "local": (0.0, 0.0),
     "haiku": (1.0, 5.0),
     "sonnet": (3.0, 15.0),
     "opus": (15.0, 75.0),
@@ -31,7 +33,10 @@ def _tier(model: str) -> str:
         return "haiku"
     if "opus" in m:
         return "opus"
-    return "sonnet"
+    if "sonnet" in m or "claude" in m:
+        return "sonnet"
+    # claude 계열이 아니면(qwen/llama/local 등) 자체 호스팅으로 보고 비용 0.
+    return "local"
 
 
 def _cost(model: str, inp: int, out: int) -> float:
@@ -49,11 +54,15 @@ def _load_raw() -> dict:
 
 
 def record(resp, model: str, source: str) -> None:
-    """messages.create 응답의 usage 를 오늘 날짜에 누적. source='deudeumi'|'briefing'|'marketing'."""
+    """(레거시) Anthropic messages.create 응답 usage 누적. record_tokens 로 위임."""
+    u = getattr(resp, "usage", None)
+    record_tokens(int(getattr(u, "input_tokens", 0) or 0),
+                  int(getattr(u, "output_tokens", 0) or 0), source)
+
+
+def record_tokens(inp: int, out: int, source: str) -> None:
+    """입력/출력 토큰 수를 오늘 날짜에 누적(provider 무관). 예외는 절대 올리지 않는다."""
     try:
-        u = getattr(resp, "usage", None)
-        inp = int(getattr(u, "input_tokens", 0) or 0)
-        out = int(getattr(u, "output_tokens", 0) or 0)
         if inp == 0 and out == 0:
             return
         data = _load_raw()
@@ -81,7 +90,11 @@ def summary() -> dict:
     """오늘·이번달·전체 누적 토큰과 추정비용(USD). model 단가는 현재 설정 모델 기준."""
     data = _load_raw()
     days = data.get("days") or {}
-    model = settings.deudeumi_model
+    # 앱 백엔드가 anthropic 이면 Claude 모델(haiku 단가), 아니면 로컬 모델($0).
+    if (settings.llm_provider or "").strip().lower() == "anthropic":
+        model = settings.deudeumi_model
+    else:
+        model = settings.llm_model or settings.deudeumi_model
     today = datetime.now().strftime("%Y-%m-%d")
     month = today[:7]
 

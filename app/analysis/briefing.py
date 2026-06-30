@@ -60,12 +60,8 @@ def _us_quotes(registry) -> list[dict]:
 
 
 def _claude(quotes: list[dict], headlines: list[dict], ctx: dict) -> dict | None:
-    key = settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")
-    if not key:
-        return None
-    try:
-        import anthropic
-    except Exception:
+    from app import llm
+    if not llm.configured():
         return None
     qtxt = "\n".join(
         f"- {q['name']}: {q['price']} ({q['change_pct']:+.2f}%)"
@@ -86,18 +82,7 @@ def _claude(quotes: list[dict], headlines: list[dict], ctx: dict) -> dict | None
         f"반도체(삼성전자·SK하이닉스) 연관 영향을 강조."
     )
     try:
-        client = anthropic.Anthropic(api_key=key)
-        resp = client.messages.create(
-            model=settings.deudeumi_model,
-            max_tokens=2000,
-            system=_SYSTEM,
-            output_config={"format": {"type": "json_schema", "schema": _SCHEMA}},
-            messages=[{"role": "user", "content": prompt}],
-        )
-        from app.analysis.token_usage import record as _rec_usage
-        _rec_usage(resp, settings.deudeumi_model, "briefing")
-        text = next((b.text for b in resp.content if b.type == "text"), "{}")
-        return json.loads(text)
+        return llm.chat_json(_SYSTEM, prompt, _SCHEMA, max_tokens=2000, source="briefing")
     except Exception:
         return None
 
@@ -117,12 +102,13 @@ def generate(registry) -> dict:
     quotes = _us_quotes(registry)
     news: list[dict] = []
     for q in ["미국 증시", "필라델피아 반도체지수", "엔비디아"]:
-        news += _fetch_news(q, limit=3)
+        news += _fetch_news(q, limit=6, max_age_hours=48)  # 최근 48h 우선
     seen, uniq = set(), []
     for h in news:
         if h["title"] not in seen:
             seen.add(h["title"])
             uniq.append(h)
+    uniq.sort(key=lambda x: x.get("ts") or 0, reverse=True)  # 여러 검색어 합산본을 최신순으로
     uniq = uniq[:8]
     from app.core.market import us_brief_context
     ctx = us_brief_context()

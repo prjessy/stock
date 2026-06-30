@@ -38,6 +38,10 @@ def _meta(symbol: str) -> dict[str, str]:
     return {"name": _kr_resolve(symbol), "note": "코스피/코스닥"}
 
 
+# 종목코드 → 한글명 캐시(프로세스 전역, 이름은 거의 안 바뀜). KRX 리스트가 막힌 VPS 대비.
+_NAME_CACHE: dict[str, str] = {}
+
+
 class KisPriceSource(PriceSource):
     """KIS OpenAPI 로 국내 실시간 현재가를 조회한다(이력은 FDR 위임)."""
 
@@ -148,8 +152,44 @@ class KisPriceSource(PriceSource):
             "change_pct": change_pct,
         }
 
+    def get_name(self, symbol: str) -> str | None:
+        """종목코드 → 한글 약식명(KIS 주식기본조회 CTPF1604R). 프로세스 캐시. 실패 시 None.
+
+        KRX 전종목 리스트가 해외 VPS IP에서 차단돼 이름이 코드로만 나오는 문제 해결용.
+        """
+        if symbol in _NAME_CACHE:
+            return _NAME_CACHE[symbol] or None
+        if not settings.kis_app_key or not settings.kis_app_secret:
+            return None
+        try:
+            token = self._ensure_token()
+            resp = self._session.get(
+                f"{settings.kis_domain}/uapi/domestic-stock/v1/quotations/search-stock-info",
+                params={"PRDT_TYPE_CD": "300", "PDNO": symbol},
+                headers={
+                    "authorization": f"Bearer {token}",
+                    "appkey": settings.kis_app_key,
+                    "appsecret": settings.kis_app_secret,
+                    "tr_id": "CTPF1604R",
+                    "custtype": "P",
+                },
+                timeout=_TIMEOUT,
+            )
+            resp.raise_for_status()
+            out = resp.json().get("output", {}) or {}
+            name = (out.get("prdt_abrv_name") or out.get("prdt_name") or "").strip()
+            _NAME_CACHE[symbol] = name           # 빈값도 캐시(반복 호출 방지)
+            return name or None
+        except Exception:
+            return None
+
     def get_quote(self, symbol: str) -> dict:
         meta = _meta(symbol)
+        # 메타·KRX리스트로 이름을 못 풀어 코드 그대로면 KIS 기본조회로 한글명 보강.
+        if meta.get("name") == symbol:
+            nm = self.get_name(symbol)
+            if nm:
+                meta = {**meta, "name": nm}
         cache_key = f"quote:{symbol}"
         cached = self._cache.get(cache_key)
         if cached is not None:
@@ -319,8 +359,25 @@ class KisPriceSource(PriceSource):
             orgn_sum = sum(_f(r.get("orgn_ntby_qty")) or 0 for r in recent)
             prsn_sum = sum(_f(r.get("prsn_ntby_qty")) or 0 for r in recent)
             latest = out[0]
+            # KIS 수급은 '확정된 거래일' 기준이라 out[0] 이 항상 오늘은 아니다.
+            #  - 장전(프리장): out[0] = 전일  → is_today=False (UI 가 '전일 기준' 표기)
+            #  - 본장 진행 중: 당일 수치가 부분치/미확정 → confirmed=False
+            #  - 장마감 후:    당일 수치 확정    → confirmed=True
+            # 그래서 asof(실제 거래일)·is_today·confirmed 를 함께 내려 '장중/장전 값 이상'을 막는다.
+            asof = latest.get("stck_bsop_date")
+            from datetime import datetime, timedelta, timezone
+            from app.core.market import current_session
+            today_kst = datetime.now(timezone(timedelta(hours=9))).strftime("%Y%m%d")
+            sess = current_session()
+            is_today = bool(asof) and asof == today_kst
+            confirmed = not (is_today and sess.get("session") == "regular")
             return {
-                "date": latest.get("stck_bsop_date"),
+                "date": asof,
+                "asof": asof,
+                "is_today": is_today,
+                "confirmed": confirmed,
+                "session": sess.get("session"),
+                "session_label": sess.get("label"),
                 "frgn_ntby_qty": _f(latest.get("frgn_ntby_qty")),
                 "orgn_ntby_qty": _f(latest.get("orgn_ntby_qty")),
                 "prsn_ntby_qty": _f(latest.get("prsn_ntby_qty")),

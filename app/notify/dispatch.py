@@ -15,21 +15,51 @@ logger = logging.getLogger(__name__)
 _HERMES = "/usr/local/bin/hermes"
 
 
-def notify_all(subject: str, msg: str) -> dict:
-    """텔레그램+카카오로 동시 발송. {telegram: bool, kakao: bool} 반환(절대 raise 안 함)."""
+def alert_recipients() -> list[dict]:
+    """ALERT_TELEGRAM_IDS 를 [{id, name}] 로 파싱. 각 항목은 'id' 또는 'id:이름'.
+
+    이름은 표시·헷갈림 방지용(발송엔 id만 사용). 예: '536439890:jessy,393257633:블롱레'.
+    """
+    from app.config import settings
+    out: list[dict] = []
+    for x in settings.alert_telegram_ids:
+        i, _, n = x.partition(":")
+        i = i.strip()
+        if i:
+            out.append({"id": i, "name": n.strip()})
+    return out
+
+
+def notify_all(subject: str, msg: str, shared: bool = False) -> dict:
+    """텔레그램+카카오로 동시 발송. {telegram: bool, kakao: bool} 반환(절대 raise 안 함).
+
+    shared=True(시황성 알람)면 ALERT_TELEGRAM_IDS(.env) 의 chat id 전체로 팬아웃 발송.
+    shared=False(기본, 개인정보성: 보유·주간복기·자동매매 체결·목표가)면 홈채널(본인)만.
+    일부 수신자 실패해도 나머지는 계속 보낸다.
+    """
+    from app.config import settings
     out: dict = {}
-    # 1) 텔레그램 (Hermes 중계)
-    try:
-        subprocess.run(
-            [_HERMES, "send", "--to", "telegram", "--subject", subject, msg],
-            env={**os.environ, "HERMES_HOME": os.environ.get("HERMES_HOME", "/root/.hermes")},
-            timeout=30, capture_output=True,
-        )
-        out["telegram"] = True
-    except Exception as exc:
-        out["telegram"] = False
-        out["telegram_error"] = str(exc)
-        logger.warning("텔레그램(Hermes) 발송 실패: %s", exc)
+    env = {**os.environ, "HERMES_HOME": os.environ.get("HERMES_HOME", "/root/.hermes")}
+    # 1) 텔레그램 (Hermes 중계) — 시황 알람만 지인 목록으로, 개인정보성은 홈채널(본인)만.
+    recips = alert_recipients()
+    targets = [f"telegram:{r['id']}" for r in recips] if (shared and recips) else ["telegram"]
+    ok_any, errs = False, []
+    for tgt in targets:
+        try:
+            r = subprocess.run(
+                [_HERMES, "send", "--to", tgt, "--subject", subject, msg, "-q"],
+                env=env, timeout=30, capture_output=True,
+            )
+            if r.returncode == 0:
+                ok_any = True
+            else:
+                errs.append(f"{tgt}: rc={r.returncode} {r.stderr.decode('utf-8', 'ignore')[:80]}")
+        except Exception as exc:
+            errs.append(f"{tgt}: {exc}")
+    out["telegram"] = ok_any
+    if errs:
+        out["telegram_error"] = "; ".join(errs)
+        logger.warning("텔레그램(Hermes) 일부/전체 발송 실패: %s", "; ".join(errs))
     # 2) 카카오 '나에게 보내기' (연동돼 있을 때만)
     try:
         from app.kakao_notify import linked, send as kakao_send

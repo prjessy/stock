@@ -47,12 +47,8 @@ def _gather(registry) -> list[dict]:
 
 
 def _ai_care(holdings: list[dict]) -> str:
-    key = settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")
-    if not key or not holdings:
-        return ""
-    try:
-        import anthropic
-    except Exception:
+    from app import llm
+    if not llm.configured() or not holdings:
         return ""
     lines = []
     for h in holdings:
@@ -65,18 +61,8 @@ def _ai_care(holdings: list[dict]) -> str:
               "한 줄 이유를 달아라. 손실 크고 추세 나쁘면 손절검토, 이익 크고 과열이면 익절검토. "
               "단정·예측·투자권유 금지. 간결하게.")
     try:
-        client = anthropic.Anthropic(api_key=key)
-        resp = client.messages.create(
-            model=settings.deudeumi_model, max_tokens=700,
-            system="간결하고 균형 잡힌 보유종목 코멘트. 추천이지 지시가 아님. 과신 금지.",
-            messages=[{"role": "user", "content": prompt}],
-        )
-        try:
-            from app.analysis.token_usage import record
-            record(resp, settings.deudeumi_model, "holdings_care")
-        except Exception:
-            pass
-        return next((b.text for b in resp.content if b.type == "text"), "").strip()
+        return llm.chat_text("간결하고 균형 잡힌 보유종목 코멘트. 추천이지 지시가 아님. 과신 금지.",
+                             prompt, max_tokens=700, source="holdings_care")
     except Exception:
         return ""
 

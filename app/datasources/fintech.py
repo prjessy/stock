@@ -48,6 +48,52 @@ def _last_two(symbol: str):
         return None, None, None
 
 
+# ---- 비트코인 실시간 (업비트 공개 API · 무료·무키) ------------------------
+def btc_live() -> dict:
+    """업비트 BTC 실시간 — 원화(KRW) + 달러(USDT≈USD) 동시. 5초 캐시(거의 실시간).
+
+    {ok, price(KRW), change_pct, usd, usd_change_pct}. 업비트 공개 API(키 불필요). 실패 시 {ok:False}.
+    """
+    def build():
+        import requests
+        try:
+            r = requests.get("https://api.upbit.com/v1/ticker",
+                             params={"markets": "KRW-BTC,USDT-BTC"},
+                             headers={"User-Agent": "Mozilla/5.0"}, timeout=6)
+            r.raise_for_status()
+            arr = {d["market"]: d for d in r.json()}
+            out = {"ok": False}
+            k = arr.get("KRW-BTC")
+            if k:
+                out["ok"] = True
+                out["price"] = round(float(k["trade_price"]))
+                out["change_pct"] = round(float(k.get("signed_change_rate") or 0) * 100, 2)
+            u = arr.get("USDT-BTC")
+            if u:
+                out["usd"] = round(float(u["trade_price"]))
+                out["usd_change_pct"] = round(float(u.get("signed_change_rate") or 0) * 100, 2)
+            return out
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+    return _cached("btc_live", 5, build)
+
+
+def btc_spark() -> list:
+    """업비트 KRW-BTC 최근 20일 종가(오래된→최신, 원화). 실패 시 []. 1시간 캐시."""
+    def build():
+        import requests
+        try:
+            r = requests.get("https://api.upbit.com/v1/candles/days",
+                             params={"market": "KRW-BTC", "count": 20},
+                             headers={"User-Agent": "Mozilla/5.0"}, timeout=6)
+            r.raise_for_status()
+            data = r.json()  # 최신순 → 뒤집어 오래된→최신
+            return [round(float(c["trade_price"])) for c in data][::-1]
+        except Exception:
+            return []
+    return _cached("btc_spark", 3600, build)
+
+
 # ---- 금·원자재·환율 --------------------------------------------------------
 _MARKET_DEFS = [
     {"key": "gold", "name": "금 (현물 USD/oz)", "symbol": "GC=F", "unit": "$", "emoji": "🥇", "pct": True},
@@ -55,6 +101,7 @@ _MARKET_DEFS = [
     {"key": "wti", "name": "WTI 원유 (USD/bbl)", "symbol": "CL=F", "unit": "$", "emoji": "🛢️", "pct": True},
     {"key": "dxy", "name": "달러 인덱스 (DXY)", "symbol": "DX-Y.NYB", "unit": "", "emoji": "💵", "pct": True},
     {"key": "usdkrw", "name": "원/달러 환율", "symbol": "USD/KRW", "unit": "₩", "emoji": "💱", "pct": True},
+    {"key": "btc", "name": "비트코인 (실시간·KRW)", "symbol": "BTC/USD", "unit": "₩", "emoji": "₿", "pct": True},
 ]
 
 
@@ -65,7 +112,7 @@ _PIN_DEFS = [
     {"key": "nasdaq", "name": "NASDAQ", "symbol": "IXIC", "unit": ""},
     {"key": "usdkrw", "name": "USD/KRW", "symbol": "USD/KRW", "unit": "₩"},
     {"key": "dxy", "name": "달러인덱스", "symbol": "DX-Y.NYB", "unit": ""},
-    {"key": "btc", "name": "비트코인", "symbol": "BTC/USD", "unit": "$"},
+    {"key": "btc", "name": "비트코인", "symbol": "BTC/USD", "unit": "₩"},
     {"key": "wti", "name": "WTI", "symbol": "CL=F", "unit": "$"},
     {"key": "gold", "name": "금", "symbol": "GC=F", "unit": "$"},
 ]
@@ -77,6 +124,24 @@ def pins() -> dict:
         out = []
         for d in _PIN_DEFS:
             try:
+                # 비트코인: 값·등락·스파크라인 모두 업비트(KRW) 실시간/원화 일봉으로.
+                if d["key"] == "btc":
+                    sp = btc_spark()
+                    if sp:
+                        cur = sp[-1]
+                        prev = sp[-2] if len(sp) >= 2 else cur
+                        chg = round((cur - prev) / prev * 100, 2) if prev else 0.0
+                    else:
+                        cur, chg = None, 0.0
+                    live = btc_live()
+                    if live.get("ok"):
+                        cur, chg = live["price"], live["change_pct"]
+                    if cur is None:
+                        continue
+                    out.append({"key": "btc", "name": d["name"], "unit": d["unit"],
+                                "value": cur, "change_pct": chg, "spark": sp,
+                                "usd": live.get("usd"), "usd_change_pct": live.get("usd_change_pct")})
+                    continue
                 df = _fdr().DataReader(d["symbol"]).dropna()
                 closes = [round(float(x), 2) for x in df["Close"].dropna().tolist()[-20:]]
                 if not closes:
@@ -97,6 +162,15 @@ def markets() -> dict:
     def build():
         out = []
         for d in _MARKET_DEFS:
+            # 비트코인은 업비트 실시간(KRW). 실패 시 FDR(USD)로 폴백.
+            if d["key"] == "btc":
+                live = btc_live()
+                if live.get("ok"):
+                    out.append({"key": "btc", "name": d["name"], "emoji": d["emoji"],
+                                "unit": d["unit"], "value": live["price"],
+                                "change_pct": live["change_pct"], "date": "실시간",
+                                "usd": live.get("usd"), "usd_change_pct": live.get("usd_change_pct")})
+                    continue
             cur, prev, date = _last_two(d["symbol"])
             chg = None
             if cur is not None and prev:
@@ -153,9 +227,175 @@ def rates() -> dict:
     return _cached("rates", 6 * 3600, build)  # 6시간
 
 
-# ---- 공모주 청약 달력 (네이버 금융, VPS 접속 가능) -------------------------
+# ---- 공모주 일정: 38커뮤니케이션(청약일정+신규상장) 우선, 네이버 폴백 ----------
+# 38커뮤니케이션이 청약일(공모청약일정)과 상장일(신규상장)을 모두·완전하게 제공한다.
+# 단, 38.co.kr 은 구형 TLS 서버라 일반 requests 로는 SSL 핸드셰이크가 실패 → 레거시 SSL 어댑터로 접속.
+def _legacy_session():
+    """구형 TLS(38.co.kr 등) 접속용 requests 세션 — 보안레벨 1·레거시 재협상 허용."""
+    import requests
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.ssl_ import create_urllib3_context
+
+    class _LegacyTLS(HTTPAdapter):
+        def init_poolmanager(self, *a, **k):
+            ctx = create_urllib3_context()
+            try:
+                ctx.set_ciphers("DEFAULT@SECLEVEL=1")
+                ctx.options |= 0x4  # OP_LEGACY_SERVER_CONNECT
+            except Exception:
+                pass
+            k["ssl_context"] = ctx
+            super().init_poolmanager(*a, **k)
+
+    s = requests.Session()
+    s.mount("https://", _LegacyTLS())
+    return s
+
+
+_DNS_LOCK = __import__("threading").Lock()
+
+
+def _doh_resolve(host: str):
+    """공개 DoH(1.1.1.1, IP리터럴이라 시스템 DNS 불필요)로 A레코드 조회. 1시간 캐시. 실패 시 None.
+
+    일부 VPS의 로컬 리졸버(systemd-resolved)가 38.co.kr 등 특정 도메인을 해석 못 해도
+    이 경로로 직접 IP를 얻어 접속할 수 있게 한다(시스템 DNS 변경 불필요).
+    """
+    def build():
+        import requests
+        try:
+            r = requests.get("https://1.1.1.1/dns-query",
+                             params={"name": host, "type": "A"},
+                             headers={"accept": "application/dns-json"}, timeout=8)
+            for ans in r.json().get("Answer", []):
+                if ans.get("type") == 1:
+                    return ans["data"]
+        except Exception:
+            return None
+        return None
+    return _cached(f"doh:{host}", 3600, build)
+
+
+def _pin_host(host: str, ip: str):
+    """socket.getaddrinfo 에서 host→ip 만 강제하는 컨텍스트매니저(그 외 호스트는 원함수).
+    URL/Host헤더/SNI/인증서검증은 그대로라 안전. ip 가 없으면 아무것도 안 함."""
+    from contextlib import contextmanager, nullcontext
+    if not ip:
+        return nullcontext()
+
+    @contextmanager
+    def _cm():
+        import socket as _s
+        orig = _s.getaddrinfo
+
+        def patched(h, port=None, *a, **k):
+            if h == host:
+                return [(_s.AF_INET, _s.SOCK_STREAM, 6, "", (ip, port))]
+            return orig(h, port, *a, **k)
+
+        with _DNS_LOCK:
+            _s.getaddrinfo = patched
+            try:
+                yield
+            finally:
+                _s.getaddrinfo = orig
+    return _cm()
+
+
+def _38_rows(session, o: str, pages: int) -> list[list[str]]:
+    """38커뮤니케이션 표 페이지(o=k 청약일정 / o=nw 신규상장)에서 <tr>별 셀 리스트.
+    각 셀은 태그 제거·공백 정리한 문자열. 헤더/빈 행은 호출부가 날짜로 거른다."""
+    import html as H
+    out: list[list[str]] = []
+    ip = _doh_resolve("www.38.co.kr")   # VPS 로컬 DNS가 38을 못 풀어도 접속되게
+    with _pin_host("www.38.co.kr", ip):
+      for pg in range(1, pages + 1):
+        try:
+            r = session.get("https://www.38.co.kr/html/fund/index.htm",
+                            params={"o": o, "page": pg},
+                            headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+            r.encoding = "euc-kr"
+        except Exception:
+            break
+        for tr in re.split(r"<tr\b", r.text, flags=re.I)[1:]:
+            cells = []
+            for cell in re.findall(r"<td\b[^>]*>(.*?)</td>", tr, flags=re.I | re.S):
+                txt = H.unescape(re.sub("<[^>]+>", " ", cell)).replace("\xa0", " ")
+                cells.append(re.sub(r"\s+", " ", txt).strip())
+            if cells:
+                out.append(cells)
+    return out
+
+
+def _ipo_from_38(limit: int, q: str = "") -> dict:
+    """38커뮤니케이션 — 청약일정(o=k)+신규상장(o=nw) 병합. 종목명·청약일·공모가·주관사·경쟁률·상장일."""
+    s = _legacy_session()
+    pages = 6 if q else 1   # 검색이면 여러 페이지(과거 종목까지), 평소엔 최근+임박 1페이지
+
+    # 1) 공모청약일정: [종목명, 청약일(YYYY.MM.DD~MM.DD), 확정공모가, 희망공모가, (경쟁률), 주간사, ...]
+    sub: dict[str, dict] = {}
+    for c in _38_rows(s, "k", pages):
+        if len(c) < 6 or not re.match(r"\d{4}\.\d{2}\.\d{2}\s*~\s*\d{2}\.\d{2}", c[1]):
+            continue
+        name = c[0]
+        fixed, hope, rate, under = c[2], c[3], c[4], c[5]
+        price = fixed if (fixed and fixed != "-") else (hope or "-")
+        sub[name] = {
+            "schedule": c[1].replace(" ", ""),
+            "price": (price + "원") if (price and price != "-") else "-",
+            "rate": rate if (rate and ":" in rate) else "-",
+            "underwriter": under or "-",
+        }
+
+    # 2) 신규상장: [기업명, 신규상장일(YYYY/MM/DD), 현재가, 전일비, 공모가, 등락률, ...]
+    listed: dict[str, dict] = {}
+    for c in _38_rows(s, "nw", pages):
+        if len(c) < 5:
+            continue
+        m = re.match(r"(\d{4})/(\d{2})/(\d{2})", c[1])
+        if not m:
+            continue
+        listed[c[0]] = {
+            "listing": f"{m.group(1)}.{m.group(2)}.{m.group(3)}",
+            "ipo_price": c[4],
+            "cur_price": c[2] if (c[2] and "%" not in c[2] and c[2] != "-") else "",
+            "cur_change": c[3] if (len(c) > 3 and "%" in c[3]) else "",
+        }
+
+    names = list(dict.fromkeys(list(sub.keys()) + list(listed.keys())))
+    items = []
+    for name in names:
+        if q and q not in name:
+            continue
+        b = sub.get(name, {})
+        L = listed.get(name, {})
+        price = b.get("price", "-")
+        if (not price or price == "-") and L.get("ipo_price"):
+            price = L["ipo_price"] + "원"
+        items.append({
+            "name": name,
+            "market": "",
+            "schedule": b.get("schedule", "-"),
+            "price": price or "-",
+            "underwriter": b.get("underwriter", "-"),
+            "rate": b.get("rate", "-"),
+            "listing": L.get("listing", "-"),
+            "listed_price": L.get("cur_price", ""),
+            "listed_change": L.get("cur_change", ""),
+        })
+
+    def _key(it):  # 청약시작일(없으면 상장일) 기준 최신 우선
+        s0 = it["schedule"][:10] if it["schedule"] not in ("", "-") else ""
+        return s0 or (it["listing"] if it["listing"] != "-" else "")
+    items.sort(key=_key, reverse=True)
+    if not q:
+        items = items[:limit]
+    return {"ok": bool(items), "items": items, "source": "38커뮤니케이션",
+            "error": "" if items else "일정을 가져오지 못했습니다(구조 변경 가능)."}
+
+
 def _ipo_from_naver(limit: int) -> dict:
-    """네이버 금융 IPO 페이지 파싱 — 종목·청약일·공모가·주관사·상장일."""
+    """네이버 금융 IPO 폴백 — 임박 청약만(신규상장/당일상장 종목은 누락될 수 있음)."""
     import requests
     import html as H
     r = requests.get("https://finance.naver.com/sise/ipo.naver",
@@ -179,22 +419,39 @@ def _ipo_from_naver(limit: int) -> dict:
             "underwriter": under or "-",
             "rate": (rate.replace(" ", "") if rate else "-"),   # 개인청약 경쟁률
             "listing": ("20" + listing) if listing else "-",
+            "listed_price": "", "listed_change": "",
         })
     return {"ok": bool(items), "items": items, "source": "naver",
             "error": "" if items else "파싱된 일정이 없습니다(구조 변경 가능)."}
 
 
-def ipo_calendar(limit: int = 30) -> dict:
-    """공모주 청약일정 — 종목·청약일·공모가·주관사·상장일. 네이버 우선, 실패 시 안내."""
+def ipo_calendar(limit: int = 40, q: str = "") -> dict:
+    """공모주 일정 — 종목·청약일·공모가·주관사·경쟁률·상장일. 38커뮤니케이션 우선, 실패 시 네이버.
+
+    q 주어지면 종목명 검색(38은 여러 페이지에서 과거 종목까지 탐색).
+    """
+    q = (q or "").strip()
+
     def build():
         try:
+            res = _ipo_from_38(limit, q)
+            if res.get("items"):
+                return res
+        except Exception:
+            pass
+        # 폴백: 네이버(임박 청약만)
+        try:
             res = _ipo_from_naver(limit)
+            if q:
+                res["items"] = [it for it in res.get("items", []) if q in it["name"]]
+                res["ok"] = bool(res["items"])
             if res.get("items"):
                 return res
         except Exception as exc:
-            return {"ok": False, "items": [], "error": f"청약 일정 조회 실패: {exc}", "source": "naver"}
-        return {"ok": False, "items": [], "error": "청약 일정을 가져오지 못했습니다.", "source": "naver"}
-    return _cached(f"ipo:{limit}", 3 * 3600, build)  # 3시간
+            return {"ok": False, "items": [], "error": f"공모주 일정 조회 실패: {exc}", "source": "38/naver"}
+        return {"ok": False, "items": [], "error": "공모주 일정을 가져오지 못했습니다.", "source": "38/naver"}
+
+    return _cached(f"ipo:{limit}:{q}", 3 * 3600, build)  # 3시간
 
 
 # ---- 부동산 거래량 (국토부 아파트매매 실거래가, 3000세대+ 대단지만) ----------

@@ -82,23 +82,56 @@ CREATE TABLE IF NOT EXISTS sessions (
 """
 
 # 사용자별 매매일지. 사용자(user_id)마다 자기 기록만 보고 쓴다.
+# side: 매수/매도/배당/메모. currency: KRW/USD(+fx_rate 환율). tax: 세금(원).
+# amount: 총 거래대금(원, =price*qty*fx_rate). realized_pnl: 매도 시 평단 대비 실현손익(원).
 CREATE_JOURNAL = """
 CREATE TABLE IF NOT EXISTS journal (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id     INTEGER NOT NULL,
-    trade_date  TEXT    NOT NULL,
-    symbol      TEXT,
-    name        TEXT,
-    side        TEXT,
-    price       REAL,
-    qty         REAL,
-    reason      TEXT,
-    memo        TEXT,
-    created_at  TEXT    NOT NULL,
-    updated_at  TEXT    NOT NULL,
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id      INTEGER NOT NULL,
+    trade_date   TEXT    NOT NULL,
+    symbol       TEXT,
+    name         TEXT,
+    side         TEXT,
+    price        REAL,
+    qty          REAL,
+    category     TEXT    DEFAULT '일반주',
+    currency     TEXT    DEFAULT 'KRW',
+    fx_rate      REAL    DEFAULT 1,
+    tax          REAL    DEFAULT 0,
+    amount       REAL,
+    realized_pnl REAL,
+    reason       TEXT,
+    memo         TEXT,
+    created_at   TEXT    NOT NULL,
+    updated_at   TEXT    NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 """
+
+# 사용자별 관심종목(대시보드 워치리스트). user_id 마다 자기 종목만 보고 추가/삭제한다.
+# market: 'KR'(국내 6자리) / 'US'(미국 티커). 첫 로그인 시 .env 기본종목으로 시드한다.
+CREATE_WATCHLIST = """
+CREATE TABLE IF NOT EXISTS watchlist (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id   INTEGER NOT NULL,
+    symbol    TEXT    NOT NULL,
+    market    TEXT    NOT NULL DEFAULT 'KR',
+    added_at  TEXT    NOT NULL,
+    UNIQUE (user_id, symbol),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+"""
+
+# 기존 DB(구버전 journal)에 누락 컬럼만 idempotent 하게 추가하기 위한 (컬럼, DDL) 목록.
+# SQLite 는 ADD COLUMN IF NOT EXISTS 가 없어 db.py 가 PRAGMA 로 존재 여부를 확인 후 실행한다.
+JOURNAL_ADD_COLUMNS = [
+    ("category", "ALTER TABLE journal ADD COLUMN category TEXT DEFAULT '일반주'"),
+    ("currency", "ALTER TABLE journal ADD COLUMN currency TEXT DEFAULT 'KRW'"),
+    ("fx_rate", "ALTER TABLE journal ADD COLUMN fx_rate REAL DEFAULT 1"),
+    ("tax", "ALTER TABLE journal ADD COLUMN tax REAL DEFAULT 0"),
+    ("amount", "ALTER TABLE journal ADD COLUMN amount REAL"),
+    ("realized_pnl", "ALTER TABLE journal ADD COLUMN realized_pnl REAL"),
+]
 
 # init_db() 가 순서대로 실행할 DDL 목록.
 ALL_TABLES = [
@@ -110,4 +143,5 @@ ALL_TABLES = [
     CREATE_USERS,
     CREATE_SESSIONS,
     CREATE_JOURNAL,
+    CREATE_WATCHLIST,
 ]

@@ -70,6 +70,16 @@ class AutoTradeWatcher:
                 logger.exception("autotrade 틱 실패")
             self._stop.wait(self._interval)
 
+    def _in_trade_window(self, cfg: dict, hhmm: str) -> bool:
+        """자동매매 허용 시간대 안인지. trade_time_start~end(HH:MM, 미설정이면 장 전체)."""
+        ts = cfg.get("trade_time_start")
+        te = cfg.get("trade_time_end")
+        if ts and hhmm < ts:
+            return False
+        if te and hhmm >= te:
+            return False
+        return True
+
     def _check(self) -> None:
         now = datetime.now(_KST)
         if not is_market_open(now):
@@ -78,23 +88,36 @@ class AutoTradeWatcher:
         enabled = cfg.get("enabled")
         rules = cfg.get("rules") or {}
         balmok = cfg.get("balmok") or {}
-        run_balmok = balmok.get("alert") or (balmok.get("auto_buy") and enabled)
-        if not enabled and not run_balmok:
+        splits = cfg.get("splits") or []
+        hhmm = now.strftime("%H:%M")
+        # 사용자 지정 시간 범위(시작~종료) 밖이면 실거래는 멈춘다(발목 '알람'만 예외).
+        in_window = self._in_trade_window(cfg, hhmm)
+        trade_on = bool(enabled and in_window)
+        run_balmok = balmok.get("alert") or (balmok.get("auto_buy") and trade_on)
+        if not enabled and not balmok.get("alert"):
             return   # 아무것도 안 켜짐
         src = self._registry.kr_source()
         if not hasattr(src, "_ensure_token"):
             return
         client = OrderClient(src)
         quotes = {q.get("symbol"): q for q in self._poller.quotes() if not q.get("stale")}
-        # 🦶 발목 감지(알람·옵션 자동매수) — master 무관하게 알람은 동작
+        # 🦶 발목 감지(알람·옵션 자동매수) — 알람은 master·시간범위 무관, 자동매수는 trade_on 일 때만
         if run_balmok:
-            self._maybe_balmok(now, balmok, enabled, client, quotes)
-        # 등락률 밴드·손절·예약 주문은 master ON + 규칙 있을 때만
-        if not (enabled and rules):
+            self._maybe_balmok(now, balmok, trade_on, client, quotes)
+        # 이하 실거래(분할·밴드·손절·예약)는 master ON + 시간 범위 안일 때만
+        if not trade_on:
+            return
+        # ⏱️ 분할 매수/매도 스케줄 — 예정 시각 도달 시 1회씩(거래일 단위 중복방지)
+        if splits:
+            try:
+                self._check_splits(client, splits, quotes, hhmm)
+            except Exception:
+                logger.exception("분할 스케줄 틱 실패")
+        # 등락률 밴드·손절·예약 주문은 규칙 있을 때만
+        if not rules:
             return
         bal = client.get_balance()
         held = {h["symbol"]: h for h in (bal.get("holdings") or [])} if bal.get("ok") else {}
-        hhmm = now.strftime("%H:%M")
         for sym, rule in rules.items():
             q = quotes.get(sym)
             if not q:
@@ -111,12 +134,18 @@ class AutoTradeWatcher:
                 except Exception:
                     logger.exception("grid 틱 실패 %s", sym)
                 continue
-            # ① 매수 (등락률 밴드) — 보유 여부와 무관
+            # ① 매수 (밴드) — 기준가(가격 ≤ 기준가) 또는 등락률(cp ≤ 매수%). 보유 여부 무관.
+            #    주문은 '현재가' 지정가(즉시 체결). 기준가는 '언제 살지' 트리거일 뿐 주문가가 아님.
             bp = rule.get("buy_pct")
-            if (bp is not None and cp is not None and price > 0
-                    and not self._done_action(sym, "buy") and cp <= bp):
+            base = rule.get("base_price")
+            why = None
+            if base is not None and price > 0 and price <= base:
+                why = f"기준가 {int(base):,}원 이하(현재 {int(price):,})"
+            elif bp is not None and cp is not None and price > 0 and cp <= bp:
+                why = f"등락률 {cp:+.2f}% ≤ {bp:g}%"
+            if why and not self._done_action(sym, "buy"):
                 self._mark(sym, "buy")
-                self._buy(client, sym, name, rule, int(price), cp)
+                self._buy(client, sym, name, rule, int(price), why)
                 continue  # 같은 틱에 매도까지 하지 않음
             # ② 매도 — 보유분 필요
             if self._done_action(sym, "sell"):
@@ -129,6 +158,36 @@ class AutoTradeWatcher:
             if reason:
                 self._mark(sym, "sell")
                 self._sell(client, sym, name, h, rule, price or h.get("cur_price") or 0, reason)
+
+    def _check_splits(self, client, splits, quotes, hhmm) -> None:
+        """분할 매수/매도 스케줄 실행. 예정 시각(time) 도달분만, 종목·시각·방향당 거래일 1회."""
+        for s in splits:
+            sym = s.get("symbol")
+            t = s.get("time")
+            side = s.get("side")
+            qty = int(s.get("qty") or 0)
+            if not sym or not t or side not in ("buy", "sell") or qty <= 0:
+                continue
+            if hhmm < t:
+                continue  # 아직 예정 시각 전
+            action = f"split:{t}:{side}"
+            if self._done_action(sym, action):
+                continue
+            q = quotes.get(sym)
+            if not q or not q.get("price"):
+                continue
+            price = int(q.get("price"))
+            name = q.get("name") or sym
+            self._mark(sym, action)  # 주문 전 마킹(중복 방지) — 실패해도 같은 틱 재시도 안 함
+            res = client.place_order(sym, side, qty, price=price, cap=qty)
+            label = "매수" if side == "buy" else "매도"
+            if res.get("ok"):
+                notify_all(f"⏱️ 분할 {label} 실행",
+                           f"{name}({sym}) {qty}주 {label} 접수\n"
+                           f"예정 {t} · 지정가 {price:,}원 · 주문번호 {res.get('order_no','-')}")
+            else:
+                notify_all(f"⚠️ 분할 {label} 실패",
+                           f"{name}({sym}) {label} 시도 실패\n예정 {t}\n오류: {res.get('error','')}")
 
     def _maybe_balmok(self, now, balmok, master_on, client, quotes) -> None:
         """발목(저점권) 스캔 → 알람(텔레그램·카톡) + 옵션 자동매수. 10분 throttle, 종목당 하루 1회."""
@@ -202,13 +261,13 @@ class AutoTradeWatcher:
             return f"예약 매도 시각 도달({st})"
         return None
 
-    def _buy(self, client, sym, name, rule, price, cp) -> None:
+    def _buy(self, client, sym, name, rule, price, why) -> None:
         qty = int(rule.get("qty") or 1)
         res = client.place_order(sym, "buy", qty, price=price, cap=qty)
         if res.get("ok"):
             notify_all("🤖 자동 매수 실행",
-                       f"{name}({sym}) {min(qty, qty)}주 매수 접수\n"
-                       f"사유: 등락률 {cp:+.2f}% ≤ {rule.get('buy_pct'):g}%\n"
+                       f"{name}({sym}) {qty}주 매수 접수\n"
+                       f"사유: {why}\n"
                        f"지정가 {price:,}원 · 주문번호 {res.get('order_no','-')}")
         else:
             notify_all("⚠️ 자동 매수 실패",

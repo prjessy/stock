@@ -97,7 +97,7 @@ class AlertWatcher:
                 for k in range(1, n + 1):
                     level = round(sign * step * k, 4)
                     if self._mark(symbol, f"pct{level:+g}"):
-                        notify_all("🔔 등락 알림", self._msg_pct(q, level))
+                        notify_all("🔔 등락 알림", self._msg_pct(q, level), shared=True)
             # ② 목표금액
             if "target" in types and q.get("price") is not None:
                 tg = targets.get(symbol)
@@ -165,7 +165,7 @@ class AlertWatcher:
                 continue
         if hits:
             notify_all("🟣 더듬이1 · 피보나치 근접",
-                       "오늘 09시 기준 피보나치 지지/저항 근접:\n" + "\n".join(hits))
+                       "오늘 09시 기준 피보나치 지지/저항 근접:\n" + "\n".join(hits), shared=True)
 
     def _run_deudeumi4(self) -> None:
         """테마(조선·방산·원전·반도체·소부장) 대표종목 중 외인·기관 신규 매수 유입 → 알림.
@@ -182,6 +182,6 @@ class AlertWatcher:
             hits = [f"[{i['theme']}] {i['name']}({i['code']}) {i['who']} {i.get('reason','')} +{i['qty']:,}주" for i in items]
             notify_all("🟢 더듬이4 · 테마 수급 포착",
                        f"테마 대표종목 중 신규편입·급증매수 {len(hits)}종목 (09시):\n"
-                       + "\n".join(hits[:30]))
+                       + "\n".join(hits[:30]), shared=True)
         else:
             logger.info("더듬이4: 신규 매수 유입 종목 없음")

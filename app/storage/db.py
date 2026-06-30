@@ -35,10 +35,21 @@ class Repository:
         self.conn = _connect(self.db_path)
 
     def init_db(self) -> None:
-        """모든 테이블을 idempotent 하게 생성한다."""
+        """모든 테이블을 idempotent 하게 생성하고, 구버전 스키마를 마이그레이션한다."""
         for ddl in models.ALL_TABLES:
             self.conn.execute(ddl)
+        self._migrate_journal()
         self.conn.commit()
+
+    def _migrate_journal(self) -> None:
+        """구버전 journal 테이블에 누락된 컬럼만 추가(데이터 보존). 실패해도 앱은 뜬다."""
+        try:
+            cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(journal)").fetchall()}
+            for col, ddl in models.JOURNAL_ADD_COLUMNS:
+                if col not in cols:
+                    self.conn.execute(ddl)
+        except Exception:
+            pass
 
     # --- 알림 중복방지 (R-4 / AC-2, AC-4) -------------------------------
     # 골격 단계 stub. 임계값 판정 로직은 builder-2(core)가 담당하고,
@@ -99,7 +110,10 @@ class Repository:
         row = self.conn.execute(
             "SELECT id FROM users WHERE google_sub = ?", (google_sub,)
         ).fetchone()
-        return int(row["id"])
+        uid = int(row["id"])
+        # 신규 사용자면 .env 기본종목으로 관심종목을 1회 시드(빈 대시보드 방지).
+        self.seed_watchlist_if_empty(uid, list(settings.kr_symbols), list(settings.us_symbols))
+        return uid
 
     def create_session(self, sid: str, user_id: int, expires_at: str) -> None:
         now = datetime.now(timezone.utc).isoformat()
@@ -135,13 +149,80 @@ class Repository:
         except Exception:
             pass
 
+    # --- 사용자별 관심종목(워치리스트) ---------------------------------
+
+    def list_watchlist(self, user_id: int) -> list[dict]:
+        """해당 사용자의 관심종목 [{symbol, market}] — 국내 먼저, 그다음 미국. 실패 시 []."""
+        try:
+            rows = self.conn.execute(
+                "SELECT symbol, market FROM watchlist WHERE user_id = ? "
+                "ORDER BY (market = 'US'), id",
+                (user_id,),
+            ).fetchall()
+            return [{"symbol": r["symbol"], "market": r["market"]} for r in rows]
+        except Exception:
+            return []
+
+    def add_watchlist(self, user_id: int, symbol: str, market: str) -> bool:
+        """관심종목 추가. 이미 있으면 무시(False), 새로 넣으면 True."""
+        try:
+            cur = self.conn.execute(
+                "INSERT OR IGNORE INTO watchlist (user_id, symbol, market, added_at) "
+                "VALUES (?, ?, ?, ?)",
+                (user_id, symbol, market, datetime.now(timezone.utc).isoformat()),
+            )
+            self.conn.commit()
+            return cur.rowcount > 0
+        except Exception:
+            return False
+
+    def remove_watchlist(self, user_id: int, symbol: str) -> None:
+        try:
+            self.conn.execute(
+                "DELETE FROM watchlist WHERE user_id = ? AND symbol = ?", (user_id, symbol)
+            )
+            self.conn.commit()
+        except Exception:
+            pass
+
+    def seed_watchlist_if_empty(self, user_id: int, kr_symbols: list[str],
+                                us_symbols: list[str]) -> None:
+        """관심종목이 하나도 없는 사용자에게 .env 기본종목을 1회 시드한다(신규 로그인용)."""
+        try:
+            n = self.conn.execute(
+                "SELECT COUNT(*) AS c FROM watchlist WHERE user_id = ?", (user_id,)
+            ).fetchone()["c"]
+            if n:
+                return
+            now = datetime.now(timezone.utc).isoformat()
+            rows = [(user_id, s, "KR", now) for s in kr_symbols] + \
+                   [(user_id, s, "US", now) for s in us_symbols]
+            self.conn.executemany(
+                "INSERT OR IGNORE INTO watchlist (user_id, symbol, market, added_at) "
+                "VALUES (?, ?, ?, ?)", rows,
+            )
+            self.conn.commit()
+        except Exception:
+            pass
+
+    def all_watchlist_symbols(self) -> list[tuple[str, str]]:
+        """모든 사용자 관심종목의 합집합 [(symbol, market)] — 폴러가 시세를 미리 받아두는 대상."""
+        try:
+            rows = self.conn.execute(
+                "SELECT DISTINCT symbol, market FROM watchlist"
+            ).fetchall()
+            return [(r["symbol"], r["market"]) for r in rows]
+        except Exception:
+            return []
+
     # --- 사용자별 매매일지 ----------------------------------------------
 
     def list_journal(self, user_id: int, limit: int = 500) -> list[dict]:
         """해당 사용자의 매매일지(최신순). 실패 시 빈 리스트(500 금지)."""
         try:
             rows = self.conn.execute(
-                "SELECT id, trade_date, symbol, name, side, price, qty, reason, memo, created_at, updated_at "
+                "SELECT id, trade_date, symbol, name, side, price, qty, category, "
+                "currency, fx_rate, tax, amount, realized_pnl, reason, memo, created_at, updated_at "
                 "FROM journal WHERE user_id = ? ORDER BY trade_date DESC, id DESC LIMIT ?",
                 (user_id, limit),
             ).fetchall()
@@ -149,13 +230,51 @@ class Repository:
         except Exception:
             return []
 
+    def _avg_buy_cost(self, user_id: int, symbol: str | None, name: str | None,
+                      currency: str, exclude_id: int | None = None) -> float | None:
+        """같은 종목(코드 우선, 없으면 이름)·같은 통화 '매수'의 가중평균 단가(거래통화 기준).
+
+        실현손익을 단순 가중평균법으로 계산하기 위한 보조값. 부분매도/시점 정밀추적은
+        하지 않는다(개인 일지 수준의 근사). 매수 기록이 없으면 None.
+        """
+        key_col, key_val = ("symbol", symbol) if symbol else ("name", name)
+        if not key_val:
+            return None
+        sql = (f"SELECT price, qty FROM journal WHERE user_id=? AND side='매수' "
+               f"AND {key_col}=? AND IFNULL(currency,'KRW')=? AND price IS NOT NULL AND qty IS NOT NULL")
+        params: list = [user_id, key_val, currency]
+        if exclude_id is not None:
+            sql += " AND id<>?"
+            params.append(exclude_id)
+        rows = self.conn.execute(sql, params).fetchall()
+        tot_qty = sum((r["qty"] or 0) for r in rows)
+        tot_cost = sum((r["price"] or 0) * (r["qty"] or 0) for r in rows)
+        return (tot_cost / tot_qty) if tot_qty > 0 else None
+
+    def _enrich(self, user_id: int, e: dict, exclude_id: int | None = None) -> None:
+        """e 에 amount(총거래대금 KRW)·realized_pnl(매도 실현손익 KRW)을 채운다."""
+        price, qty = e.get("price"), e.get("qty")
+        fx = e.get("fx_rate") or 1
+        tax = e.get("tax") or 0
+        e["amount"] = (price * qty * fx) if (price is not None and qty is not None) else None
+        realized = None
+        if e.get("side") == "매도" and price is not None and qty is not None:
+            avg = self._avg_buy_cost(user_id, e.get("symbol"), e.get("name"),
+                                     e.get("currency") or "KRW", exclude_id)
+            if avg is not None:
+                realized = (price - avg) * qty * fx - tax
+        e["realized_pnl"] = realized
+
     def add_journal(self, user_id: int, e: dict) -> int:
         now = datetime.now(timezone.utc).isoformat()
+        self._enrich(user_id, e)
         cur = self.conn.execute(
-            "INSERT INTO journal (user_id, trade_date, symbol, name, side, price, qty, reason, memo, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO journal (user_id, trade_date, symbol, name, side, price, qty, category, "
+            "currency, fx_rate, tax, amount, realized_pnl, reason, memo, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (user_id, e.get("trade_date"), e.get("symbol"), e.get("name"), e.get("side"),
-             e.get("price"), e.get("qty"), e.get("reason"), e.get("memo"), now, now),
+             e.get("price"), e.get("qty"), e.get("category"), e.get("currency"), e.get("fx_rate"), e.get("tax"),
+             e.get("amount"), e.get("realized_pnl"), e.get("reason"), e.get("memo"), now, now),
         )
         self.conn.commit()
         return int(cur.lastrowid)
@@ -163,11 +282,14 @@ class Repository:
     def update_journal(self, user_id: int, entry_id: int, e: dict) -> bool:
         """본인 소유 일지만 수정(user_id 일치 강제). 변경 행 1 이상이면 True."""
         now = datetime.now(timezone.utc).isoformat()
+        self._enrich(user_id, e, exclude_id=entry_id)
         cur = self.conn.execute(
-            "UPDATE journal SET trade_date=?, symbol=?, name=?, side=?, price=?, qty=?, reason=?, memo=?, updated_at=? "
+            "UPDATE journal SET trade_date=?, symbol=?, name=?, side=?, price=?, qty=?, category=?, "
+            "currency=?, fx_rate=?, tax=?, amount=?, realized_pnl=?, reason=?, memo=?, updated_at=? "
             "WHERE id=? AND user_id=?",
             (e.get("trade_date"), e.get("symbol"), e.get("name"), e.get("side"),
-             e.get("price"), e.get("qty"), e.get("reason"), e.get("memo"), now, entry_id, user_id),
+             e.get("price"), e.get("qty"), e.get("category"), e.get("currency"), e.get("fx_rate"), e.get("tax"),
+             e.get("amount"), e.get("realized_pnl"), e.get("reason"), e.get("memo"), now, entry_id, user_id),
         )
         self.conn.commit()
         return cur.rowcount > 0

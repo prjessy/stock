@@ -104,10 +104,8 @@ class DeudeumiScheduler:
             f"현재가 {res.get('price')}"
         )
         try:
-            subprocess.run(
-                [_HERMES, "send", "--to", "telegram", "--subject", "🚨 더듬이 신호 (바로 지금이야!)", msg],
-                env={**os.environ, "HERMES_HOME": "/root/.hermes"},
-                timeout=30, capture_output=True,
-            )
+            # 시황성 신호 → 지인 공유(ALERT_TELEGRAM_IDS) 포함 팬아웃(notify_all 일원화).
+            from app.notify.dispatch import notify_all
+            notify_all("🚨 더듬이 신호 (바로 지금이야!)", msg, shared=True)
         except Exception:
             pass

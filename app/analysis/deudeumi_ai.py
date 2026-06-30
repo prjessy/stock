@@ -145,13 +145,9 @@ def _write_obsidian(symbol: str, data: dict) -> None:
 def analyze(symbol: str, feed: dict, recent: list[dict] | None = None, accuracy: dict | None = None) -> dict:
     if feed.get("error"):
         return {"symbol": symbol, "error": feed["error"]}
-    key = settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")
-    if not key:
-        return {"symbol": symbol, "error": "ANTHROPIC_API_KEY 미설정"}
-    try:
-        import anthropic
-    except Exception:
-        return {"symbol": symbol, "error": "anthropic 패키지 미설치"}
+    from app import llm
+    if not llm.configured():
+        return {"symbol": symbol, "error": "LLM 미설정(.env LLM_ENDPOINT/LLM_MODEL)"}
 
     hist_txt = ""
     if recent:
@@ -172,18 +168,7 @@ def analyze(symbol: str, feed: dict, recent: list[dict] | None = None, accuracy:
     )
 
     try:
-        client = anthropic.Anthropic(api_key=key)
-        resp = client.messages.create(
-            model=settings.deudeumi_model,
-            max_tokens=1024,
-            system=_SYSTEM,
-            output_config={"format": {"type": "json_schema", "schema": _SCHEMA}},
-            messages=[{"role": "user", "content": prompt}],
-        )
-        from app.analysis.token_usage import record as _rec_usage
-        _rec_usage(resp, settings.deudeumi_model, "deudeumi")
-        text = next((b.text for b in resp.content if b.type == "text"), "{}")
-        data = json.loads(text)
+        data = llm.chat_json(_SYSTEM, prompt, _SCHEMA, max_tokens=1024, source="deudeumi")
     except Exception as exc:
         return {"symbol": symbol, "error": f"분석 실패: {exc}"}
 

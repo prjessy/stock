@@ -52,12 +52,8 @@ def _gather(registry) -> dict:
 
 
 def _ai_report(data: dict) -> str:
-    key = settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")
-    if not key:
-        return ""
-    try:
-        import anthropic
-    except Exception:
+    from app import llm
+    if not llm.configured():
         return ""
     parts = []
     if data["quotes"]:
@@ -79,18 +75,8 @@ def _ai_report(data: dict) -> str:
               "1) 오늘 한 줄 요약\n2) 눈에 띄는 수급/테마 흐름\n3) 내일 관전포인트 2~3개\n"
               "간결하게(전체 300자 내외), 단정·예측·투자권유 금지.")
     try:
-        client = anthropic.Anthropic(api_key=key)
-        resp = client.messages.create(
-            model=settings.deudeumi_model, max_tokens=700,
-            system="간결하고 균형 잡힌 한국 장 마감 코멘트. 과신 금지.",
-            messages=[{"role": "user", "content": prompt}],
-        )
-        try:
-            from app.analysis.token_usage import record
-            record(resp, settings.deudeumi_model, "eod_report")
-        except Exception:
-            pass
-        return next((b.text for b in resp.content if b.type == "text"), "").strip()
+        return llm.chat_text("간결하고 균형 잡힌 한국 장 마감 코멘트. 과신 금지.",
+                             prompt, max_tokens=700, source="eod_report")
     except Exception:
         return ""
 
@@ -111,7 +97,7 @@ def generate(registry, send: bool = True) -> dict:
     except Exception:
         pass
     if send:
-        notify_all("📊 장 마감 AI 리포트", report)
+        notify_all("📊 장 마감 AI 리포트", report, shared=True)
     return out
 
 

@@ -47,8 +47,14 @@ def default_items() -> list[tuple[str, str]]:
     return [(s, nm(s)) for s in (list(settings.kr_symbols) + list(settings.us_symbols))]
 
 
-def _fetch_news(name: str, limit: int = 5) -> list[dict]:
-    """구글뉴스 RSS 헤드라인 [{title, link, date}] (실패 시 [])."""
+def _fetch_news(name: str, limit: int = 5, max_age_hours: float | None = None) -> list[dict]:
+    """구글뉴스 RSS 헤드라인 [{title, link, date, ts}] — 최신순 정렬(실패 시 []).
+
+    RSS 응답 순서가 항상 최신순이 아니라서 pubDate 를 파싱해 직접 정렬한다(ts=epoch초).
+    max_age_hours 가 주어지면 그 시간 이내 기사만 남기되, 전부 걸러지면 정렬본을 그대로
+    반환한다(빈 목록 방지). limit 은 정렬·필터 '후' 상위 N개를 자른다.
+    """
+    from email.utils import parsedate_to_datetime
     try:
         q = urllib.parse.quote(name)
         url = f"https://news.google.com/rss/search?q={q}&hl=ko&gl=KR&ceid=KR:ko"
@@ -61,26 +67,32 @@ def _fetch_news(name: str, limit: int = 5) -> list[dict]:
             t = (it.findtext("title") or "").strip()
             if not t:
                 continue
+            pub = (it.findtext("pubDate") or "").strip()
+            try:
+                dt = parsedate_to_datetime(pub) if pub else None
+                ts = dt.timestamp() if dt else 0.0
+            except Exception:
+                ts = 0.0
             items.append({
                 "title": t,
                 "link": (it.findtext("link") or "").strip(),
-                "date": (it.findtext("pubDate") or "").strip(),
+                "date": pub,
+                "ts": ts,
             })
-            if len(items) >= limit:
-                break
-        return items
+        items.sort(key=lambda x: x["ts"], reverse=True)  # 최신순
+        if max_age_hours:
+            cutoff = _dt.datetime.now(_dt.timezone.utc).timestamp() - max_age_hours * 3600
+            fresh = [x for x in items if x["ts"] >= cutoff]
+            items = fresh or items  # 전부 걸러지면 정렬본 유지
+        return items[:limit]
     except Exception:
         return []
 
 
 def _claude_copy(name: str, headlines: list[dict]) -> dict | None:
     """헤드라인 → 요약/카피/분위기. 실패/미설정 시 None."""
-    key = settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")
-    if not key or not headlines:
-        return None
-    try:
-        import anthropic
-    except Exception:
+    from app import llm
+    if not llm.configured() or not headlines:
         return None
     titles = "\n".join(f"- {h['title']}" for h in headlines)
     prompt = (
@@ -89,18 +101,7 @@ def _claude_copy(name: str, headlines: list[dict]) -> dict | None:
         f"과장·투자 단정 금지, 한눈에 들어오게 간결히."
     )
     try:
-        client = anthropic.Anthropic(api_key=key)
-        resp = client.messages.create(
-            model=settings.deudeumi_model,
-            max_tokens=900,
-            system=_SYSTEM,
-            output_config={"format": {"type": "json_schema", "schema": _SCHEMA}},
-            messages=[{"role": "user", "content": prompt}],
-        )
-        from app.analysis.token_usage import record as _rec_usage
-        _rec_usage(resp, settings.deudeumi_model, "marketing")
-        text = next((b.text for b in resp.content if b.type == "text"), "{}")
-        return json.loads(text)
+        return llm.chat_json(_SYSTEM, prompt, _SCHEMA, max_tokens=900, source="marketing")
     except Exception:
         return None
 
