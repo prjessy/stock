@@ -1200,6 +1200,26 @@ def _journal_fields(body: dict) -> dict:
     }
 
 
+def _ensure_fx(fields: dict) -> None:
+    """USD 거래에 환율이 없으면 현재 원/달러 환율을 자동 조회해 채운다(원화 통일).
+
+    사용자가 환율을 비워도 서버가 환율을 구해 amount 를 원화로 환산하도록 보장.
+    조회 실패 시 fx_rate 는 None 으로 남고 _journal_validate 가 거부한다.
+    """
+    if fields.get("currency") != "USD":
+        return
+    fx = fields.get("fx_rate")
+    if fx and fx > 1:
+        return
+    try:
+        from app.datasources.fintech import usdkrw_rate
+        rate = usdkrw_rate()
+        if rate and rate > 1:
+            fields["fx_rate"] = round(float(rate), 2)
+    except Exception:
+        pass
+
+
 def _journal_validate(fields: dict) -> str | None:
     """저장 전 검증. 통과면 None, 막아야 하면 오류 메시지 반환.
 
@@ -1241,6 +1261,7 @@ async def journal_create(request: Request) -> JSONResponse:
     except Exception:
         body = {}
     fields = _journal_fields(body or {})
+    _ensure_fx(fields)
     err = _journal_validate(fields)
     if err:
         return JSONResponse({"ok": False, "error": err}, status_code=400)
@@ -1265,6 +1286,7 @@ async def journal_update(entry_id: int, request: Request) -> JSONResponse:
     except Exception:
         body = {}
     fields = _journal_fields(body or {})
+    _ensure_fx(fields)
     err = _journal_validate(fields)
     if err:
         return JSONResponse({"ok": False, "error": err}, status_code=400)
