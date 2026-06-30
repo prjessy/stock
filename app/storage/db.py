@@ -40,6 +40,48 @@ class Repository:
             self.conn.execute(ddl)
         self._migrate_journal()
         self.conn.commit()
+        self._backfill_journal_fx()
+
+    def _backfill_journal_fx(self) -> None:
+        """옛 버전(환율 미적용)에 저장된 USD 일지 행을 현재 환율로 자동 환산 복구한다.
+
+        대상: currency='USD' & 단가·수량 있음 & amount 가 환율 미반영(fx_rate 없음/1 이하
+        이면서 amount≈price*qty). 정상 행(이미 환산됨)은 절대 건드리지 않는다. 환율을
+        못 구하면 아무것도 바꾸지 않는다. 멱등 — 한 번 복구되면 다음 기동엔 대상 0건.
+        실패해도 앱은 뜬다. (VOC: 미국주식이 달러 숫자에 '원'만 붙어 보이던 문제의 영구 차단)
+        """
+        try:
+            rows = self.conn.execute(
+                "SELECT id, user_id, symbol, name, side, currency, price, qty, fx_rate, amount, tax "
+                "FROM journal WHERE currency='USD' AND price IS NOT NULL AND qty IS NOT NULL"
+            ).fetchall()
+            rate = None
+            fixed = 0
+            for r in rows:
+                fx = r["fx_rate"]
+                # 환산 안 된 행만: 환율이 없거나 1 이하 + amount 가 price*qty 와 사실상 동일
+                unconverted = ((not fx or fx <= 1)
+                               and r["amount"] is not None
+                               and abs(r["amount"] - r["price"] * r["qty"]) < 0.01)
+                if not unconverted:
+                    continue
+                if rate is None:
+                    from app.datasources.fintech import usdkrw_rate
+                    rate = usdkrw_rate()
+                if not rate or rate <= 1:
+                    return  # 환율 조회 실패 — 잘못 환산하느니 그대로 둔다
+                e = dict(r)
+                e["fx_rate"] = round(float(rate), 2)
+                self._enrich(r["user_id"], e, exclude_id=r["id"])
+                self.conn.execute(
+                    "UPDATE journal SET fx_rate=?, amount=?, realized_pnl=? WHERE id=?",
+                    (e["fx_rate"], e["amount"], e["realized_pnl"], r["id"]),
+                )
+                fixed += 1
+            if fixed:
+                self.conn.commit()
+        except Exception:
+            pass
 
     def _migrate_journal(self) -> None:
         """구버전 journal 테이블에 누락된 컬럼만 추가(데이터 보존). 실패해도 앱은 뜬다."""
