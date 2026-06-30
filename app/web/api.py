@@ -1182,6 +1182,8 @@ def _journal_fields(body: dict) -> dict:
     if cat not in ("일반주", "공모주"):
         cat = "일반주"
     fx = _num(body.get("fx_rate"))
+    # KRW=1.0 고정. USD는 입력 환율 보존(없으면 None → 검증에서 거부). 1.0 기본대입 금지(환산 누락 원인).
+    fx_rate = 1.0 if cur == "KRW" else (fx if (fx and fx > 0) else None)
     return {
         "trade_date": (str(body.get("trade_date") or "")).strip() or _dt.now().strftime("%Y-%m-%d"),
         "symbol": ((str(body.get("symbol") or "")).strip()[:32] or None),
@@ -1191,7 +1193,7 @@ def _journal_fields(body: dict) -> dict:
         "qty": _num(body.get("qty")),
         "category": cat,                                      # 일반주/공모주
         "currency": cur,
-        "fx_rate": fx if (fx and fx > 0) else 1.0,            # KRW=1, USD=환율(원/달러)
+        "fx_rate": fx_rate,                                   # KRW=1, USD=환율(원/달러, 필수)
         "tax": _num(body.get("tax")) or 0.0,                  # 세금(원)
         "reason": (str(body.get("reason") or "")).strip()[:2000],
         "memo": (str(body.get("memo") or "")).strip()[:2000],
@@ -1206,6 +1208,12 @@ def _journal_validate(fields: dict) -> str | None:
     """
     if fields.get("side") != "메모" and not (fields.get("symbol") or fields.get("name")):
         return "종목 정보(종목명)를 입력하세요. 비어 있으면 저장되지 않습니다."
+    # USD 거래(단가·수량 있는)는 환율 필수 — 없으면 원화 환산이 안 돼 합계가 깨진다.
+    if (fields.get("currency") == "USD" and fields.get("price") is not None
+            and fields.get("qty") is not None):
+        fx = fields.get("fx_rate")
+        if not fx or fx <= 1:
+            return "USD 거래는 환율(원/$)을 입력하세요 (예: 1380). 비우면 원화 환산이 안 됩니다."
     return None
 
 
@@ -1279,6 +1287,16 @@ def journal_delete(entry_id: int, request: Request) -> JSONResponse:
         return JSONResponse({"ok": repo.delete_journal(user["id"], entry_id)})
     finally:
         repo.close()
+
+
+@app.get("/api/fxrate")
+def fxrate() -> JSONResponse:
+    """현재 원/달러 환율 — 매매일지 USD 입력 시 환율 칸 프리필용. 실패 시 rate=null."""
+    try:
+        from app.datasources.fintech import usdkrw_rate
+        return JSONResponse({"ok": True, "rate": usdkrw_rate()})
+    except Exception:
+        return JSONResponse({"ok": True, "rate": None})
 
 
 @app.get("/api/session")

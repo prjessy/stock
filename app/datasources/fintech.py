@@ -48,6 +48,14 @@ def _last_two(symbol: str):
         return None, None, None
 
 
+def usdkrw_rate():
+    """현재 원/달러 환율(USD/KRW) 최근 종가. 10분 캐시. 실패 시 None.
+
+    매매일지 USD 입력 시 환율 프리필·검증 보조용.
+    """
+    return _cached("usdkrw_rate", 600, lambda: _last_two("USD/KRW")[0])
+
+
 # ---- 비트코인 실시간 (업비트 공개 API · 무료·무키) ------------------------
 def btc_live() -> dict:
     """업비트 BTC 실시간 — 원화(KRW) + 달러(USDT≈USD) 동시. 5초 캐시(거의 실시간).

@@ -3163,7 +3163,7 @@
           <td>${e.name || ""}${e.category === "공모주" ? ' <span style="font-size:9.5px;font-weight:700;color:#1a1f2b;background:var(--gold);border-radius:4px;padding:1px 4px;">공모</span>' : ""}${e.symbol ? `<div class="sub" style="font-size:11px;">${e.symbol}</div>` : ""}</td>
           <td style="text-align:right;font-variant-numeric:tabular-nums;">${e.price == null ? "" : cur + Number(e.price).toLocaleString()}</td>
           <td style="text-align:right;font-variant-numeric:tabular-nums;">${wonFmt(e.qty)}</td>
-          <td style="text-align:right;font-variant-numeric:tabular-nums;">${wonFmt(e.amount)}</td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums;">${wonFmt(e.amount)}${e.currency === "USD" && e.price != null && e.qty != null ? `<div class="sub" style="font-size:10px;">$${(Number(e.price) * Number(e.qty)).toLocaleString()}</div>` : ""}</td>
           <td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--muted);">${e.tax ? wonFmt(e.tax) : ""}</td>
           <td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:${pnlColor(pnl)};">${pnl == null ? "" : pnlSgn(pnl) + wonFmt(pnl)}</td>
           <td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:${pnlColor(pnl)};">${pnlPct(e)}</td>
@@ -3205,7 +3205,17 @@
       if (di && !di.value) di.value = new Date().toISOString().slice(0, 10);
       const curSel = form.querySelector('select[name="currency"]');
       const fxFld = document.getElementById("jrnFxFld");
+      const fxInput = form.querySelector('input[name="fx_rate"]');
       const unit = form.querySelector(".jrn-cur-unit");
+      // USD 선택 시 현재 환율을 한 번 받아와 비어 있으면 자동 채움(환산 누락 방지)
+      let _fxRate = null, _fxFetched = false;
+      function prefillFx() {
+        if (!fxInput) return;
+        const apply = () => { if (_fxRate && !fxInput.value) { fxInput.value = Math.round(_fxRate); refresh(); } };
+        if (_fxFetched) { apply(); return; }
+        _fxFetched = true;
+        fetch("/api/fxrate").then((r) => r.json()).then((d) => { if (d.ok && d.rate) { _fxRate = d.rate; apply(); } }).catch(() => {});
+      }
       const totalEl = document.getElementById("jrnTotal");
       const pnlEl = document.getElementById("jrnPnlPreview");
       function avgBuy(symbol, name, currency) {
@@ -3220,6 +3230,7 @@
         const usd = curSel && curSel.value === "USD";
         if (fxFld) fxFld.style.display = usd ? "flex" : "none";
         if (unit) unit.textContent = usd ? "단가($)" : "단가(원)";
+        if (usd) prefillFx();
         const fd = new FormData(form);
         const price = parseFloat(fd.get("price")), qty = parseFloat(fd.get("qty"));
         const fx = usd ? (parseFloat(fd.get("fx_rate")) || 0) : 1;
@@ -3247,6 +3258,13 @@
         if (body.side !== "메모" && !(body.name || "").trim() && !(body.symbol || "").trim()) {
           msg.textContent = "종목명을 입력하세요. 비어 있으면 저장되지 않습니다.";
           const nameEl = form.querySelector('[name="name"]'); if (nameEl) nameEl.focus();
+          return;
+        }
+        // USD 거래(단가·수량 있음)는 환율 필수 — 없으면 원화 환산이 안 됨
+        if (body.currency === "USD" && (body.price || "") !== "" && (body.qty || "") !== ""
+            && !(parseFloat(body.fx_rate) > 1)) {
+          msg.textContent = "USD 거래는 환율(원/$)을 입력하세요 (예: 1380).";
+          if (fxInput) fxInput.focus();
           return;
         }
         msg.textContent = "저장 중…";
@@ -3309,7 +3327,7 @@
       const flow = sell + div - buy;
       box.innerHTML = `<h2 style="font-size:14px;margin:0 0 6px;">📅 ${jrnSelDay}</h2>
         <div class="sub" style="margin-bottom:8px;">현금흐름 <b style="color:${pnlColor(flow)};">${pnlSgn(flow)}${Math.round(flow).toLocaleString()}원</b> <span class="sub">(매수 -${Math.round(buy).toLocaleString()} / 매도 +${Math.round(sell).toLocaleString()}${div ? ` / 배당 +${Math.round(div).toLocaleString()}` : ""})</span></div>
-        ${es.length ? es.map((e) => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;"><span class="${JRN_SIDE_CLS[e.side] || ""}">${e.side} ${escapeHtml(e.name || e.symbol || "")}</span><span style="font-variant-numeric:tabular-nums;">${wonFmt(e.amount)}원${e.realized_pnl != null ? ` <b style="color:${pnlColor(e.realized_pnl)};">(${pnlSgn(e.realized_pnl)}${wonFmt(e.realized_pnl)})</b>` : ""}</span></div>`).join("") : '<div class="sub">거래 없음</div>'}`;
+        ${es.length ? es.map((e) => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;"><span class="${JRN_SIDE_CLS[e.side] || ""}">${e.side} ${escapeHtml(e.name || e.symbol || "")}</span><span style="font-variant-numeric:tabular-nums;">${wonFmt(e.amount)}원${e.currency === "USD" && e.price != null && e.qty != null ? ` <span class="sub" style="font-size:10px;">($${(Number(e.price) * Number(e.qty)).toLocaleString()})</span>` : ""}${e.realized_pnl != null ? ` <b style="color:${pnlColor(e.realized_pnl)};">(${pnlSgn(e.realized_pnl)}${wonFmt(e.realized_pnl)})</b>` : ""}</span></div>`).join("") : '<div class="sub">거래 없음</div>'}`;
     }
 
     // ----- 월간 리포트 -----
