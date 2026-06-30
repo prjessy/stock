@@ -31,3 +31,6 @@ KakaoTalk_*.png
 .vscode/
 .DS_Store
 Thumbs.db
+
+# 로컬LLM 어댑터 — 커밋금지(공개레포 회피, scp 전용 배포)
+app/llm.py
