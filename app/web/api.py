@@ -1639,11 +1639,12 @@ def index() -> FileResponse:
 def download_page() -> HTMLResponse:
     """클린 소스 배포 페이지 — 누구나 자기 KIS API 키로 셀프호스트할 수 있게 안내+다운로드.
     zip 은 scripts/build_clean_release.py 가 생성(비밀키·개인정보 자동 검사 후 패키징)."""
-    def _mb(name: str) -> str:
-        p = DOWNLOAD_DIR / name
-        return f"{p.stat().st_size / 1048576:.0f}" if p.exists() else "?"
-    exe_mb, src_mb = _mb("jessystock-windows.zip"), _mb("jessystock-src.zip")
-    exe_exists = (DOWNLOAD_DIR / "jessystock-windows.zip").exists()
+    def _mb(p: Path | None) -> str:
+        return f"{p.stat().st_size / 1048576:.0f}" if p else "?"
+    exe_zip, src_zip = _latest_dl("jessystock-windows"), _latest_dl("jessystock-src")
+    exe_mb, src_mb = _mb(exe_zip), _mb(src_zip)
+    exe_exists = exe_zip is not None
+    src_label = src_zip.name if src_zip else "빌드 없음"
     gated = bool(_dl_password())  # 비밀번호가 설정돼 있으면 입력 후에만 받도록
     exe_block = (f"""
 <div class="card">
@@ -1689,6 +1690,7 @@ def download_page() -> HTMLResponse:
   <h2 style="margin-top:0;">🧑‍💻 소스 코드 (맥·리눅스·서버·개발자용)</h2>
   <p>직접 서버(VPS)에 올리거나 코드를 고치고 싶을 때. 파이썬 필요.</p>
   <a class="btn alt" href="#" onclick="return dl('src')">⬇ 소스 다운로드 (zip · {src_mb}MB)</a>
+  <p style="font-size:12px;color:#8b97a8;margin:2px 0 0;">최신 빌드: <code>{src_label}</code></p>
   <p style="font-size:13px;">압축 안 <b>설치가이드_START_HERE.md</b> 참고 —
    <code>.env</code> 설정 후 리눅스: <code>bash deploy/deploy.sh</code> · PC: <code>pip install -r requirements.txt</code> → <code>python -m app.web</code></p>
 </div>
@@ -1718,7 +1720,15 @@ def _dl_password() -> str:
     return (os.getenv("DOWNLOAD_PASSWORD", "") or "").strip()
 
 
-def _serve_download(filename: str, nice_name: str, pw: str) -> FileResponse | HTMLResponse:
+def _latest_dl(prefix: str) -> Path | None:
+    """downloads/ 안 <prefix>*.zip 중 최신본(파일명 날짜 역순 → 같으면 mtime).
+    빌드가 jessystock-src-YYYYMMDD.zip 처럼 날짜를 붙여 떨구므로 이름 정렬이 곧 최신순."""
+    cands = sorted(DOWNLOAD_DIR.glob(prefix + "*.zip"),
+                   key=lambda p: (p.name, p.stat().st_mtime), reverse=True)
+    return cands[0] if cands else None
+
+
+def _serve_download(prefix: str, pw: str) -> FileResponse | HTMLResponse:
     need = _dl_password()
     if need and (pw or "").strip() != need:
         return HTMLResponse(
@@ -1729,22 +1739,22 @@ a{color:#6ea8fe;}</style></head><body>
 <p><a href="/download">← 다운로드 페이지로 돌아가기</a></p></body></html>""",
             status_code=403,
         )
-    path = DOWNLOAD_DIR / filename
-    if not path.exists():
+    path = _latest_dl(prefix)
+    if not path:
         return HTMLResponse("파일을 찾을 수 없습니다.", status_code=404)
-    return FileResponse(path, media_type="application/zip", filename=nice_name)
+    return FileResponse(path, media_type="application/zip", filename=path.name)
 
 
 @app.get("/dl/win", response_model=None)
 def dl_windows(pw: str = "") -> FileResponse | HTMLResponse:
-    """윈도우 실행판 zip — 비밀번호(설정 시) 확인 후 다운로드."""
-    return _serve_download("jessystock-windows.zip", "jessystock-windows.zip", pw)
+    """윈도우 실행판 zip — 비밀번호(설정 시) 확인 후 최신본 다운로드."""
+    return _serve_download("jessystock-windows", pw)
 
 
 @app.get("/dl/src", response_model=None)
 def dl_source(pw: str = "") -> FileResponse | HTMLResponse:
-    """소스 zip — 비밀번호(설정 시) 확인 후 다운로드."""
-    return _serve_download("jessystock-src.zip", "jessystock-src.zip", pw)
+    """소스 zip — 비밀번호(설정 시) 확인 후 최신본 다운로드."""
+    return _serve_download("jessystock-src", pw)
 
 
 @app.get("/favicon.ico")

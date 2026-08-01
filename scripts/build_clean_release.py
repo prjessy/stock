@@ -9,17 +9,19 @@
 하나라도 들어 있으면 zip 을 만들지 않고 실패한다.
 
 사용: python scripts/build_clean_release.py
-출력: app/web/static/jessystock-src.zip  (사이트 /static/jessystock-src.zip 으로 서빙)
+출력: app/web/downloads/jessystock-src-YYYYMMDD.zip  (/dl/src 가 최신 날짜본을 서빙)
 """
 from __future__ import annotations
 
 import re
 import sys
 import zipfile
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "app" / "web" / "downloads" / "jessystock-src.zip"
+# 파일명에 빌드 날짜 포함 — /dl/src 라우트가 jessystock-src*.zip 중 최신본을 집어 서빙한다.
+OUT = ROOT / "app" / "web" / "downloads" / f"jessystock-src-{date.today():%Y%m%d}.zip"
 ZIP_PREFIX = "jessystock"  # zip 내부 최상위 폴더명
 
 # 통째로 담는 디렉터리 (아래 EXCLUDE 패턴 적용)
@@ -126,6 +128,11 @@ def main() -> int:
             "> 본인의 KIS(한국투자증권) API 키가 필요합니다 — 2장 참고.\n\n---\n\n"
         )
         z.writestr(f"{ZIP_PREFIX}/설치가이드_START_HERE.md", header + guide)
+    # 이전 날짜 빌드는 정리(최신 1개만 유지 — 다운로드 라우트도 최신본을 서빙).
+    for old in OUT.parent.glob("jessystock-src*.zip"):
+        if old != OUT:
+            old.unlink(missing_ok=True)
+            print(f"  (정리) 이전 빌드 삭제: {old.name}")
     kb = OUT.stat().st_size / 1024
     print(f"✅ {OUT} ({kb:,.0f} KB, {len(files) + 1}개 파일)")
     return 0
