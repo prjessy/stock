@@ -28,7 +28,10 @@ _TOKEN_PATH = Path(settings.db_path).resolve().parent / "kis_token.json"
 _TOKEN_REFRESH_BUFFER = 600
 # 토큰 발급 실패 후 이만큼은 재시도하지 않는다(KIS 발급 제한 = 1분당 1회).
 _TOKEN_FAIL_COOLDOWN = 60
-_TIMEOUT = 8.0
+# (연결, 읽기) 초 — 연결 자체가 안 되는 경우(해외IP 차단/점검) 8초씩 매달리지 않게 분리.
+_TIMEOUT = (3.0, 7.0)
+# KIS 연결 불가(ConnectTimeout 등) 감지 시 이 시간 동안 KIS 호출을 통째로 쉰다.
+_NET_FAIL_COOLDOWN = 30.0
 
 
 def _meta(symbol: str) -> dict[str, str]:
@@ -48,6 +51,8 @@ class KisPriceSource(PriceSource):
     def __init__(self, cache_ttl: float = 1.0) -> None:
         # 초단위 폴링에 맞춰 짧은 TTL: 같은 1초 내 중복 호출만 캐시.
         self._cache = TTLCache(cache_ttl)
+        self._fund_cache = TTLCache(60.0)  # 재무 요약(실패 포함) — 연속 조회 시 타임아웃 연쇄 방지
+        self._net_fail_until = 0.0         # KIS 연결 불가 서킷브레이커(쿨다운 만료 시각)
         self._token = ""
         self._token_expiry = 0.0
         self._token_cooldown_until = 0.0  # 발급 실패 후 재시도 억제 시각
@@ -56,6 +61,17 @@ class KisPriceSource(PriceSource):
         # 커넥션 재사용(keep-alive): 매 호출 TLS 핸드셰이크를 없애 ~2s → 수백ms.
         self._session = requests.Session()
         self._load_cached_token()
+
+    # ---------------- 연결 서킷브레이커 ----------------
+    def _net_blocked(self) -> bool:
+        """KIS 연결 불가 쿨다운 중이면 True — 호출부는 네트워크를 건드리지 말고 즉시 실패."""
+        return time.time() < self._net_fail_until
+
+    def _note_net_fail(self, exc: Exception) -> None:
+        """연결 자체가 안 되는 오류(차단/점검)면 잠시 KIS 호출 전체를 쉰다.
+        API 오류(rt_cd 등)는 해당 없음 — 연결 계열 예외만 쿨다운."""
+        if isinstance(exc, (requests.exceptions.ConnectionError, requests.exceptions.Timeout)):
+            self._net_fail_until = time.time() + _NET_FAIL_COOLDOWN
 
     # ---------------- 토큰 ----------------
     def _load_cached_token(self) -> None:
@@ -197,6 +213,8 @@ class KisPriceSource(PriceSource):
 
         if not settings.kis_app_key or not settings.kis_app_secret:
             return empty_quote(symbol, meta["name"], "KRW", meta["note"], "KIS 키 미설정")
+        if self._net_blocked():
+            return empty_quote(symbol, meta["name"], "KRW", meta["note"], "KIS 연결 불가(쿨다운)")
 
         try:
             base = self._inquire(symbol, "J")  # KRX 정규장(대표 가격)
@@ -225,6 +243,7 @@ class KisPriceSource(PriceSource):
             self._cache.set(cache_key, quote)
             return quote
         except Exception as exc:
+            self._note_net_fail(exc)
             return empty_quote(symbol, meta["name"], "KRW", meta["note"], f"KIS 조회 실패: {exc}")
 
     def get_history(self, symbol: str, period: str) -> list[dict]:
@@ -282,6 +301,11 @@ class KisPriceSource(PriceSource):
         meta = _meta(symbol)
         if not settings.kis_app_key or not settings.kis_app_secret:
             return {"available": False, "symbol": symbol, "reason": "KIS 키 미설정"}
+        cached = self._fund_cache.get(f"fund:{symbol}")
+        if cached is not None:
+            return cached
+        if self._net_blocked():
+            return {"available": False, "symbol": symbol, "reason": "KIS 연결 불가(점검/차단) — 잠시 후 재시도"}
         try:
             token = self._ensure_token()
             resp = self._session.get(
@@ -322,16 +346,22 @@ class KisPriceSource(PriceSource):
             }
             # 핵심 지표가 하나도 없으면 미지원 처리.
             if not any(result[k] is not None for k in ("per", "pbr", "eps", "bps", "market_cap")):
-                return {"available": False, "symbol": symbol, "reason": "재무 데이터 없음"}
+                result = {"available": False, "symbol": symbol, "reason": "재무 데이터 없음"}
+            self._fund_cache.set(f"fund:{symbol}", result)
             return result
         except Exception as exc:
-            return {"available": False, "symbol": symbol, "reason": f"KIS 재무 조회 실패: {exc}"}
+            self._note_net_fail(exc)
+            fail = {"available": False, "symbol": symbol, "reason": f"KIS 재무 조회 실패: {exc}"}
+            self._fund_cache.set(f"fund:{symbol}", fail)  # 실패도 잠시 캐시(타임아웃 연타 방지)
+            return fail
 
     # ---------------- 수급(외국인/기관 매매동향) ----------------
     def get_investor_flow(self, symbol: str, days: int = 5) -> dict | None:
-        """종목별 투자자 매매동향(FHKST01010900) — 외국인/기관 순매수(당일·N일합).
-        실패 시 None. 단위: 주식 수(순매수량)."""
+        """종목별 투자자 매매동향(FHKST01010900) — 외국인/기관/개인 순매수.
+        순매수 수량(주)·순매수 금액(억원)·당일 매수/매도 금액(억원)을 함께 반환. 실패 시 None."""
         if not settings.kis_app_key or not settings.kis_app_secret:
+            return None
+        if self._net_blocked():
             return None
         try:
             token = self._ensure_token()
@@ -358,6 +388,17 @@ class KisPriceSource(PriceSource):
             frgn_sum = sum(_f(r.get("frgn_ntby_qty")) or 0 for r in recent)
             orgn_sum = sum(_f(r.get("orgn_ntby_qty")) or 0 for r in recent)
             prsn_sum = sum(_f(r.get("prsn_ntby_qty")) or 0 for r in recent)
+
+            # KIS 순매수 '거래대금'(*_ntby_tr_pbmn) 단위는 백만원 → 억원 = /100.
+            #  (검증: 삼성 개인 순매수 6,951,718주 × 286,000원 ≈ 1.99조 = prsn_ntby_tr_pbmn 2,022,858백만원)
+            # 수량(주)보다 '억원'이 훨씬 직관적이라 UI 기본 표시를 금액으로 바꾼다.
+            def _amt(v):  # 백만원 → 억원(정수)
+                x = _f(v)
+                return round(x / 100) if x is not None else None
+
+            def _amt_sum(key):  # 백만원 합 → 억원
+                return round(sum(_f(r.get(key)) or 0 for r in recent) / 100)
+
             latest = out[0]
             # KIS 수급은 '확정된 거래일' 기준이라 out[0] 이 항상 오늘은 아니다.
             #  - 장전(프리장): out[0] = 전일  → is_today=False (UI 가 '전일 기준' 표기)
@@ -378,15 +419,31 @@ class KisPriceSource(PriceSource):
                 "confirmed": confirmed,
                 "session": sess.get("session"),
                 "session_label": sess.get("label"),
+                # 순매수 수량(주) — 하위호환용, 계속 내려줌
                 "frgn_ntby_qty": _f(latest.get("frgn_ntby_qty")),
                 "orgn_ntby_qty": _f(latest.get("orgn_ntby_qty")),
                 "prsn_ntby_qty": _f(latest.get("prsn_ntby_qty")),
                 "frgn_ntby_sum": round(frgn_sum),
                 "orgn_ntby_sum": round(orgn_sum),
                 "prsn_ntby_sum": round(prsn_sum),
+                # 순매수 금액(억원) — UI 기본 표시(읽기 쉬운 '돈' 단위)
+                "frgn_ntby_amt": _amt(latest.get("frgn_ntby_tr_pbmn")),
+                "orgn_ntby_amt": _amt(latest.get("orgn_ntby_tr_pbmn")),
+                "prsn_ntby_amt": _amt(latest.get("prsn_ntby_tr_pbmn")),
+                "frgn_ntby_amt_sum": _amt_sum("frgn_ntby_tr_pbmn"),
+                "orgn_ntby_amt_sum": _amt_sum("orgn_ntby_tr_pbmn"),
+                "prsn_ntby_amt_sum": _amt_sum("prsn_ntby_tr_pbmn"),
+                # 매수/매도 금액(억원) — '얼마나 사고 팔았나'를 그대로 분해(당일)
+                "frgn_buy_amt": _amt(latest.get("frgn_shnu_tr_pbmn")),
+                "frgn_sell_amt": _amt(latest.get("frgn_seln_tr_pbmn")),
+                "orgn_buy_amt": _amt(latest.get("orgn_shnu_tr_pbmn")),
+                "orgn_sell_amt": _amt(latest.get("orgn_seln_tr_pbmn")),
+                "prsn_buy_amt": _amt(latest.get("prsn_shnu_tr_pbmn")),
+                "prsn_sell_amt": _amt(latest.get("prsn_seln_tr_pbmn")),
                 "days": days,
             }
-        except Exception:
+        except Exception as exc:
+            self._note_net_fail(exc)
             return None
 
     # ---------------- 호가 (매도/매수 10단계 + 잔량) ----------------
@@ -396,6 +453,8 @@ class KisPriceSource(PriceSource):
         market_code: "J"=KRX 정규장(본장), "NX"=넥스트레이드(시간외/프리·애프터).
         호가는 해당 세션에 실시간만 의미. 휴장엔 0/빈 값일 수 있다."""
         if not settings.kis_app_key or not settings.kis_app_secret:
+            return None
+        if self._net_blocked():
             return None
         try:
             token = self._ensure_token()

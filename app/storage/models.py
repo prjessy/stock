@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS journal (
     realized_pnl REAL,
     reason       TEXT,
     memo         TEXT,
+    photo        TEXT,
     created_at   TEXT    NOT NULL,
     updated_at   TEXT    NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id)
@@ -131,6 +132,7 @@ JOURNAL_ADD_COLUMNS = [
     ("tax", "ALTER TABLE journal ADD COLUMN tax REAL DEFAULT 0"),
     ("amount", "ALTER TABLE journal ADD COLUMN amount REAL"),
     ("realized_pnl", "ALTER TABLE journal ADD COLUMN realized_pnl REAL"),
+    ("photo", "ALTER TABLE journal ADD COLUMN photo TEXT"),  # 첨부 사진 파일명(uploads/<uid>/ 아래)
 ]
 
 # init_db() 가 순서대로 실행할 DDL 목록.

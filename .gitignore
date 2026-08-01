@@ -20,6 +20,12 @@ __pycache__/
 venv/
 env/
 
+# 빌드 산출물 (PyInstaller exe / 배포 zip) — scp 배포, git 추적 안 함(용량 큼)
+/build/
+/dist/
+*.spec
+app/web/downloads/
+
 # 디자인 원본 업로드 — 가공본은 app/web/static 에 커밋됨
 KakaoTalk_*.png
 /radar.png

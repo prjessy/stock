@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Stock Watchdog</title>
+  <title>jessystock</title>
   <link rel="icon" type="image/png" sizes="16x16" href="/static/icon-16.png?v=9" />
   <link rel="icon" type="image/png" sizes="32x32" href="/static/icon-32.png?v=9" />
   <link rel="icon" type="image/png" sizes="48x48" href="/static/icon-48.png?v=9" />
@@ -15,7 +15,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="주식레이더" />
+  <meta name="apple-mobile-web-app-title" content="jessystock" />
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", function () {
@@ -66,6 +66,13 @@
     header .meta { color: var(--muted); font-size: 13px; }
     header .meta b { color: var(--text); font-weight: 600; }
     .refresh-btn { margin-left: 10px; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 5px 12px; font-size: 12px; cursor: pointer; transition: all .12s; }
+    /* 종목명 자동완성 드롭다운 (종목 추가 입력 공용) */
+    .sym-sug { display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 300; min-width: 100%; max-height: 260px; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 22px rgba(0,0,0,.3); }
+    .sym-sug-item { display: flex; align-items: center; gap: 6px; padding: 7px 10px; font-size: 13.5px; cursor: pointer; white-space: nowrap; }
+    .sym-sug-item:hover { background: var(--panel-2); }
+    .sym-sug-item .code { color: var(--muted); font-size: 11.5px; }
+    .sym-sug-item .mkt { font-size: 10px; font-weight: 700; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+    .sym-sug-item .mkt.us { color: #4a90d9; border-color: #4a90d9; }
     .refresh-btn:hover { border-color: var(--gold); color: var(--text); }
     .refresh-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
     .refresh-btn:disabled { opacity: .55; cursor: default; }
@@ -421,6 +428,11 @@
     .jrn-subtabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
     .jrn-subtabs button { background: var(--panel); color: var(--muted); border: 1px solid var(--border); border-radius: 8px; padding: 7px 14px; font-size: 13px; cursor: pointer; font-family: inherit; }
     .jrn-subtabs button.active { background: var(--gold); color: #1a1f2b; font-weight: 700; border-color: var(--gold); }
+    .jrn-search-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+    .jrn-search-row #jrnNameQuery { flex: 1 1 220px; min-width: 180px; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 11px; font-size: 13.5px; font-family: inherit; }
+    .jrn-custom-range { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+    .jrn-custom-range label { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+    .jrn-custom-range input { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px; font-size: 13px; font-family: inherit; }
     .jrn-total { font-size: 12.5px; color: var(--muted); align-self: center; }
     .jrn-total b { color: var(--text); font-variant-numeric: tabular-nums; font-size: 14px; }
     .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
@@ -505,9 +517,9 @@
 
     <section class="panel flow-panel" style="margin-bottom:16px;">
       <div class="chart-head">
-        <div class="title" style="font-size:15px;">📊 수급 — 투자자별 순매수 <span style="color:var(--muted);font-weight:500;font-size:12px;margin-left:6px;">누가 샀나 · 체결 기준 · 하루 단위</span></div>
+        <div class="title" style="font-size:15px;">📊 수급 — 투자자별 순매수 <span style="color:var(--muted);font-weight:500;font-size:12px;margin-left:6px;">누가 얼마 샀나 · 금액(억원) · 하루 단위</span></div>
       </div>
-      <div class="sub">외국인·기관·개인이 그날 <b>실제 사고판(체결)</b> 순매수 주식 수. ▲순매수 / ▼순매도 · 외국인 강조 · 60초 갱신</div>
+      <div class="sub">외국인·기관·개인이 그날 <b>실제 사고판(체결)</b> 순매수 <b>금액(억원)</b>. <span style="color:var(--up);font-weight:700;">▲빨강=순매수(샀다)</span> / <span style="color:var(--down);font-weight:700;">▼파랑=순매도(팔았다)</span>. 아래 <b>🔍 매수·매도 자세히</b>를 펼치면 얼마나 사고 팔았는지 분해해서 보여줍니다.</div>
       <div id="flowSupply" class="empty-state">불러오는 중…</div>
     </section>
 
@@ -634,11 +646,58 @@
           <button type="button" data-jtab="report">📊 리포트</button>
         </div>
 
-        <!-- 기록 뷰: 입력폼 + 목록 -->
+        <!-- 기록 뷰: 현황 → 검색 → (+)입력 -->
         <div class="jrn-view" id="jview-record">
+          <!-- 1) 현황 요약 (검색 조건 반영) -->
           <section class="panel" style="margin-bottom:14px;">
-            <h2 style="font-size:14px;">✍️ 새 기록</h2>
-            <form id="journalForm" class="jrn-form" style="margin-top:10px;">
+            <h2 style="font-size:14px;">📊 현황 <span id="jrnStatusRange" class="sub"></span></h2>
+            <div id="jrnStatus" class="rep-cards"></div>
+          </section>
+
+          <!-- 2) 검색 -->
+          <section class="panel" style="margin-bottom:14px;">
+            <h2 style="font-size:14px;">🔎 검색</h2>
+            <div class="jrn-search">
+              <div class="jrn-subtabs" id="jrnDateFilter" style="margin:10px 0 0;">
+                <button type="button" data-range="all" class="active">조건 없음</button>
+                <button type="button" data-range="7d">최근 7일</button>
+                <button type="button" data-range="1m">최근 1달</button>
+                <button type="button" data-range="1y">최근 1년</button>
+                <button type="button" data-range="custom">사용자 선택</button>
+              </div>
+              <div id="jrnCustomRange" class="jrn-custom-range" style="display:none;">
+                <label>시작 <input type="date" id="jrnCustomStart"></label>
+                <label>끝 <input type="date" id="jrnCustomEnd"></label>
+              </div>
+              <div class="jrn-search-row">
+                <input type="text" id="jrnNameQuery" placeholder="🔍 종목명 검색 (예: 삼성전자)" list="journalSymList">
+                <div class="jrn-subtabs" id="jrnCatFilter" style="margin:0;">
+                  <button type="button" data-cat="전체" class="active">전체</button>
+                  <button type="button" data-cat="일반주">일반주</button>
+                  <button type="button" data-cat="공모주">공모주</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 3) 목록 + 입력 토글 -->
+          <section class="panel">
+            <div class="chart-head" style="align-items:center;flex-wrap:wrap;gap:6px;">
+              <h2 style="font-size:14px;margin:0;">📒 내 기록 <span id="journalCount" class="sub"></span></h2>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                <button type="button" id="jrnCamBtn" class="refresh-btn">📷 촬영</button>
+                <button type="button" id="jrnPicBtn" class="refresh-btn">🖼 사진 임포트</button>
+                <button type="button" id="jrnAddToggle" class="refresh-btn" style="background:var(--gold);color:#1a1f2b;font-weight:700;">＋ 새 기록</button>
+              </div>
+            </div>
+            <!-- 사진 → OCR: 촬영(폰 카메라)/임포트(갤러리·파일) → 서버 OCR → 입력폼 자동 채움(확인 후 저장) -->
+            <input type="file" id="jrnCamInput" accept="image/*" capture="environment" style="display:none;">
+            <input type="file" id="jrnPicInput" accept="image/*" style="display:none;">
+            <div id="jrnOcrStatus" class="sub" style="display:none;margin-top:8px;"></div>
+            <div id="jrnOcrPick" style="display:none;margin-top:6px;"></div>
+
+            <!-- 입력폼: + 누르면 펼침 -->
+            <form id="journalForm" class="jrn-form" style="margin-top:12px;display:none;">
               <div class="fld"><label>날짜</label><input type="date" name="trade_date" required></div>
               <div class="fld"><label>구분</label><select name="side"><option value="매수">매수</option><option value="매도">매도</option><option value="배당">배당</option><option value="메모">메모</option></select></div>
               <div class="fld"><label>종류</label><select name="category"><option value="일반주">일반주</option><option value="공모주">공모주</option></select></div>
@@ -651,20 +710,15 @@
               <div class="fld wide jrn-total">총 거래대금: <b id="jrnTotal">—</b><span id="jrnPnlPreview"></span></div>
               <div class="fld wide"><label>매매 이유 / 근거</label><textarea name="reason" placeholder="왜 사고팔았는지 (예: 5만전자 지지 확인, 외국인 순매수 전환)"></textarea></div>
               <div class="fld wide"><label>복기 / 메모</label><textarea name="memo" placeholder="결과·느낀 점·다음 계획"></textarea></div>
+              <div class="fld wide" id="jrnPhotoBox" style="display:none;"></div>
               <div class="wide" style="display:flex;gap:10px;align-items:center;">
-                <button type="submit" class="refresh-btn" style="background:var(--gold);color:#1a1f2b;font-weight:700;">＋ 기록 추가</button>
+                <button type="submit" class="refresh-btn" style="background:var(--gold);color:#1a1f2b;font-weight:700;">저장</button>
+                <button type="button" id="jrnFormCancel" class="refresh-btn">취소</button>
                 <span id="journalMsg" class="sub"></span>
               </div>
             </form>
             <datalist id="journalSymList"></datalist>
-          </section>
-          <section class="panel">
-            <h2 style="font-size:14px;">📒 내 기록 <span id="journalCount" class="sub"></span></h2>
-            <div class="jrn-subtabs" id="jrnCatFilter" style="margin:8px 0 0;">
-              <button type="button" data-cat="전체" class="active">전체</button>
-              <button type="button" data-cat="일반주">일반주</button>
-              <button type="button" data-cat="공모주">공모주</button>
-            </div>
+
             <div id="journalList" class="empty-state" style="margin-top:8px;">불러오는 중…</div>
           </section>
         </div>
@@ -881,6 +935,33 @@
           <div id="careBody" class="empty-state" style="font-size:13px;">불러오는 중…</div>
         </div>
       </section>
+
+      <section class="panel">
+        <div class="chart-head">
+          <h2 style="font-size:15px;margin:0;">🛡️ 손절 전용 (자동 매도) <span style="color:var(--muted);font-weight:500;font-size:12px;margin-left:6px;">매수 없음 · 보유분만 매도</span></h2>
+        </div>
+        <div class="sub">KIS 보유 종목 기준. <b>손절가</b>·<b>손절%(평단 대비)</b>·<b>예약 매도시각</b> 중 하나라도 도달하면 서버가 장중 자동 매도합니다. 매수는 절대 하지 않습니다. 종목당 하루 1회 · 브라우저 OFF여도 동작.</div>
+        <div style="display:flex;align-items:center;gap:10px;margin:10px 0;flex-wrap:wrap;">
+          <label style="display:flex;align-items:center;gap:8px;font-size:15px;font-weight:700;cursor:pointer;">
+            <input type="checkbox" id="autosellEnabled" style="width:18px;height:18px;"> 손절 감시 전체 ON
+          </label>
+          <button type="button" class="refresh-btn" onclick="saveAutosell(this)" style="border-color:var(--accent);color:var(--accent);margin:0;">💾 적용</button>
+          <span id="autosellMsgTop" class="sub" style="font-size:11.5px;"></span>
+        </div>
+        <div class="sub" style="font-size:11.5px;margin:-2px 0 8px;">ON/OFF·규칙을 바꾼 뒤 <b>적용</b>을 눌러야 서버에 반영됩니다(비밀번호 필요). 아래 🤖 자동매매와 별개 스위치입니다.</div>
+        <div id="autosellRules"></div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:12px;">
+          <span style="font-size:13px;">비밀번호</span>
+          <input id="autosellPw" type="password" placeholder="비밀번호"
+            style="width:100px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:4px 6px;font-size:14px;">
+          <button class="refresh-btn" onclick="saveAutosell(this)" style="border-color:var(--accent);color:var(--accent);">💾 저장 · 적용</button>
+          <span id="autosellMsg" style="font-size:12.5px;color:var(--muted);"></span>
+        </div>
+        <div class="sub" style="margin-top:10px;">⚠️ <b>실제 자동 매도</b>입니다.<br>
+          • <b>손절가</b>: 현재가 ≤ 입력가 → 매도 · <b>손절%</b>: 평단 대비 손익률 ≤ 입력값(예 <b>-3</b>) → 매도<br>
+          • <b>매도시각</b>: 해당 시각 이후 보유분 매도 · 수량은 <b>최대수량</b> 상한(보유분과 비교해 작은 쪽)</div>
+      </section>
+
       <section class="panel">
         <div class="chart-head">
           <h2 style="font-size:15px;margin:0;">🤖 자동매매 (등락률 밴드 · 손절 · 예약) <span style="color:var(--muted);font-weight:500;font-size:12px;margin-left:6px;">서버가 장중 자동 실행</span></h2>
@@ -969,14 +1050,17 @@
         <div class="modal-row" style="display:block;">
           <div class="modal-k" style="margin-bottom:6px;">📋 종목 관리 (대시보드 추가/삭제)</div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">
-            <input id="wlCode" type="text" maxlength="15" placeholder="국내 6자리(042660) 또는 미국 티커(AAPL)"
-              style="width:230px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:4px 6px;font-size:14px;">
+            <span style="position:relative;display:inline-block;">
+              <input id="wlCode" type="text" maxlength="30" placeholder="종목명(삼성전자)·코드·미국 티커" autocomplete="off"
+                style="width:230px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:4px 6px;font-size:14px;">
+              <div id="wlSug" class="sym-sug"></div>
+            </span>
             <button class="refresh-btn" onclick="addWatchlist(this)" style="border-color:var(--up);color:var(--up);">＋ 추가</button>
             <span id="wlMsg" style="font-size:12.5px;color:var(--muted);"></span>
           </div>
           <div id="wlList" style="font-size:13px;"></div>
         </div>
-        <div class="modal-note">국내 <b>6자리 코드</b> 또는 미국 <b>티커(AAPL, ^SOX, NQ=F)</b>로 대시보드에 <b>바로 추가</b>(재시작 불필요). <b>구글 로그인 시 내 계정에만</b> 저장되며 ✕로 삭제 가능. 로그인 전엔 기본 종목만 보입니다.</div>
+        <div class="modal-note">국내는 <b>종목명(예: 삼성전자)</b>만 쳐도 자동완성에서 골라 추가됩니다. 코드(6자리)·미국 티커(AAPL, ^SOX, NQ=F)도 가능. <b>구글 로그인 시 내 계정에만</b> 저장되며 ✕로 삭제 가능. 로그인 전엔 기본 종목만 보입니다.</div>
         <div class="modal-row" style="display:block;">
           <div class="modal-k" style="margin-bottom:8px;">📡 서버 알림 종류 (복수 선택 · 폰 꺼도 수신)</div>
           <label class="alarm-opt"><input type="checkbox" class="at-input" value="pct"> 증감(±%) 도달 <span class="opt-tag">실시간</span></label>
@@ -1025,6 +1109,12 @@
           <div id="tokenUsage" style="font-size:13px;color:var(--muted);">불러오는 중…</div>
         </div>
         <div class="modal-note">이 앱(더듬이 AI·브리핑·써머리)이 쓴 Claude 토큰·추정비용입니다. <b>Claude Code(코딩)·claude.ai 채팅은 별개</b>라 여기에 안 잡힙니다 — 전체 정확한 금액은 <a href="https://console.anthropic.com/settings/usage" target="_blank" rel="noopener" style="color:var(--accent);font-weight:700;">Anthropic Console</a>에서 확인하세요. (비용은 추정치)</div>
+
+        <div class="modal-row" style="display:block;">
+          <div class="modal-k" style="margin-bottom:6px;">📦 이 앱 직접 운영하기 (소스 다운로드)</div>
+          <a href="/download" target="_blank" rel="noopener" class="refresh-btn" style="display:inline-block;text-decoration:none;border-color:var(--up);color:var(--up);margin-left:0;">⬇ 소스 받기 · 설치 가이드</a>
+        </div>
+        <div class="modal-note">본인의 <b>한국투자증권(KIS) API 키</b>만 있으면 이 앱을 직접 돌릴 수 있습니다. <b>윈도우는 설치 없이 exe 더블클릭</b>(파이썬 불필요), 맥·리눅스·서버는 소스로 — 둘 다 다운로드 페이지에 있습니다. 시세·수급·알림·매매일지·자동매매 전부 동작.</div>
       </div>
     </div>
 
@@ -1100,6 +1190,10 @@
     function renderCards(quotes) {
       const root = document.getElementById("cards");
       root.innerHTML = "";
+      if (!quotes.length) {   // 신규 사용자는 빈 목록에서 시작 — 종목 추가 안내
+        root.innerHTML = '<div class="empty-state" style="grid-column:1/-1;">아직 관심종목이 없습니다. ⚙️ 설정 → 📋 종목 관리에서 종목을 추가하세요.</div>';
+        return;
+      }
       if (!selected && quotes.length) selected = quotes[0].symbol; // 기본 = 첫 종목(삼성전자)
       quotes.forEach((q) => {
         quotesById[q.symbol] = q;
@@ -1984,18 +2078,67 @@
       }
     }
 
+    // ===== 종목명 자동완성 — /api/symbol-search (종목 추가 입력 공용) =====
+    function attachSymbolSuggest(inputId, boxId, addFn) {
+      const inp = document.getElementById(inputId);
+      const box = document.getElementById(boxId);
+      if (!inp || !box || inp.dataset.sugBound) return;
+      inp.dataset.sugBound = "1";
+      let timer = null, seq = 0;
+      const hide = () => { box.style.display = "none"; box.innerHTML = ""; };
+      inp.addEventListener("input", () => {
+        clearTimeout(timer);
+        const q = (inp.value || "").trim();
+        // 한글/숫자는 1자부터, 영문(티커·미국 종목명)은 2자부터 자동완성
+        const ascii = /^[A-Za-z0-9.\-^=\s]+$/.test(q);
+        if (!q || (ascii && q.replace(/\s/g, "").length < 2)) { hide(); return; }
+        timer = setTimeout(async () => {
+          const my = ++seq;
+          try {
+            const r = await (await fetch("/api/symbol-search?q=" + encodeURIComponent(q))).json();
+            if (my !== seq) return; // 늦게 도착한 이전 응답 무시
+            const items = (r && r.items) || [];
+            if (!items.length) { hide(); return; }
+            box.innerHTML = items.map((it) =>
+              `<div class="sym-sug-item" data-sym="${it.symbol}">
+                 <span class="mkt ${it.market === "US" ? "us" : ""}">${it.market}</span>
+                 <span>${it.name}</span><span class="code">${it.symbol}</span>
+               </div>`).join("");
+            box.style.display = "block";
+            box.querySelectorAll(".sym-sug-item").forEach((el) => {
+              // blur 로 닫히기 전에 선택되도록 mousedown 사용
+              el.addEventListener("mousedown", (e) => {
+                e.preventDefault();
+                inp.value = el.dataset.sym; hide(); addFn();
+              });
+            });
+          } catch (e) { hide(); }
+        }, 250);
+      });
+      inp.addEventListener("blur", () => setTimeout(hide, 150));
+      inp.addEventListener("keydown", (e) => { if (e.key === "Escape") hide(); });
+    }
+    function validSymbolInput(s) {
+      // 코드/티커 또는 종목명(한글 포함) — 이름은 서버가 코드로 해석
+      return /^\d{6}$/.test(s) || /^[A-Za-z0-9.\-^=]{1,15}$/.test(s) || /[가-힣]/.test(s);
+    }
+
     // ===== 대시보드 메인 「＋ 종목 추가」 바 (로그인 시 노출) =====
     function renderWatchlistBar() {
       const bar = document.getElementById("wlBar"); if (!bar) return;
       if (authState && authState.authenticated) {
         const inp = "background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:5px 8px;font-size:14px;";
         bar.innerHTML = `<span style="font-size:13px;font-weight:700;">＋ 내 종목 추가</span>
-          <input id="wlCodeMain" type="text" maxlength="15" placeholder="국내 6자리(042660) 또는 미국 티커(AAPL)" style="${inp}width:240px;">
+          <span style="position:relative;display:inline-block;">
+            <input id="wlCodeMain" type="text" maxlength="30" placeholder="종목명(삼성전자)·코드·미국 티커" autocomplete="off" style="${inp}width:240px;">
+            <div id="wlSugMain" class="sym-sug"></div>
+          </span>
           <button class="refresh-btn" onclick="addWatchlistMain(this)" style="border-color:var(--up);color:var(--up);">추가</button>
           <span id="wlMsgMain" style="font-size:12.5px;color:var(--muted);"></span>
           <span style="font-size:11.5px;color:var(--muted);margin-left:auto;">삭제는 ⚙️설정 → 종목 관리</span>`;
         const i = document.getElementById("wlCodeMain");
         if (i) i.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addWatchlistMain(); } });
+        attachSymbolSuggest("wlCodeMain", "wlSugMain", () => addWatchlistMain());
       } else {
         bar.innerHTML = `<span style="font-size:12.5px;color:var(--muted);">🔒 로그인하면 내 관심종목을 추가/관리할 수 있어요. (지금은 기본 종목)</span>`;
       }
@@ -2005,8 +2148,8 @@
       const msg = document.getElementById("wlMsgMain");
       if (!inp) return;
       const code = (inp.value || "").trim();
-      if (!(/^\d{6}$/.test(code) || /^[A-Za-z0-9.\-^=]{1,15}$/.test(code))) {
-        msg.textContent = "국내 6자리 코드 또는 미국 티커를 입력하세요"; msg.style.color = "var(--bad)"; return;
+      if (!validSymbolInput(code)) {
+        msg.textContent = "종목명·6자리 코드·미국 티커를 입력하세요"; msg.style.color = "var(--bad)"; return;
       }
       if (btn) btn.disabled = true;
       msg.textContent = "확인 중…"; msg.style.color = "var(--muted)";
@@ -2031,6 +2174,7 @@
     async function loadWatchlist() {
       const el = document.getElementById("wlList");
       if (!el) return;
+      attachSymbolSuggest("wlCode", "wlSug", () => addWatchlist());  // 설정창 입력에도 자동완성(중복 바인딩 방지됨)
       try {
         const r = await (await fetch("/api/watchlist")).json();
         if (!r.ok) { el.textContent = "불러오기 실패"; return; }
@@ -2050,8 +2194,8 @@
       const inp = document.getElementById("wlCode");
       const msg = document.getElementById("wlMsg");
       const code = (inp.value || "").trim();
-      if (!(/^\d{6}$/.test(code) || /^[A-Za-z0-9.\-^=]{1,15}$/.test(code))) {
-        msg.textContent = "국내 6자리 코드 또는 미국 티커를 입력하세요"; msg.style.color = "var(--bad)"; return;
+      if (!validSymbolInput(code)) {
+        msg.textContent = "종목명·6자리 코드·미국 티커를 입력하세요"; msg.style.color = "var(--bad)"; return;
       }
       if (btn) btn.disabled = true;
       msg.textContent = "확인 중…"; msg.style.color = "var(--muted)";
@@ -2104,6 +2248,7 @@
     }
 
     // ===== 보유 종목 — /api/balance =====
+    let _autosellHoldings = [];  // 손절 카드용 잔고 캐시
     async function loadBalance(btn) {
       const el = document.getElementById("balanceBody");
       if (!el) return;
@@ -2112,6 +2257,8 @@
         const r = await (await fetch("/api/balance")).json();
         if (!r.ok) { el.className = "empty-state"; el.innerHTML = `<span style="color:var(--down)">조회 실패 — ${r.error || ""}</span>`; return; }
         const list = r.holdings || [];
+        _autosellHoldings = list;
+        if (document.getElementById("autosellRules")) renderAutosellRules();
         const sm = r.summary || {};
         const pc = (v) => v > 0 ? "var(--up)" : v < 0 ? "var(--down)" : "var(--muted)";
         const won = (n) => (n == null ? "-" : Math.round(n).toLocaleString());
@@ -2173,6 +2320,128 @@
         renderCare(await (await fetch("/api/holdings-care/run", { method: "POST" })).json());
       } catch (e) { if (el) el.textContent = "요청 실패"; }
       finally { if (btn) { btn.disabled = false; btn.textContent = "지금 생성"; } }
+    }
+
+    // ===== 손절 전용(자동 매도) — /api/autosell/config =====
+    let autosellCfg = { enabled: false, rules: {} };
+    async function loadAutosell() {
+      try {
+        const r = await (await fetch("/api/autosell/config")).json();
+        if (r.ok) autosellCfg = { enabled: !!r.enabled, rules: r.rules || {} };
+      } catch (e) { /* keep defaults */ }
+      // 보유 종목이 없으면 잔고를 한 번 가져와 손절 카드에 표시
+      if (!_autosellHoldings.length) {
+        try {
+          const b = await (await fetch("/api/balance")).json();
+          if (b.ok) _autosellHoldings = b.holdings || [];
+        } catch (e) { /* empty */ }
+      }
+      const en = document.getElementById("autosellEnabled");
+      if (en) en.checked = autosellCfg.enabled;
+      renderAutosellRules();
+    }
+    function renderAutosellRules() {
+      const box = document.getElementById("autosellRules");
+      if (!box) return;
+      // 보유 종목 + 이미 규칙이 있는 종목 합치기
+      const bySym = {};
+      (_autosellHoldings || []).forEach((h) => {
+        if (h && h.symbol) bySym[h.symbol] = h;
+      });
+      Object.keys(autosellCfg.rules || {}).forEach((sym) => {
+        if (!bySym[sym]) bySym[sym] = { symbol: sym, name: sym, qty: 0, avg_price: 0, cur_price: 0 };
+      });
+      // 워치리스트 국내 종목도 추가(미리 규칙 설정 가능)
+      Object.values(quotesById || {}).forEach((q) => {
+        if (q && q.currency === "KRW" && q.symbol && !bySym[q.symbol]) {
+          bySym[q.symbol] = { symbol: q.symbol, name: q.name || q.symbol, qty: 0, avg_price: 0, cur_price: q.price || 0 };
+        }
+      });
+      const rows = Object.values(bySym);
+      if (!rows.length) {
+        box.innerHTML = '<div class="sub">보유 종목·관심 국내 종목이 없습니다. 잔고를 새로고침하거나 관심종목을 추가하세요.</div>';
+        return;
+      }
+      const inp = "background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px;font-variant-numeric:tabular-nums;";
+      const fld = (label, cls, val, ph, w, extra = "") =>
+        `<label class="at-fld"><span>${label}</span><input class="${cls}" ${extra} value="${val}" placeholder="${ph}" style="${inp}width:${w};"></label>`;
+      box.innerHTML = rows.map((h) => {
+        const r = autosellCfg.rules[h.symbol] || {};
+        const avg = h.avg_price || 0;
+        const cur = h.cur_price || 0;
+        const qty = h.qty || 0;
+        const pnl = avg > 0 && cur > 0 ? ((cur - avg) / avg * 100) : null;
+        const pnlTxt = pnl == null ? "—" : `${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}%`;
+        const pnlColor = pnl == null ? "var(--muted)" : (pnl >= 0 ? "var(--up)" : "var(--down)");
+        return `<div class="at-card" data-as-sym="${h.symbol}">
+          <div class="at-card-name">
+            <b>${h.name || h.symbol}</b> <span style="font-size:11px;color:var(--muted)">${h.symbol}</span>
+            ${qty > 0 ? `<span style="font-size:11.5px;color:var(--muted);margin-left:6px;">보유 ${qty}주 · 평단 ${avg ? avg.toLocaleString() + "원" : "—"} · 현재 ${cur ? cur.toLocaleString() + "원" : "—"} · <span style="color:${pnlColor}">${pnlTxt}</span></span>`
+              : `<span style="font-size:11.5px;color:var(--muted);margin-left:6px;">미보유(규칙만 미리 설정 가능)</span>`}
+          </div>
+          <div class="at-fields">
+            ${fld("손절가", "as-sp", r.stop_price ?? "", cur ? Math.round(cur * 0.97) : "—", "96px", 'type="number" min="0" step="any"')}
+            ${fld("손절%", "as-spct", r.stop_pct ?? "", "-3", "64px", 'type="number" step="any"')}
+            ${fld("매도시각", "as-time", r.sell_time ?? "", "", "104px", 'type="time"')}
+            ${fld("최대수량", "as-mq", r.max_qty ?? 1, "1", "64px", 'type="number" min="1" step="1"')}
+          </div>
+        </div>`;
+      }).join("") +
+        `<div class="modal-note" style="margin-top:10px;">🛡️ <b>손절 전용</b>은 자동 매수만 없고 매도만 합니다. 조건 칸을 모두 비우면 해당 종목 규칙이 삭제됩니다. 실제 매도는 보유 중일 때만 발동합니다.</div>`;
+    }
+    async function saveAutosell(btn) {
+      let pw = (document.getElementById("autosellPw") || {}).value || "";
+      if (!pw) {
+        pw = (prompt("손절 설정 비밀번호를 입력하세요") || "").trim();
+        if (!pw) return;
+        const _pwEl = document.getElementById("autosellPw"); if (_pwEl) _pwEl.value = pw;
+      }
+      const rules = {};
+      document.querySelectorAll("#autosellRules [data-as-sym]").forEach((tr) => {
+        const sym = tr.dataset.asSym;
+        const sp = tr.querySelector(".as-sp").value;
+        const spct = tr.querySelector(".as-spct").value;
+        const t = tr.querySelector(".as-time").value;
+        const mq = tr.querySelector(".as-mq").value;
+        if (sp || spct || t) {
+          rules[sym] = {
+            stop_price: sp || null,
+            stop_pct: spct || null,
+            sell_time: t || null,
+            max_qty: mq || 1,
+          };
+        }
+      });
+      const enabled = document.getElementById("autosellEnabled").checked;
+      const _mEls = [document.getElementById("autosellMsg"), document.getElementById("autosellMsgTop")].filter(Boolean);
+      const msg = {
+        set textContent(v) { _mEls.forEach((e) => { e.textContent = v; }); },
+        style: { set color(v) { _mEls.forEach((e) => { e.style.color = v; }); } },
+      };
+      if (btn) btn.disabled = true;
+      msg.textContent = "저장 중…"; msg.style.color = "var(--muted)";
+      try {
+        const r = await (await fetch("/api/autosell/config", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled, rules, password: pw }),
+        })).json();
+        if (r.ok) {
+          autosellCfg = { enabled: !!r.enabled, rules: r.rules || {} };
+          document.getElementById("autosellEnabled").checked = autosellCfg.enabled;
+          renderAutosellRules();
+          const n = Object.keys(autosellCfg.rules).length;
+          msg.textContent = `✅ 저장·적용됨 · ${autosellCfg.enabled ? "손절 감시 ON" : "OFF"} · ${n}종목 · 장중 서버 자동 매도`;
+          msg.style.color = "var(--good)";
+        } else {
+          msg.textContent = "❌ " + (r.error || "저장 실패");
+          msg.style.color = "var(--bad)";
+        }
+      } catch (e) {
+        msg.textContent = "요청 실패";
+        msg.style.color = "var(--bad)";
+      } finally {
+        if (btn) btn.disabled = false;
+      }
     }
 
     // ===== 자동매매(등락률 밴드·손절·예약) — /api/autotrade/config =====
@@ -2478,7 +2747,7 @@
       const out = card ? card.querySelector(".at-ai-result") : null;
       if (!out) return;
       const base = parseFloat((card.querySelector(".at-base") || {}).value) || null;
-      if (!autotradePw) { if (!unlockAutotrade()) return; }
+      if (!autotradePw) { if (!(await unlockAutotrade())) return; }
       btn.disabled = true; const old = btn.textContent; btn.textContent = "🧠 판단 중…";
       out.textContent = "AI가 검토 중…"; out.style.color = "var(--muted)";
       try {
@@ -2723,6 +2992,13 @@
       else v = a.toLocaleString();
       return sign + v;
     }
+    // 순매수 '금액'(억원) — 수량(주)보다 '돈'이 직관적이라 기본 표시. 1조=10,000억.
+    function fmtAmt(n) {
+      if (n == null) return "—";
+      const a = Math.abs(n), sign = n > 0 ? "+" : (n < 0 ? "-" : "");
+      if (a >= 10000) return sign + (a / 10000).toFixed(2).replace(/\.?0+$/, "") + "조";
+      return sign + Math.round(a).toLocaleString() + "억";
+    }
     const flowCls = (n) => n > 0 ? "up" : (n < 0 ? "down" : "");
     const arrow = (n) => n > 0 ? "▲" : (n < 0 ? "▼" : "");
     // PER/RSI 보조지표(수급일지·대시보드 공용). RSI는 히스토리로 클라 계산(차트와 동일 rsi()), PER은 재무.
@@ -2763,28 +3039,52 @@
     // (장중·장전에 out[0] 이 당일이 아니거나 부분치라 값이 이상해 보이던 문제 표시)
     function supplyBadge(r) {
       if (!r) return "";
-      if (r.confirmed === false) return ` · <span style="color:var(--gold);font-weight:700;">⚠️ 장중 미확정(부분치)</span>`;
+      if (r.confirmed === false) return ` · <span style="color:var(--gold);font-weight:700;">🟡 장중 실시간 잠정치 (마감 후 확정 · 계속 바뀝니다)</span>`;
       if (r.is_today === false) return ` · <span style="color:var(--muted);">전일 확정치</span>`;
-      return ` · <span style="color:var(--up);">당일 확정</span>`;
+      return ` · <span style="color:var(--up);font-weight:700;">✅ 당일 마감 확정</span>`;
+    }
+    // '얼마나 사고 팔았나' 펼침 상세 — 투자자별 매수/매도/순매수 금액(억원).
+    const gAmt = (n) => n == null ? "—" : fmtAmt(n).replace("+", "");  // 매수/매도는 항상 +라 부호 뗌
+    function supplyDetailRows(r) {
+      const items = [
+        { label: "외국인", buy: r.frgn_buy_amt, sell: r.frgn_sell_amt, net: r.frgn_ntby_amt },
+        { label: "기관", buy: r.orgn_buy_amt, sell: r.orgn_sell_amt, net: r.orgn_ntby_amt },
+        { label: "개인", buy: r.prsn_buy_amt, sell: r.prsn_sell_amt, net: r.prsn_ntby_amt },
+      ];
+      return items.map((it) => `<tr>
+        <td style="text-align:left;color:var(--muted);">${it.label}</td>
+        <td style="text-align:right;color:var(--up);">샀다 ${gAmt(it.buy)}</td>
+        <td style="text-align:right;color:var(--down);">팔았다 ${gAmt(it.sell)}</td>
+        <td style="text-align:right;font-weight:700;" class="${flowCls(it.net)}">순 ${arrow(it.net)}${gAmt(it.net)}</td>
+      </tr>`).join("");
     }
     function renderSupplyTable() {
       const box = document.getElementById("flowSupply"); if (!box) return;
       const ok = supplyData.filter((r) => r && r.available);
-      if (!ok.length) { box.className = "empty-state"; box.textContent = "수급 데이터 없음"; return; }
+      if (!ok.length) { box.className = "empty-state"; box.textContent = "수급 데이터 없음 (평일 장중·장마감 후 표시)"; return; }
       box.className = "";
-      const cell = (q, sum, emph) => `<td class="${emph ? "col-frgn " : ""}${flowCls(q)}">${arrow(q)} ${fmtQty(q)}<div class="sum">5일 ${fmtQty(sum)}</div></td>`;
+      // 셀 = 순매수 '금액(억원)'(크게) + 5일 누적(작게). 색: 빨강=순매수(샀다) / 파랑=순매도(팔았다).
+      const cell = (amt, sum, emph) => `<td class="${emph ? "col-frgn " : ""}${flowCls(amt)}">${arrow(amt)} ${fmtAmt(amt)}<div class="sum">5일 ${fmtAmt(sum)}</div></td>`;
       const fmtD = (d) => d ? d.replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3") : "—";
+      const detail = ok.map((r) => `<div style="margin-top:10px;">
+          <div style="font-weight:700;font-size:13px;margin-bottom:3px;">${r.name}</div>
+          <table class="flow-tbl" style="font-size:12.5px;">${supplyDetailRows(r)}</table>
+        </div>`).join("");
       box.innerHTML = `<table class="flow-tbl">
         <thead><tr><th>종목</th><th>외국인</th><th>기관</th><th>개인</th><th style="text-align:right;">PER</th><th style="text-align:right;">RSI</th></tr></thead>
         <tbody>${ok.map((r) => `<tr>
           <td>${r.name}</td>
-          ${cell(r.frgn_ntby_qty, r.frgn_ntby_sum, true)}
-          ${cell(r.orgn_ntby_qty, r.orgn_ntby_sum, false)}
-          ${cell(r.prsn_ntby_qty, r.prsn_ntby_sum, false)}
+          ${cell(r.frgn_ntby_amt, r.frgn_ntby_amt_sum, true)}
+          ${cell(r.orgn_ntby_amt, r.orgn_ntby_amt_sum, false)}
+          ${cell(r.prsn_ntby_amt, r.prsn_ntby_amt_sum, false)}
           <td style="text-align:right;font-variant-numeric:tabular-nums;">${fmtPer(r.per)}</td>
           <td style="text-align:right;font-variant-numeric:tabular-nums;color:${rsiColor(r.rsi)};font-weight:700;">${fmtRsi(r.rsi)}</td>
         </tr>`).join("")}</tbody></table>
-        <div class="flow-sub" style="margin-top:6px;">기준일 ${fmtD(ok[0].asof || ok[0].date)}${supplyBadge(ok[0])} · 단위 주(외국인 강조) · PER 배수 · RSI(14)</div>`;
+        <div class="flow-sub" style="margin-top:8px;">
+          기준일 ${fmtD(ok[0].asof || ok[0].date)}${supplyBadge(ok[0])}<br>
+          <span style="color:var(--up);font-weight:700;">▲ 빨강 = 순매수(샀다)</span> · <span style="color:var(--down);font-weight:700;">▼ 파랑 = 순매도(팔았다)</span> · 단위 <b>억원</b>(1조=10,000억) · 외국인 강조 · 60초 갱신
+        </div>
+        <details class="news-more" style="margin-top:8px;"><summary>🔍 오늘 얼마나 사고 팔았나 (매수·매도 자세히)</summary>${detail}</details>`;
     }
     const OB_SYMS = ["005930", "000660", "0193W0", "0193T0"];  // 삼성전자·하이닉스·삼전레버·하닉레버
     function renderBook(d) {
@@ -2839,15 +3139,31 @@
     }
 
     // 🔒 자동매매봇 탭 비밀번호 보호 (다른 사람 통제용 · 세션 동안 1회만 입력)
-    // 실제 차단은 서버(/api/order)가 비밀번호를 검증해서 함. 여기서 입력받은 값을
-    // 주문 요청에 함께 실어 보냄 — 비번을 모르면 주소를 알아도 주문 불가.
-    let autotradeUnlocked = !!sessionStorage.getItem("autotradePw");
+    // 잠금 해제도 서버(/api/verify-password)가 비밀번호를 검증한다 — 아무 문자열로
+    // 뚫리지 않음. 저장된 비번(sessionStorage)도 페이지 로드 후 첫 사용 때 재검증.
+    let autotradeUnlocked = false;            // 서버 검증 통과 후에만 true
     let autotradePw = sessionStorage.getItem("autotradePw") || "";
-    function unlockAutotrade() {
+    async function verifyTradePw(pw) {
+      try {
+        const r = await (await fetch("/api/verify-password", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password: pw }),
+        })).json();
+        return r.ok ? true : (r.error || "비밀번호가 올바르지 않습니다");
+      } catch { return "서버 연결 실패 — 잠시 후 다시 시도하세요"; }
+    }
+    async function unlockAutotrade() {
       if (autotradeUnlocked) return true;
+      if (autotradePw) {                      // 이전 세션 저장값 재검증
+        if ((await verifyTradePw(autotradePw)) === true) { autotradeUnlocked = true; return true; }
+        autotradePw = "";
+        sessionStorage.removeItem("autotradePw");
+      }
       const pw = prompt("🔒 자동매매봇 — 비밀번호를 입력하세요");
       if (pw === null) return false;          // 취소
       if (!pw) { alert("비밀번호를 입력하세요."); return false; }
+      const v = await verifyTradePw(pw);
+      if (v !== true) { alert("🔒 " + v); return false; }
       autotradePw = pw;
       autotradeUnlocked = true;
       sessionStorage.setItem("autotradePw", pw);
@@ -2926,22 +3242,22 @@
     function renderSupplySummary() {
       const el = document.getElementById("sumSupply"); if (!el) return;
       const ok = supplyData.filter((r) => r && r.available);
-      const head = `<h2 style="font-size:14px;">📊 수급 — 외국인·기관·개인 <span class="sub" style="font-weight:500;">순매수 · PER · RSI</span></h2>`;
+      const head = `<h2 style="font-size:14px;">📊 수급 — 외국인·기관·개인 <span class="sub" style="font-weight:500;">순매수 금액(억원) · PER · RSI</span></h2>`;
       if (!ok.length) { el.innerHTML = head + `<div class="sub" style="margin-top:6px;">수급 데이터 없음(장중·평일 표시)</div>`; return; }
-      const cell = (q, emph) => `<td class="${emph ? "col-frgn " : ""}${flowCls(q)}" style="text-align:right;font-variant-numeric:tabular-nums;">${arrow(q)} ${fmtQty(q)}</td>`;
+      const cell = (amt, emph) => `<td class="${emph ? "col-frgn " : ""}${flowCls(amt)}" style="text-align:right;font-variant-numeric:tabular-nums;">${arrow(amt)} ${fmtAmt(amt)}</td>`;
       const fmtD = (d) => d ? d.replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3") : "—";
       el.innerHTML = head + `
         <div class="tbl-wrap"><table class="flow-tbl" style="margin-top:8px;">
           <thead><tr><th>종목</th><th style="text-align:right;">외국인</th><th style="text-align:right;">기관</th><th style="text-align:right;">개인</th><th style="text-align:right;">PER</th><th style="text-align:right;">RSI</th></tr></thead>
           <tbody>${ok.map((r) => `<tr>
             <td>${r.name}</td>
-            ${cell(r.frgn_ntby_qty, true)}
-            ${cell(r.orgn_ntby_qty, false)}
-            ${cell(r.prsn_ntby_qty, false)}
+            ${cell(r.frgn_ntby_amt, true)}
+            ${cell(r.orgn_ntby_amt, false)}
+            ${cell(r.prsn_ntby_amt, false)}
             <td style="text-align:right;font-variant-numeric:tabular-nums;">${fmtPer(r.per)}</td>
             <td style="text-align:right;font-variant-numeric:tabular-nums;color:${rsiColor(r.rsi)};font-weight:700;">${fmtRsi(r.rsi)}</td>
           </tr>`).join("")}</tbody></table></div>
-        <div class="flow-sub" style="margin-top:6px;">기준일 ${fmtD(ok[0].asof || ok[0].date)}${supplyBadge(ok[0])} · ▲순매수/▼순매도 · PER 배수 · RSI(14)</div>`;
+        <div class="flow-sub" style="margin-top:6px;">기준일 ${fmtD(ok[0].asof || ok[0].date)}${supplyBadge(ok[0])} · <span style="color:var(--up);font-weight:700;">▲순매수(샀다)</span>/<span style="color:var(--down);font-weight:700;">▼순매도(팔았다)</span> · 단위 억원(1조=1만억)</div>`;
     }
 
     // ===================== 💼 포트폴리오 탭(총자산 + 비중 + 보유) =====================
@@ -3112,6 +3428,8 @@
     const JRN_SIDE_CLS = { "매수": "side-buy", "매도": "side-sell", "배당": "" };
     let journalEntries = [];
     let jrnCalMonth = null, jrnRepMonth = null, jrnSelDay = null, jrnCatFilter = "전체";
+    // 검색: 날짜범위(all/7d/1m/1y/custom) + 사용자지정 기간 + 종목명
+    let jrnDateFilter = "all", jrnCustomStart = "", jrnCustomEnd = "", jrnNameQuery = "";
     const monthNow = () => { const t = new Date(); return { y: t.getFullYear(), m: t.getMonth() }; };
     const wonFmt = (n) => (n == null || n === "" ? "" : Math.round(Number(n)).toLocaleString());
     const pnlColor = (v) => (v > 0 ? "var(--up)" : v < 0 ? "var(--down)" : "var(--muted)");
@@ -3143,14 +3461,70 @@
       const pct = pnl / cost * 100;
       return pnlSgn(pct) + pct.toFixed(2) + "%";
     }
+    // 검색 조건(종류 + 날짜범위 + 종목명)을 모두 적용해 필터링
+    function jrnDateBounds() {
+      // 반환: {start, end} (YYYY-MM-DD, 없으면 "")
+      if (jrnDateFilter === "custom") return { start: jrnCustomStart || "", end: jrnCustomEnd || "" };
+      if (jrnDateFilter === "all") return { start: "", end: "" };
+      const t = new Date();
+      const end = t.toISOString().slice(0, 10);
+      const s = new Date(t);
+      if (jrnDateFilter === "7d") s.setDate(s.getDate() - 7);
+      else if (jrnDateFilter === "1m") s.setMonth(s.getMonth() - 1);
+      else if (jrnDateFilter === "1y") s.setFullYear(s.getFullYear() - 1);
+      return { start: s.toISOString().slice(0, 10), end };
+    }
+    function jrnRangeLabel() {
+      if (jrnDateFilter === "all") return "전체 기간";
+      if (jrnDateFilter === "7d") return "최근 7일";
+      if (jrnDateFilter === "1m") return "최근 1달";
+      if (jrnDateFilter === "1y") return "최근 1년";
+      const b = jrnDateBounds();
+      return `${b.start || "처음"} ~ ${b.end || "지금"}`;
+    }
+    function filteredJournalEntries() {
+      const { start, end } = jrnDateBounds();
+      const q = (jrnNameQuery || "").trim().toLowerCase();
+      return journalEntries.filter((e) => {
+        if (jrnCatFilter !== "전체" && (e.category || "일반주") !== jrnCatFilter) return false;
+        const d = e.trade_date || "";
+        if (start && d < start) return false;
+        if (end && d > end) return false;
+        if (q && !`${e.name || ""} ${e.symbol || ""}`.toLowerCase().includes(q)) return false;
+        return true;
+      });
+    }
+    // 현황 요약 카드 (검색 조건 반영)
+    function renderJournalStatus() {
+      const box = document.getElementById("jrnStatus");
+      const rangeEl = document.getElementById("jrnStatusRange");
+      if (!box) return;
+      if (rangeEl) rangeEl.textContent = `· ${jrnRangeLabel()}${jrnCatFilter !== "전체" ? ` · ${jrnCatFilter}` : ""}${(jrnNameQuery || "").trim() ? ` · "${jrnNameQuery.trim()}"` : ""}`;
+      const es = filteredJournalEntries();
+      let buy = 0, sell = 0, realized = 0, div = 0, tax = 0;
+      es.forEach((e) => {
+        const a = Number(e.amount) || 0;
+        if (e.side === "매수") buy += a; else if (e.side === "매도") sell += a; else if (e.side === "배당") div += a;
+        if (e.realized_pnl != null) realized += Number(e.realized_pnl);
+        tax += Number(e.tax) || 0;
+      });
+      const card = (lbl, val, color) => `<div class="rep-card"><div class="lbl">${lbl}</div><div class="val" style="color:${color || "var(--text)"};">${val}</div></div>`;
+      box.innerHTML =
+        card("거래 건수", es.length + "건") +
+        card("매수 합계", Math.round(buy).toLocaleString() + "원") +
+        card("매도 합계", Math.round(sell).toLocaleString() + "원") +
+        card("실현손익", pnlSgn(realized) + Math.round(realized).toLocaleString() + "원", pnlColor(realized)) +
+        card("배당 합계", Math.round(div).toLocaleString() + "원", div ? "var(--up)" : null) +
+        card("세금 합계", Math.round(tax).toLocaleString() + "원", "var(--muted)");
+    }
     function renderJournalList() {
+      renderJournalStatus();
       const el = document.getElementById("journalList");
       if (!el) return;
-      const entries = jrnCatFilter === "전체" ? journalEntries
-        : journalEntries.filter((e) => (e.category || "일반주") === jrnCatFilter);
+      const entries = filteredJournalEntries();
       const cnt = document.getElementById("journalCount");
-      if (cnt) cnt.textContent = entries.length ? `· ${entries.length}건${jrnCatFilter !== "전체" ? ` (${jrnCatFilter})` : ""}` : "";
-      if (!entries.length) { el.className = "empty-state"; el.textContent = journalEntries.length ? `${jrnCatFilter} 기록이 없습니다.` : "아직 기록이 없습니다. 위에서 첫 기록을 남겨보세요."; return; }
+      if (cnt) cnt.textContent = entries.length ? `· ${entries.length}건` : "";
+      if (!entries.length) { el.className = "empty-state"; el.textContent = journalEntries.length ? "검색 조건에 맞는 기록이 없습니다." : "아직 기록이 없습니다. 위 ＋ 새 기록으로 첫 기록을 남겨보세요."; return; }
       el.className = "";
       el.innerHTML = `<div class="tbl-wrap"><table class="jrn-tbl">
         <thead><tr><th>날짜</th><th>구분</th><th>종목</th><th style="text-align:right;">단가</th><th style="text-align:right;">수량</th><th style="text-align:right;">거래대금</th><th style="text-align:right;">세금</th><th style="text-align:right;">실현손익</th><th style="text-align:right;">수익률</th><th>이유/복기</th><th></th></tr></thead>
@@ -3167,7 +3541,7 @@
           <td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--muted);">${e.tax ? wonFmt(e.tax) : ""}</td>
           <td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:${pnlColor(pnl)};">${pnl == null ? "" : pnlSgn(pnl) + wonFmt(pnl)}</td>
           <td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:${pnlColor(pnl)};">${pnlPct(e)}</td>
-          <td style="font-size:12.5px;">${e.reason ? `<div>${escapeHtml(e.reason)}</div>` : ""}${e.memo ? `<div class="sub" style="margin-top:3px;">📝 ${escapeHtml(e.memo)}</div>` : ""}</td>
+          <td style="font-size:12.5px;">${e.reason ? `<div>${escapeHtml(e.reason)}</div>` : ""}${e.memo ? `<div class="sub" style="margin-top:3px;">📝 ${escapeHtml(e.memo)}</div>` : ""}${e.photo ? `<div style="margin-top:3px;"><a href="/api/journal/photo/${encodeURIComponent(e.photo)}" target="_blank" rel="noopener" style="color:var(--accent);font-size:12px;text-decoration:none;">📷 사진 보기</a></div>` : ""}</td>
           <td><button class="jrn-del" onclick="deleteJournal(${e.id})">삭제</button></td>
         </tr>`; }).join("")}</tbody></table></div>`;
     }
@@ -3181,6 +3555,112 @@
         const d = await r.json();
         if (d.ok) loadJournal();
       } catch {}
+    }
+
+    // ===== 매매일지 사진(촬영/임포트) + OCR 자동입력 (zikimi 방식) =====
+    // 원칙: OCR 결과는 llm 산출물 — 자동 저장하지 않고 입력폼에 채워 사용자가 확인 후 저장.
+    let jrnPhoto = null;        // 업로드된 사진 파일명 (저장 시 함께 전송)
+    let jrnOcrEntries = [];     // OCR 추출 결과
+
+    // EXIF 회전 굽기 + 긴변 3000px 축소 + JPEG 재인코딩 → base64.
+    // 폰 사진은 픽셀이 눕고 EXIF 태그로만 회전 표시되는 경우가 많아, 캔버스에 다시 그려
+    // 회전을 굽지 않으면 비전 OCR 이 옆으로 누운 글자를 헛읽는다.
+    function jrnBakePhoto(file) {
+      return new Promise((res, rej) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+          URL.revokeObjectURL(url);
+          try {
+            const w = img.naturalWidth, h = img.naturalHeight;
+            const scale = Math.min(1, 3000 / Math.max(w, h));
+            const c = document.createElement("canvas");
+            c.width = Math.round(w * scale); c.height = Math.round(h * scale);
+            c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+            const du = c.toDataURL("image/jpeg", 0.92);
+            res(du.substring(du.indexOf(",") + 1));
+          } catch (e) { rej(new Error("이미지 변환 실패")); }
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); rej(new Error("이미지를 읽을 수 없습니다 (JPG/PNG/WEBP만 가능)")); };
+        img.src = url;
+      });
+    }
+
+    async function jrnPhotoUpload(file) {
+      if (!file) return;
+      const st = document.getElementById("jrnOcrStatus");
+      const pick = document.getElementById("jrnOcrPick");
+      st.style.display = "block"; pick.style.display = "none"; pick.innerHTML = "";
+      st.textContent = "📷 사진 준비 중…";
+      try {
+        const b64 = await jrnBakePhoto(file);
+        st.textContent = "🔍 OCR 인식 중… (사진 크기에 따라 최대 1~2분)";
+        const r = await fetch("/api/journal/photo", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: file.name || "photo.jpg", data: b64 }),
+        });
+        if (r.status === 401) { st.textContent = "로그인이 필요합니다."; return; }
+        const d = await r.json();
+        if (!d.ok) { st.textContent = "❌ " + (d.error || "업로드 실패"); return; }
+        jrnPhoto = d.photo;
+        if (window.jrnOpenForm) jrnOpenForm(true);
+        renderJrnPhotoBox();
+        if (d.ocr_error) { st.textContent = "⚠️ " + d.ocr_error; return; }
+        jrnOcrEntries = d.entries || [];
+        if (!jrnOcrEntries.length) {
+          st.textContent = "⚠️ 사진에서 거래 내역을 찾지 못했습니다 — 사진은 첨부되니 내용은 직접 입력하세요.";
+          return;
+        }
+        jrnFillFromOcr(0);
+        if (jrnOcrEntries.length > 1) renderJrnOcrPick();
+        st.innerHTML = `<span style="font-size:10px;font-weight:700;color:#1a1f2b;background:var(--gold);border-radius:4px;padding:1px 5px;">llm</span> OCR 인식 ${jrnOcrEntries.length}건 — <b>값을 확인·수정한 뒤 저장</b>하세요 (자동 저장되지 않습니다)`;
+      } catch (e) { st.textContent = "❌ " + (e.message || "사진 처리 실패"); }
+    }
+
+    function jrnFillFromOcr(i) {
+      const form = document.getElementById("journalForm");
+      const e = jrnOcrEntries[i];
+      if (!form || !e) return;
+      const set = (n, v) => { const el = form.querySelector(`[name="${n}"]`); if (el && v != null && v !== "") el.value = v; };
+      if (e.trade_date) set("trade_date", e.trade_date);
+      set("side", e.side);
+      set("currency", e.currency || "KRW");
+      set("name", e.name);
+      set("price", e.price);
+      set("qty", e.qty);
+      set("tax", e.tax);
+      set("memo", e.memo);
+      form.dispatchEvent(new Event("change"));   // 통화 토글·거래대금 미리보기 갱신
+      document.querySelectorAll("#jrnOcrPick button").forEach((b, bi) => b.classList.toggle("active", bi === i));
+    }
+
+    function renderJrnOcrPick() {
+      const box = document.getElementById("jrnOcrPick");
+      if (!box) return;
+      box.style.display = "block";
+      box.innerHTML = '<span class="sub">인식된 거래 (눌러서 폼에 채움): </span>' +
+        jrnOcrEntries.map((e, i) =>
+          `<button type="button" class="refresh-btn" style="margin:2px 4px 2px 0;" onclick="jrnFillFromOcr(${i})">${e.trade_date || ""} ${e.side} ${escapeHtml(e.name || "?")}${e.qty != null ? " · " + e.qty : ""}${e.price != null ? " @ " + Number(e.price).toLocaleString() : ""}</button>`).join("");
+    }
+
+    function renderJrnPhotoBox() {
+      const box = document.getElementById("jrnPhotoBox");
+      if (!box) return;
+      if (!jrnPhoto) { box.style.display = "none"; box.innerHTML = ""; return; }
+      box.style.display = "flex";
+      box.innerHTML = `<label>첨부 사진</label><div style="display:flex;gap:10px;align-items:center;">
+        <a href="/api/journal/photo/${jrnPhoto}" target="_blank" rel="noopener"><img src="/api/journal/photo/${jrnPhoto}" alt="첨부 사진" style="height:56px;max-width:120px;object-fit:cover;border-radius:8px;border:1px solid var(--border);"></a>
+        <button type="button" class="refresh-btn" onclick="jrnPhotoDetach()">✕ 사진 제거</button></div>`;
+    }
+    function jrnPhotoDetach() { jrnPhoto = null; renderJrnPhotoBox(); }
+
+    function jrnResetPhotoState() {
+      jrnPhoto = null; jrnOcrEntries = [];
+      renderJrnPhotoBox();
+      const st = document.getElementById("jrnOcrStatus");
+      const pick = document.getElementById("jrnOcrPick");
+      if (st) { st.style.display = "none"; st.textContent = ""; }
+      if (pick) { pick.style.display = "none"; pick.innerHTML = ""; }
     }
 
     // ----- 서브탭 (기록/캘린더/리포트) -----
@@ -3268,6 +3748,7 @@
           return;
         }
         msg.textContent = "저장 중…";
+        if (jrnPhoto) body.photo = jrnPhoto;     // 첨부 사진 파일명 함께 저장
         try {
           const r = await fetch("/api/journal", {
             method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
@@ -3278,6 +3759,7 @@
             msg.textContent = "✅ 저장됨";
             const keepDate = di ? di.value : "";
             form.reset(); if (di) di.value = keepDate;
+            jrnResetPhotoState();
             refresh();
             loadJournal();
             setTimeout(() => { msg.textContent = ""; }, 2000);
@@ -3386,6 +3868,49 @@
           b.classList.add("active");
           jrnCatFilter = b.dataset.cat;
           renderJournalList();
+        });
+      });
+      // 검색: 날짜 범위(7일/1달/1년/사용자 선택/조건 없음)
+      const customBox = document.getElementById("jrnCustomRange");
+      document.querySelectorAll("#jrnDateFilter button").forEach((b) => {
+        b.addEventListener("click", () => {
+          document.querySelectorAll("#jrnDateFilter button").forEach((x) => x.classList.remove("active"));
+          b.classList.add("active");
+          jrnDateFilter = b.dataset.range;
+          if (customBox) customBox.style.display = jrnDateFilter === "custom" ? "flex" : "none";
+          renderJournalList();
+        });
+      });
+      const csEl = document.getElementById("jrnCustomStart"), ceEl = document.getElementById("jrnCustomEnd");
+      if (csEl) csEl.addEventListener("change", () => { jrnCustomStart = csEl.value; if (jrnDateFilter === "custom") renderJournalList(); });
+      if (ceEl) ceEl.addEventListener("change", () => { jrnCustomEnd = ceEl.value; if (jrnDateFilter === "custom") renderJournalList(); });
+      // 검색: 종목명
+      const nq = document.getElementById("jrnNameQuery");
+      if (nq) nq.addEventListener("input", () => { jrnNameQuery = nq.value; renderJournalList(); });
+      // ＋ 새 기록 토글 (평소 접힘, 누르면 입력폼 펼침)
+      const addBtn = document.getElementById("jrnAddToggle");
+      const jform = document.getElementById("journalForm");
+      const cancelBtn = document.getElementById("jrnFormCancel");
+      const toggleForm = (show) => {
+        if (!jform) return;
+        const open = show == null ? jform.style.display === "none" : show;
+        jform.style.display = open ? "grid" : "none";
+        if (addBtn) addBtn.textContent = open ? "✕ 닫기" : "＋ 새 기록";
+        if (open) { const nm = jform.querySelector('[name="name"]'); if (nm) nm.focus(); }
+      };
+      if (addBtn) addBtn.addEventListener("click", () => toggleForm());
+      if (cancelBtn) cancelBtn.addEventListener("click", () => { toggleForm(false); jrnResetPhotoState(); });
+      window.jrnOpenForm = toggleForm;           // 사진 OCR 후 폼 자동 펼침용
+      // 📷 촬영(폰 카메라) / 🖼 사진 임포트(갤러리·파일) → 업로드+OCR
+      const camBtn = document.getElementById("jrnCamBtn"), camIn = document.getElementById("jrnCamInput");
+      const picBtn = document.getElementById("jrnPicBtn"), picIn = document.getElementById("jrnPicInput");
+      if (camBtn && camIn) camBtn.addEventListener("click", () => camIn.click());
+      if (picBtn && picIn) picBtn.addEventListener("click", () => picIn.click());
+      [camIn, picIn].forEach((inp) => {
+        if (!inp) return;
+        inp.addEventListener("change", () => {
+          if (inp.files && inp.files[0]) jrnPhotoUpload(inp.files[0]);
+          inp.value = "";                        // 같은 파일 다시 선택 가능하게 리셋
         });
       });
       const shift = (obj, delta, render) => { let mm = obj.m + delta, yy = obj.y; if (mm < 0) { mm = 11; yy--; } if (mm > 11) { mm = 0; yy++; } obj.y = yy; obj.m = mm; render(); };
@@ -3818,7 +4343,10 @@
     }
 
     function activateTab(name) {
-      if (name === "autotrade" && !unlockAutotrade()) return;   // 잠금: 통과 못하면 탭 전환 안 함
+      if (name === "autotrade" && !autotradeUnlocked) {         // 잠금: 서버 검증 통과 후 재진입
+        unlockAutotrade().then((ok) => { if (ok) activateTab(name); });
+        return;
+      }
       document.querySelectorAll(".tab-btn").forEach((b) => {
         const on = b.dataset.tab === name;
         b.classList.toggle("active", on);
@@ -3854,6 +4382,7 @@
         loadOrderStatus();
         loadBalance();
         loadHoldingsCare();
+        loadAutosell();
         loadAutotrade();
         loadOrderHistory();
       }
@@ -4313,14 +4842,9 @@
     (async function init() {
       syncIvInputs();                 // 저장된 간격/묶음 값으로 입력칸 보정
       syncRtbInputs();
-      await loadQuotes();
-      renderRt();
-      await loadHistory();
-      loadIntraday();
-      await loadFundamentals();
-      requestAnimationFrame(resizeCharts); // 초기 렌더 직후 차트 크기 보정
-      startRealtime();                // 1초 실시간 폴링 + 세션 배지 시작
-      loadAuth().then(() => {         // 🔐 로그인 상태/모드 확인(헤더 버튼·게이트·일지 탭)
+      // 🔐 로그인 상태를 '맨 먼저 + 병렬'로 — 시세/차트/재무(느릴 수 있음)를 기다리지 않고
+      // 로그인 버튼·탭이 즉시 뜬다(VOC: 로그인까지 3~5초 지연).
+      loadAuth().then(() => {
         // 구글 로그인 직후(/?login=ok)면 대시보드 대신 매매일지 탭으로 이동.
         try {
           if (new URLSearchParams(location.search).get("login") === "ok") {
@@ -4329,6 +4853,12 @@
           }
         } catch {}
       });
+      await loadQuotes();             // 카드는 시세가 있어야 하므로 이것만 대기
+      renderRt();
+      loadHistory().then(() => requestAnimationFrame(resizeCharts));  // 차트는 병렬(도착 시 크기 보정)
+      loadIntraday();
+      loadFundamentals();             // 재무는 병렬 — KIS 점검/차단으로 느려도 나머지 UI 안 막음
+      startRealtime();                // 1초 실시간 폴링 + 세션 배지 시작
       loadSummary(true);              // 기본 탭이 써머리이므로 초기 로드
     })();
   </script>

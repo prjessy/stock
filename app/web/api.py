@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -27,6 +28,8 @@ from app.storage.db import Repository
 from app.web.realtime import RealtimePoller
 
 STATIC_DIR = Path(__file__).parent / "static"
+# 배포 zip 은 정적폴더가 아닌 여기 둔다(=/static 직접다운 불가 → 비밀번호 라우트로만 내려감).
+DOWNLOAD_DIR = Path(__file__).parent / "downloads"
 
 app = FastAPI(title="주식 대시보드", docs_url=None, redoc_url=None)
 
@@ -68,6 +71,10 @@ _briefing = BriefingScheduler(_registry)
 from app.trading.autotrade_watch import AutoTradeWatcher
 _autotrade = AutoTradeWatcher(_registry, _poller)
 
+# 손절 전용 자동 매도(손절가·손절%·예약시각). 매수만 없고 보유분 매도만. 마스터 OFF 기본.
+from app.trading.autosell_watch import AutoSellWatcher
+_autosell = AutoSellWatcher(_registry)
+
 # 장 마감 AI 리포트(평일 15:40 자동 발송). 위험 0(주문 안 함).
 from app.analysis.eod_report import EodScheduler
 _eod = EodScheduler(_registry)
@@ -96,6 +103,7 @@ def _start_poller() -> None:
     _marketing.start()
     _briefing.start()
     _autotrade.start()
+    _autosell.start()
     _eod.start()
     _care.start()
     _weekly.start()
@@ -332,6 +340,36 @@ def alert_recipients_api() -> JSONResponse:
         return JSONResponse({"ok": True, "recipients": []})
 
 
+# 🔒 비밀번호 사전 검증 — 자동매매 탭 잠금 해제용. 실패 누적 시 잠시 차단(무차별 대입 방지).
+_pw_fail: dict = {}  # ip -> {"n": 실패횟수, "until": 차단해제 epoch}
+
+
+@app.post("/api/verify-password")
+async def verify_password_api(request: Request) -> JSONResponse:
+    """TRADE_PASSWORD 검증. 프론트 잠금은 눈속임이 되지 않도록 반드시 서버가 판정한다.
+    미설정(.env 없음)이면 항상 거부(fail-closed). 5회 실패 시 60초 차단."""
+    import time as _time
+    from app.config import settings as _cfg
+    ip = (request.client.host if request.client else "?")
+    rec = _pw_fail.get(ip) or {"n": 0, "until": 0.0}
+    now = _time.time()
+    if now < rec["until"]:
+        return JSONResponse({"ok": False, "error": f"시도 횟수 초과 — {int(rec['until'] - now) + 1}초 후 다시 시도하세요"})
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    if _cfg.trade_password and (data.get("password") or "") == _cfg.trade_password:
+        _pw_fail.pop(ip, None)
+        return JSONResponse({"ok": True})
+    rec["n"] += 1
+    if rec["n"] >= 5:
+        rec["until"] = now + 60
+        rec["n"] = 0
+    _pw_fail[ip] = rec
+    return JSONResponse({"ok": False, "error": "비밀번호가 올바르지 않습니다"})
+
+
 @app.post("/api/order")
 async def order_api(request: Request) -> JSONResponse:
     """수동 테스트 주문(1주 시장가). 실거래 — 1주 하드캡(settings.trade_max_qty). 500 금지.
@@ -431,6 +469,30 @@ async def set_autotrade_config_api(request: Request) -> JSONResponse:
     if not _cfg.trade_password or (data.get("password") or "") != _cfg.trade_password:
         return JSONResponse({"ok": False, "error": "비밀번호가 올바르지 않습니다(.env TRADE_PASSWORD 설정 필요)"})
     saved = autotrade_config.save({k: v for k, v in data.items() if k != "password"})
+    return JSONResponse({"ok": True, **saved})
+
+
+@app.get("/api/autosell/config")
+def get_autosell_config_api(request: Request) -> JSONResponse:
+    """손절 전용 자동 매도 설정 조회. 소유자만. 500 금지."""
+    if not _is_owner(request):
+        return JSONResponse({"ok": False, "owner_only": True})
+    from app.trading import autosell_config
+    return JSONResponse({"ok": True, **autosell_config.load()})
+
+
+@app.post("/api/autosell/config")
+async def set_autosell_config_api(request: Request) -> JSONResponse:
+    """손절 전용 설정 저장. 실거래(자동 매도)라 비밀번호 필수. 500 금지."""
+    from app.config import settings as _cfg
+    from app.trading import autosell_config
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    if not _cfg.trade_password or (data.get("password") or "") != _cfg.trade_password:
+        return JSONResponse({"ok": False, "error": "비밀번호가 올바르지 않습니다(.env TRADE_PASSWORD 설정 필요)"})
+    saved = autosell_config.save({k: v for k, v in data.items() if k != "password"})
     return JSONResponse({"ok": True, **saved})
 
 
@@ -586,6 +648,49 @@ def _norm_symbol(raw: str) -> tuple[str, str] | None:
     return None
 
 
+def _resolve_symbol_by_name(raw: str) -> tuple[str, str] | None:
+    """종목명 입력 → (코드, market). 정확일치 1건 또는 후보가 딱 1건이면 해석, 아니면 None."""
+    q = (raw or "").strip()
+    if not q:
+        return None
+    qn = q.replace(" ", "").lower()
+    try:
+        from app.datasources.kr_price import search_names
+        hits = search_names(q, limit=5)
+    except Exception:
+        hits = []
+    exact = [h for h in hits if h["name"].replace(" ", "").lower() == qn]
+    if len(exact) == 1:
+        return exact[0]["symbol"], "KR"
+    if len(hits) == 1:
+        return hits[0]["symbol"], "KR"
+    # 미국: 한글 별칭(애플→AAPL) 정확일치 > 이름 검색 결과가 딱 1건이면 채택
+    try:
+        from app.datasources import us_market as usm
+        for alias, tick in usm.US_KR_ALIASES.items():
+            if alias.lower() == qn:
+                return tick, "US"
+        us_hits = usm.search_names(q, limit=2)
+        if not hits and len(us_hits) == 1:
+            return us_hits[0]["symbol"], "US"
+    except Exception:
+        pass
+    return None
+
+
+@app.get("/api/symbol-search")
+def symbol_search_api(q: str = "") -> JSONResponse:
+    """종목 추가용 자동완성 검색 — 국내(KRX 전종목)+미국(내장 메타). 500 금지."""
+    try:
+        from app.datasources.kr_price import search_names
+        items = [dict(h, market="KR") for h in search_names(q, limit=8)]
+        from app.datasources.us_market import search_names as us_search
+        items += [dict(h, market="US") for h in us_search(q, limit=10 - min(len(items), 5))]
+        return JSONResponse({"ok": True, "items": items[:12]})
+    except Exception as exc:
+        return JSONResponse({"ok": True, "items": [], "error": str(exc)})
+
+
 @app.get("/api/watchlist")
 def get_watchlist_api(request: Request) -> JSONResponse:
     """현재 사용자 관심종목(국내+미국). 로그인 시 removable=True(자기 종목이라 삭제 가능).
@@ -615,8 +720,11 @@ async def set_watchlist_api(request: Request) -> JSONResponse:
         data = {}
     action = data.get("action")
     norm = _norm_symbol(data.get("symbol") or "")
+    if not norm and action == "add":
+        # 종목명 입력 허용: "삼성전자" → ("005930","KR"). 후보가 여럿이면 프론트 자동완성에서 고르게 함.
+        norm = _resolve_symbol_by_name(str(data.get("symbol") or ""))
     if not norm:
-        return JSONResponse({"ok": False, "error": "국내 6자리 코드 또는 미국 티커를 입력하세요"})
+        return JSONResponse({"ok": False, "error": "종목명·국내 6자리 코드·미국 티커 중 하나를 입력하세요"})
     code, market = norm
     repo = Repository()
     try:
@@ -971,7 +1079,8 @@ def _is_owner(request: Request) -> bool:
 def _user_watchlist(request: Request) -> list[dict]:
     """요청자의 관심종목 [{symbol, market}].
 
-    로그인 사용자: 자기 DB 워치리스트(비어 있으면 .env 기본종목으로 1회 시드).
+    로그인 사용자: 자기 DB 워치리스트. 소유자(첫 가입자)만 비어 있을 때 .env 기본종목으로
+    1회 시드 — 다른 사용자는 빈 목록에서 시작한다(.env는 소유자 개인 설정이라 남에게 보이면 안 됨).
     비로그인 방문자: .env 기본종목(KR→US)을 읽기전용으로 보여준다.
     """
     user = _current_user(request)
@@ -979,7 +1088,7 @@ def _user_watchlist(request: Request) -> list[dict]:
         repo = Repository()
         try:
             rows = repo.list_watchlist(user["id"])
-            if not rows:
+            if not rows and _is_owner(request):
                 repo.seed_watchlist_if_empty(user["id"], list(settings.kr_symbols),
                                              list(settings.us_symbols))
                 rows = repo.list_watchlist(user["id"])
@@ -1197,6 +1306,8 @@ def _journal_fields(body: dict) -> dict:
         "tax": _num(body.get("tax")) or 0.0,                  # 세금(원)
         "reason": (str(body.get("reason") or "")).strip()[:2000],
         "memo": (str(body.get("memo") or "")).strip()[:2000],
+        # 첨부 사진 파일명 — 경로 문자 제거(본인 uploads 폴더 안 파일명만 허용)
+        "photo": (_PHOTO_NAME_RE.sub("", os.path.basename(str(body.get("photo") or "")))[:128] or None),
     }
 
 
@@ -1292,6 +1403,8 @@ async def journal_update(entry_id: int, request: Request) -> JSONResponse:
         return JSONResponse({"ok": False, "error": err}, status_code=400)
     repo = Repository()
     try:
+        if "photo" not in (body or {}):          # photo 를 안 보낸 수정이면 기존 첨부 유지
+            fields["photo"] = repo.get_journal_photo(user["id"], entry_id)
         ok = repo.update_journal(user["id"], entry_id, fields)
         return JSONResponse({"ok": ok})
     finally:
@@ -1309,6 +1422,152 @@ def journal_delete(entry_id: int, request: Request) -> JSONResponse:
         return JSONResponse({"ok": repo.delete_journal(user["id"], entry_id)})
     finally:
         repo.close()
+
+
+# ===== 매매일지 사진 (촬영/임포트 + OCR 자동입력) =====
+# zikimi 패턴: 원본은 항상 보존(data/uploads/<user_id>/), OCR 은 LLM 비전으로 추출.
+# 추출 결과는 확정값이 아니라 needs_review — 프론트가 입력폼에 채우고 사용자가 확인 후 저장한다.
+import re as _re
+
+_UPLOAD_DIR = Path(settings.db_path).resolve().parent / "uploads"
+_PHOTO_MAX_BODY = 12 * 1024 * 1024          # base64 포함 요청 상한 12MB(원본 약 9MB)
+_PHOTO_NAME_RE = _re.compile(r"[^0-9A-Za-z._-]")
+_PHOTO_EXT = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+
+_JOURNAL_OCR_SCHEMA = {
+    "type": "object",
+    "properties": {"entries": {"type": "array", "items": {"type": "object", "properties": {
+        "trade_date": {"type": "string", "description": "거래일 YYYY-MM-DD"},
+        "name": {"type": "string", "description": "종목명"},
+        "symbol": {"type": "string", "description": "종목코드 6자리 또는 미국 티커(이미지에 보일 때만)"},
+        "side": {"type": "string", "enum": ["매수", "매도", "배당", "메모"]},
+        "price": {"type": "number", "description": "체결 단가(쉼표 제거한 숫자)"},
+        "qty": {"type": "number", "description": "체결 수량"},
+        "currency": {"type": "string", "enum": ["KRW", "USD"]},
+        "tax": {"type": "number", "description": "세금·수수료(보일 때만)"},
+        "memo": {"type": "string", "description": "그 외 참고 정보 한 줄"},
+    }, "required": ["side"]}}},
+    "required": ["entries"],
+}
+
+
+def _sniff_image_mime(data: bytes) -> str | None:
+    """확장자 대신 매직바이트로 이미지 형식 판별(위조 확장자 차단)."""
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def _journal_ocr(image_b64: str, mime: str) -> list[dict]:
+    """사진에서 매매 거래 추출(LLM 비전). 실패는 예외로 올린다 — 호출부가 로그+안내."""
+    from app import llm
+    today = _dt.now().strftime("%Y-%m-%d")
+    system = (
+        "이 이미지는 증권사 앱의 체결/거래내역 화면 캡처, 매매 기록표 사진, 또는 손글씨 투자 노트다. "
+        "이미지에 보이는 매매 거래를 빠짐없이 entries 배열로 추출하라.\n"
+        "- 이미지에 실제로 보이는 값만 사용하고, 안 보이는 값은 필드를 아예 넣지 마라(지어내기 금지).\n"
+        "- 숫자의 쉼표(,)는 제거하고 숫자 타입으로. 달러($)·미국 종목이면 currency=USD, 아니면 KRW.\n"
+        f"- 날짜에 연도가 없으면 오늘({today}) 기준 가장 가까운 과거 날짜로 해석해 YYYY-MM-DD 로.\n"
+        "- 같은 종목이라도 체결 건이 다르면 별도 entry 로. 거래가 하나도 없으면 entries=[]."
+    )
+    out = llm.chat_vision_json(system, f"오늘은 {today}. 이미지에서 매매 거래 내역을 추출해 줘.",
+                               image_b64, mime, _JOURNAL_OCR_SCHEMA, 2048, "journal_ocr")
+    entries = out.get("entries") or []
+    clean: list[dict] = []
+    for e in entries[:20]:                       # 폭주 방지 상한
+        if not isinstance(e, dict):
+            continue
+        def _n(v):
+            try:
+                return float(str(v).replace(",", "")) if v not in (None, "") else None
+            except (TypeError, ValueError):
+                return None
+        side = str(e.get("side") or "").strip()
+        if side not in ("매수", "매도", "배당", "메모"):
+            continue
+        clean.append({
+            "trade_date": str(e.get("trade_date") or "").strip()[:10] or None,
+            "name": str(e.get("name") or "").strip()[:64] or None,
+            "symbol": str(e.get("symbol") or "").strip()[:32] or None,
+            "side": side,
+            "price": _n(e.get("price")),
+            "qty": _n(e.get("qty")),
+            "currency": "USD" if str(e.get("currency") or "").upper() == "USD" else "KRW",
+            "tax": _n(e.get("tax")),
+            "memo": str(e.get("memo") or "").strip()[:2000] or None,
+        })
+    return clean
+
+
+@app.post("/api/journal/photo")
+async def journal_photo_upload(request: Request) -> JSONResponse:
+    """매매일지 사진 업로드(+OCR). body: {filename, data: base64}. 비로그인 401.
+
+    원본을 data/uploads/<user_id>/ 에 저장하고, LLM 비전으로 거래 내역을 추출해 돌려준다.
+    OCR 이 실패해도 사진 저장은 유지(entries=[] + 실패 사유) — 조용한 null 반환 금지.
+    """
+    user = _current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "login_required"}, status_code=401)
+    try:
+        if int(request.headers.get("content-length") or 0) > _PHOTO_MAX_BODY:
+            return JSONResponse({"ok": False, "error": "사진이 너무 큽니다(최대 12MB)"}, status_code=413)
+    except ValueError:
+        pass
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    import base64 as _b64
+    b64 = str(body.get("data") or "")
+    if "," in b64[:80]:                          # "data:image/...;base64," 접두 허용
+        b64 = b64.split(",", 1)[1]
+    try:
+        raw = _b64.b64decode(b64)
+    except Exception:
+        return JSONResponse({"ok": False, "error": "이미지 데이터를 읽을 수 없습니다"}, status_code=400)
+    mime = _sniff_image_mime(raw)
+    if not mime:
+        return JSONResponse({"ok": False, "error": "JPG/PNG/WEBP 사진만 올릴 수 있습니다"}, status_code=400)
+    udir = _UPLOAD_DIR / str(user["id"])
+    udir.mkdir(parents=True, exist_ok=True)
+    stem = "j-" + _dt.now().strftime("%Y%m%d-%H%M%S")
+    ext = _PHOTO_EXT[mime]
+    fname, n = stem + ext, 0
+    while (udir / fname).exists():               # 같은 초 다중 업로드 충돌 방지
+        n += 1
+        fname = f"{stem}-{n}{ext}"
+    (udir / fname).write_bytes(raw)
+
+    entries: list[dict] = []
+    ocr_error: str | None = None
+    try:
+        import asyncio
+        # LLM 호출은 blocking(requests) — 이벤트루프를 막지 않게 스레드로(최대 180초).
+        entries = await asyncio.to_thread(_journal_ocr, _b64.b64encode(raw).decode(), mime)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("매매일지 사진 OCR 실패: %s", exc)
+        ocr_error = f"OCR 인식 실패 — 사진은 첨부됩니다. 내용은 직접 입력하세요. ({type(exc).__name__})"
+    return JSONResponse({"ok": True, "photo": fname, "entries": entries,
+                         "source": "llm", "needs_review": True, "ocr_error": ocr_error})
+
+
+@app.get("/api/journal/photo/{fname}")
+def journal_photo_get(fname: str, request: Request):
+    """내 매매일지 사진 원본 보기 — 본인 폴더만(경로 문자를 화이트리스트로 정리)."""
+    user = _current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "login_required"}, status_code=401)
+    clean = _PHOTO_NAME_RE.sub("", os.path.basename(fname))[:128]
+    p = _UPLOAD_DIR / str(user["id"]) / clean
+    if not clean or not p.is_file():
+        return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
+    return FileResponse(p, headers={"Cache-Control": "private, max-age=31536000, immutable"})
 
 
 @app.get("/api/fxrate")
@@ -1374,6 +1633,118 @@ def get_settings() -> JSONResponse:
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/download")
+def download_page() -> HTMLResponse:
+    """클린 소스 배포 페이지 — 누구나 자기 KIS API 키로 셀프호스트할 수 있게 안내+다운로드.
+    zip 은 scripts/build_clean_release.py 가 생성(비밀키·개인정보 자동 검사 후 패키징)."""
+    def _mb(name: str) -> str:
+        p = DOWNLOAD_DIR / name
+        return f"{p.stat().st_size / 1048576:.0f}" if p.exists() else "?"
+    exe_mb, src_mb = _mb("jessystock-windows.zip"), _mb("jessystock-src.zip")
+    exe_exists = (DOWNLOAD_DIR / "jessystock-windows.zip").exists()
+    gated = bool(_dl_password())  # 비밀번호가 설정돼 있으면 입력 후에만 받도록
+    exe_block = (f"""
+<div class="card">
+  <h2 style="margin-top:0;">🪟 윈도우 — 설치 없이 바로 (권장)</h2>
+  <p>파이썬·명령어 필요 없음. 압축 풀고 <code>.env</code>에 키만 넣은 뒤 <b>exe 더블클릭</b>이면 끝.</p>
+  <a class="btn" href="#" onclick="return dl('win')">⬇ 윈도우 실행판 (zip · {exe_mb}MB)</a>
+  <ol>
+  <li><b>KIS API 키 발급</b> — <a href="https://apiportal.koreainvestment.com" target="_blank">KIS 개발자센터</a>에서 앱키/시크릿 (한국투자증권 계좌 필요)</li>
+  <li>압축 풀고 <code>.env</code>를 메모장으로 열어 키 입력·저장</li>
+  <li><b>jessystock.exe 더블클릭</b> → 브라우저가 자동으로 열림</li>
+  </ol>
+  <p style="font-size:12.5px;color:#8b97a8;">보안경고가 뜨면 "추가 정보 → 실행"(서명 안 된 개인 프로그램이라 정상). 자세한 건 zip 안 <b>실행방법.txt</b>.</p>
+</div>""" if exe_exists else "")
+    gate_block = (f"""
+<div class="card" style="border-color:#3a4a6a;">
+  <h2 style="margin-top:0;">🔒 다운로드 비밀번호</h2>
+  <p style="font-size:13.5px;">받으려면 비밀번호를 입력하세요.</p>
+  <input id="pw" type="password" inputmode="numeric" placeholder="비밀번호"
+    style="background:#0c1018;color:#dbe4f0;border:1px solid #35507e;border-radius:8px;padding:9px 12px;font-size:15px;width:160px;">
+  <span id="pwMsg" style="margin-left:8px;font-size:13px;color:#f0b73d;"></span>
+</div>""" if gated else "")
+    return HTMLResponse(f"""<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>jessystock 다운로드</title>
+<style>
+  body {{ background:#0c1018; color:#dbe4f0; font-family:'Noto Sans KR',-apple-system,sans-serif;
+         max-width:720px; margin:0 auto; padding:32px 20px; line-height:1.7; }}
+  h1 {{ font-size:22px; }} h2 {{ font-size:16px; color:#9fc1ff; }}
+  a {{ color:#6ea8fe; }} code {{ background:#151b27; padding:2px 6px; border-radius:6px; font-size:13px; }}
+  .btn {{ display:inline-block; background:#2ec26b; color:#08110b; font-weight:700; padding:12px 22px;
+         border-radius:10px; text-decoration:none; font-size:16px; margin:10px 0; }}
+  .btn.alt {{ background:transparent; color:#6ea8fe; border:1px solid #35507e; }}
+  .card {{ background:#151b27; border:1px solid #26314a; border-radius:12px; padding:16px 18px; margin:14px 0; }}
+  .warn {{ color:#f0b73d; font-size:13px; }}
+  ol li {{ margin:6px 0; }}
+</style></head><body>
+<h1>📦 jessystock — 내 계좌로 돌리는 내 주식앱</h1>
+<p><b>본인의 한국투자증권(KIS) API 키</b>만 있으면 이 앱을 내 컴퓨터/서버에서 직접 돌릴 수 있습니다
+(실시간 시세·수급·알림·매매일지·자동매매). 비밀키·개인정보는 배포본에 들어있지 않습니다.</p>
+{gate_block}
+{exe_block}
+<div class="card">
+  <h2 style="margin-top:0;">🧑‍💻 소스 코드 (맥·리눅스·서버·개발자용)</h2>
+  <p>직접 서버(VPS)에 올리거나 코드를 고치고 싶을 때. 파이썬 필요.</p>
+  <a class="btn alt" href="#" onclick="return dl('src')">⬇ 소스 다운로드 (zip · {src_mb}MB)</a>
+  <p style="font-size:13px;">압축 안 <b>설치가이드_START_HERE.md</b> 참고 —
+   <code>.env</code> 설정 후 리눅스: <code>bash deploy/deploy.sh</code> · PC: <code>pip install -r requirements.txt</code> → <code>python -m app.web</code></p>
+</div>
+<h2>주의</h2>
+<p class="warn">⚠️ API 키/시크릿은 절대 타인과 공유하지 마세요(계좌 위험).
+자동매매는 모의투자(<code>KIS_PAPER=true</code>)로 충분히 연습 후 사용하세요. 투자 결과는 본인 책임입니다.</p>
+<p style="color:#8b97a8;font-size:12.5px;margin-top:24px;">jessystock.com</p>
+<script>
+  var GATED = {"true" if gated else "false"};
+  function dl(kind) {{
+    var url = "/dl/" + kind;
+    if (GATED) {{
+      var el = document.getElementById("pw");
+      var pw = el ? (el.value || "").trim() : "";
+      if (!pw) {{ var m=document.getElementById("pwMsg"); if(m) m.textContent="비밀번호를 입력하세요"; if(el) el.focus(); return false; }}
+      url += "?pw=" + encodeURIComponent(pw);
+    }}
+    window.location.href = url;
+    return false;
+  }}
+</script>
+</body></html>""")
+
+
+def _dl_password() -> str:
+    """다운로드 비밀번호(.env DOWNLOAD_PASSWORD). 비어 있으면 게이트 없음(공개)."""
+    return (os.getenv("DOWNLOAD_PASSWORD", "") or "").strip()
+
+
+def _serve_download(filename: str, nice_name: str, pw: str) -> FileResponse | HTMLResponse:
+    need = _dl_password()
+    if need and (pw or "").strip() != need:
+        return HTMLResponse(
+            """<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">
+<style>body{background:#0c1018;color:#dbe4f0;font-family:sans-serif;text-align:center;padding:60px 20px;}
+a{color:#6ea8fe;}</style></head><body>
+<h2>🔒 비밀번호가 올바르지 않습니다</h2>
+<p><a href="/download">← 다운로드 페이지로 돌아가기</a></p></body></html>""",
+            status_code=403,
+        )
+    path = DOWNLOAD_DIR / filename
+    if not path.exists():
+        return HTMLResponse("파일을 찾을 수 없습니다.", status_code=404)
+    return FileResponse(path, media_type="application/zip", filename=nice_name)
+
+
+@app.get("/dl/win", response_model=None)
+def dl_windows(pw: str = "") -> FileResponse | HTMLResponse:
+    """윈도우 실행판 zip — 비밀번호(설정 시) 확인 후 다운로드."""
+    return _serve_download("jessystock-windows.zip", "jessystock-windows.zip", pw)
+
+
+@app.get("/dl/src", response_model=None)
+def dl_source(pw: str = "") -> FileResponse | HTMLResponse:
+    """소스 zip — 비밀번호(설정 시) 확인 후 다운로드."""
+    return _serve_download("jessystock-src.zip", "jessystock-src.zip", pw)
 
 
 @app.get("/favicon.ico")

@@ -153,8 +153,11 @@ class Repository:
             "SELECT id FROM users WHERE google_sub = ?", (google_sub,)
         ).fetchone()
         uid = int(row["id"])
-        # 신규 사용자면 .env 기본종목으로 관심종목을 1회 시드(빈 대시보드 방지).
-        self.seed_watchlist_if_empty(uid, list(settings.kr_symbols), list(settings.us_symbols))
+        # 소유자(첫 가입자)만 .env 기본종목으로 1회 시드. 다른 사용자는 빈 목록에서
+        # 시작한다 — .env 는 소유자 개인 설정이라 남에게 시드하면 '남의 종목'이 보인다.
+        first = self.conn.execute("SELECT MIN(id) AS m FROM users").fetchone()
+        if first is not None and int(first["m"]) == uid:
+            self.seed_watchlist_if_empty(uid, list(settings.kr_symbols), list(settings.us_symbols))
         return uid
 
     def create_session(self, sid: str, user_id: int, expires_at: str) -> None:
@@ -264,7 +267,7 @@ class Repository:
         try:
             rows = self.conn.execute(
                 "SELECT id, trade_date, symbol, name, side, price, qty, category, "
-                "currency, fx_rate, tax, amount, realized_pnl, reason, memo, created_at, updated_at "
+                "currency, fx_rate, tax, amount, realized_pnl, reason, memo, photo, created_at, updated_at "
                 "FROM journal WHERE user_id = ? ORDER BY trade_date DESC, id DESC LIMIT ?",
                 (user_id, limit),
             ).fetchall()
@@ -312,11 +315,11 @@ class Repository:
         self._enrich(user_id, e)
         cur = self.conn.execute(
             "INSERT INTO journal (user_id, trade_date, symbol, name, side, price, qty, category, "
-            "currency, fx_rate, tax, amount, realized_pnl, reason, memo, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "currency, fx_rate, tax, amount, realized_pnl, reason, memo, photo, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (user_id, e.get("trade_date"), e.get("symbol"), e.get("name"), e.get("side"),
              e.get("price"), e.get("qty"), e.get("category"), e.get("currency"), e.get("fx_rate"), e.get("tax"),
-             e.get("amount"), e.get("realized_pnl"), e.get("reason"), e.get("memo"), now, now),
+             e.get("amount"), e.get("realized_pnl"), e.get("reason"), e.get("memo"), e.get("photo"), now, now),
         )
         self.conn.commit()
         return int(cur.lastrowid)
@@ -327,14 +330,24 @@ class Repository:
         self._enrich(user_id, e, exclude_id=entry_id)
         cur = self.conn.execute(
             "UPDATE journal SET trade_date=?, symbol=?, name=?, side=?, price=?, qty=?, category=?, "
-            "currency=?, fx_rate=?, tax=?, amount=?, realized_pnl=?, reason=?, memo=?, updated_at=? "
+            "currency=?, fx_rate=?, tax=?, amount=?, realized_pnl=?, reason=?, memo=?, photo=?, updated_at=? "
             "WHERE id=? AND user_id=?",
             (e.get("trade_date"), e.get("symbol"), e.get("name"), e.get("side"),
              e.get("price"), e.get("qty"), e.get("category"), e.get("currency"), e.get("fx_rate"), e.get("tax"),
-             e.get("amount"), e.get("realized_pnl"), e.get("reason"), e.get("memo"), now, entry_id, user_id),
+             e.get("amount"), e.get("realized_pnl"), e.get("reason"), e.get("memo"), e.get("photo"), now, entry_id, user_id),
         )
         self.conn.commit()
         return cur.rowcount > 0
+
+    def get_journal_photo(self, user_id: int, entry_id: int) -> str | None:
+        """해당 일지의 첨부 사진 파일명(수정 시 기존 첨부 보존용). 없으면 None."""
+        try:
+            row = self.conn.execute(
+                "SELECT photo FROM journal WHERE id=? AND user_id=?", (entry_id, user_id)
+            ).fetchone()
+            return row["photo"] if row else None
+        except Exception:
+            return None
 
     def delete_journal(self, user_id: int, entry_id: int) -> bool:
         """본인 소유 일지만 삭제. 삭제됐으면 True."""

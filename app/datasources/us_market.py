@@ -21,6 +21,92 @@ US_META: dict[str, dict[str, str]] = {
 # 대시보드 약식 period -> yfinance period 그대로 사용 가능
 _VALID_PERIODS = {"1mo", "3mo", "6mo", "1y"}
 
+# 한글 별칭 → 티커 (서학개미 인기 종목; 이름으로 추가/자동완성용)
+US_KR_ALIASES: dict[str, str] = {
+    "애플": "AAPL", "마이크로소프트": "MSFT", "엔비디아": "NVDA", "테슬라": "TSLA",
+    "아마존": "AMZN", "알파벳": "GOOGL", "구글": "GOOGL", "메타": "META",
+    "넷플릭스": "NFLX", "브로드컴": "AVGO", "인텔": "INTC", "마이크론": "MU",
+    "퀄컴": "QCOM", "팔란티어": "PLTR", "코인베이스": "COIN", "스트래티지": "MSTR",
+    "마이크로스트래티지": "MSTR", "버크셔해서웨이": "BRK-B", "일라이릴리": "LLY",
+    "존슨앤존슨": "JNJ", "제이피모건": "JPM", "JP모건": "JPM", "비자": "V",
+    "마스터카드": "MA", "코카콜라": "KO", "펩시": "PEP", "맥도날드": "MCD",
+    "스타벅스": "SBUX", "나이키": "NKE", "월마트": "WMT", "코스트코": "COST",
+    "디즈니": "DIS", "보잉": "BA", "록히드마틴": "LMT", "엑슨모빌": "XOM",
+    "셰브론": "CVX", "화이자": "PFE", "오라클": "ORCL", "세일즈포스": "CRM",
+    "어도비": "ADBE", "페이팔": "PYPL", "우버": "UBER", "에어비앤비": "ABNB",
+    "스노우플레이크": "SNOW", "크라우드스트라이크": "CRWD", "슈퍼마이크로": "SMCI",
+    "아이온큐": "IONQ", "리게티": "RGTI", "조비": "JOBY", "리비안": "RIVN",
+    "루시드": "LCID", "소파이": "SOFI", "로빈후드": "HOOD", "델": "DELL",
+    "텍사스인스트루먼트": "TXN", "티에스엠씨": "TSM", "대만반도체": "TSM",
+    "알리바바": "BABA", "쿠팡": "CPNG", "홈디포": "HD", "프록터앤갬블": "PG",
+    "애브비": "ABBV", "머크": "MRK", "골드만삭스": "GS", "모건스탠리": "MS",
+    "뱅크오브아메리카": "BAC", "블랙록": "BLK", "노보노디스크": "NVO",
+    "존슨콘트롤즈": "JCI", "포드": "F", "제너럴모터스": "GM", "지엠": "GM",
+    "아이비엠": "IBM", "에이엠디": "AMD",
+}
+
+# 미국 전 종목 티커→영문명 스냅샷(us_names.json, NASDAQ+NYSE+S&P500). 1회 적재.
+_US_NAMES: dict[str, str] = {}
+_US_LOADED = False
+
+
+def _load_us_names() -> None:
+    global _US_LOADED
+    if _US_LOADED:
+        return
+    _US_LOADED = True
+    try:
+        import json
+        from pathlib import Path
+        snap = Path(__file__).with_name("us_names.json")
+        if snap.exists():
+            _US_NAMES.update(json.loads(snap.read_text(encoding="utf-8")))
+    except Exception:
+        pass
+
+
+def search_names(query: str, limit: int = 10) -> list[dict]:
+    """미국 종목 이름/티커 검색 → [{symbol, name}]. 한글 별칭 > 티커 일치 > 영문명 순."""
+    q = (query or "").strip().replace(" ", "").lower()
+    if not q:
+        return []
+    _load_us_names()
+    out: list[dict] = []
+    seen: set[str] = set()
+
+    def _push(tick: str, name: str) -> None:
+        if tick not in seen:
+            seen.add(tick)
+            out.append({"symbol": tick, "name": name})
+
+    # 1) 한글 별칭 + 내장 메타의 한글 이름
+    for alias, tick in US_KR_ALIASES.items():
+        if q in alias.lower():
+            eng = _US_NAMES.get(tick) or US_META.get(tick, {}).get("name") or tick
+            _push(tick, f"{alias} ({eng})" if eng != alias else alias)
+    for tick, meta in US_META.items():
+        name = str(meta.get("name") or tick)
+        if q in name.replace(" ", "").lower():
+            _push(tick, name)
+    # 2) 티커 자체 일치(정확 > 접두)
+    qu = q.upper()
+    if qu in _US_NAMES:
+        _push(qu, _US_NAMES[qu])
+    # 3) 영문명 부분일치(짧은 이름 우선)
+    starts: list[tuple[str, str]] = []
+    contains: list[tuple[str, str]] = []
+    for tick, name in _US_NAMES.items():
+        n = name.replace(" ", "").lower()
+        if n.startswith(q):
+            starts.append((tick, name))
+        elif q in n:
+            contains.append((tick, name))
+    for tick, name in sorted(starts, key=lambda x: (len(x[1]), x[1])) + sorted(contains, key=lambda x: (len(x[1]), x[1])):
+        if len(out) >= limit:
+            break
+        _push(tick, name)
+    return out[:limit]
+
 
 def _meta(symbol: str) -> dict[str, str]:
     return US_META.get(symbol, {"name": symbol, "currency": "USD", "note": ""})

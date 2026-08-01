@@ -53,6 +53,46 @@ def _load_krx_names() -> None:
                     _KRX_NAMES[c] = name.strip()
     except Exception:
         pass
+    if not _KRX_NAMES:
+        # 해외 VPS 등에서 KRX 리스트 접근이 막히면 배포본에 동봉한 스냅샷으로 폴백.
+        try:
+            import json
+            from pathlib import Path
+            snap = Path(__file__).with_name("krx_names.json")
+            if snap.exists():
+                _KRX_NAMES.update(json.loads(snap.read_text(encoding="utf-8")))
+        except Exception:
+            pass
+
+
+def search_names(query: str, limit: int = 10) -> list[dict]:
+    """종목명 부분일치 검색 → [{symbol, name}]. 공백 무시, 정확일치 우선."""
+    q = (query or "").strip().replace(" ", "").lower()
+    if not q:
+        return []
+    if not _KRX_LOADED:
+        _load_krx_names()
+    pool: dict[str, str] = dict(_KRX_NAMES)
+    for code, meta in KR_META.items():
+        pool.setdefault(code, meta["name"])
+    if q.isdigit():
+        hits = [{"symbol": c, "name": n} for c, n in pool.items() if c.startswith(q)]
+        return sorted(hits, key=lambda x: x["symbol"])[:limit]
+    exact: list[dict] = []
+    starts: list[dict] = []
+    contains: list[dict] = []
+    for code, name in pool.items():
+        n = name.replace(" ", "").lower()
+        if n == q:
+            exact.append({"symbol": code, "name": name})
+        elif n.startswith(q):
+            starts.append({"symbol": code, "name": name})
+        elif q in n:
+            contains.append({"symbol": code, "name": name})
+    # 짧은 이름 우선(예: '삼성' → 삼성전자가 삼성바이오로직스보다 앞에)
+    by_len = lambda x: (len(x["name"]), x["name"])
+    ranked = exact + sorted(starts, key=by_len) + sorted(contains, key=by_len)
+    return ranked[:limit]
 
 
 def resolve_name(symbol: str) -> str:
