@@ -39,6 +39,7 @@ class Repository:
         for ddl in models.ALL_TABLES:
             self.conn.execute(ddl)
         self._migrate_journal()
+        self._migrate_users()
         self.conn.commit()
         self._backfill_journal_fx()
 
@@ -90,6 +91,23 @@ class Repository:
             for col, ddl in models.JOURNAL_ADD_COLUMNS:
                 if col not in cols:
                     self.conn.execute(ddl)
+        except Exception:
+            pass
+
+    def _migrate_users(self) -> None:
+        """users 에 approved(승인제) 컬럼을 추가하고 소유자(첫 가입자)는 항상 승인 상태로 유지.
+
+        기존 사용자들은 0(대기)으로 남는다 — 승인제 도입 전에 들어온 계정도 소유자가
+        설정 화면에서 다시 승인해야 쓸 수 있다(모르는 계정 걸러내기). 실패해도 앱은 뜬다.
+        """
+        try:
+            cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(users)").fetchall()}
+            for col, ddl in models.USERS_ADD_COLUMNS:
+                if col not in cols:
+                    self.conn.execute(ddl)
+            self.conn.execute(
+                "UPDATE users SET approved = 1 WHERE id = (SELECT MIN(id) FROM users)"
+            )
         except Exception:
             pass
 
@@ -153,10 +171,12 @@ class Repository:
             "SELECT id FROM users WHERE google_sub = ?", (google_sub,)
         ).fetchone()
         uid = int(row["id"])
-        # 소유자(첫 가입자)만 .env 기본종목으로 1회 시드. 다른 사용자는 빈 목록에서
-        # 시작한다 — .env 는 소유자 개인 설정이라 남에게 시드하면 '남의 종목'이 보인다.
+        # 소유자(첫 가입자)만 .env 기본종목으로 1회 시드 + 자동 승인. 다른 사용자는 빈 목록·
+        # 미승인(대기)에서 시작한다 — 소유자가 설정에서 승인해야 기능을 쓸 수 있다.
         first = self.conn.execute("SELECT MIN(id) AS m FROM users").fetchone()
         if first is not None and int(first["m"]) == uid:
+            self.conn.execute("UPDATE users SET approved = 1 WHERE id = ?", (uid,))
+            self.conn.commit()
             self.seed_watchlist_if_empty(uid, list(settings.kr_symbols), list(settings.us_symbols))
         return uid
 
@@ -174,7 +194,7 @@ class Repository:
             return None
         try:
             row = self.conn.execute(
-                "SELECT u.id, u.email, u.name, u.picture, s.expires_at "
+                "SELECT u.id, u.email, u.name, u.picture, u.approved, s.expires_at "
                 "FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.sid = ?",
                 (sid,),
             ).fetchone()
@@ -185,7 +205,8 @@ class Repository:
         if row["expires_at"] and row["expires_at"] < datetime.now(timezone.utc).isoformat():
             self.delete_session(sid)
             return None
-        return {"id": row["id"], "email": row["email"], "name": row["name"], "picture": row["picture"]}
+        return {"id": row["id"], "email": row["email"], "name": row["name"],
+                "picture": row["picture"], "approved": bool(row["approved"])}
 
     def delete_session(self, sid: str) -> None:
         try:
@@ -193,6 +214,44 @@ class Repository:
             self.conn.commit()
         except Exception:
             pass
+
+    # --- 로그인 승인제(소유자 전용 관리) ---------------------------------
+
+    def list_users(self) -> list[dict]:
+        """전체 사용자 목록(승인 관리 화면용). 가입 순. 실패 시 []."""
+        try:
+            rows = self.conn.execute(
+                "SELECT id, google_sub, email, name, picture, created_at, last_login, approved "
+                "FROM users ORDER BY id"
+            ).fetchall()
+            return [dict(r) for r in rows]
+        except Exception:
+            return []
+
+    def set_user_approved(self, user_id: int, approved: bool) -> bool:
+        """사용자 승인/차단. 차단 시 해당 사용자의 세션을 전부 끊어 즉시 로그아웃시킨다."""
+        try:
+            cur = self.conn.execute(
+                "UPDATE users SET approved = ? WHERE id = ?", (1 if approved else 0, user_id)
+            )
+            if not approved:
+                self.conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+            self.conn.commit()
+            return cur.rowcount > 0
+        except Exception:
+            return False
+
+    def delete_user(self, user_id: int) -> bool:
+        """사용자 완전 삭제 — 세션·워치리스트·매매일지까지 함께 지운다(복구 불가)."""
+        try:
+            self.conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+            self.conn.execute("DELETE FROM watchlist WHERE user_id = ?", (user_id,))
+            self.conn.execute("DELETE FROM journal WHERE user_id = ?", (user_id,))
+            cur = self.conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            self.conn.commit()
+            return cur.rowcount > 0
+        except Exception:
+            return False
 
     # --- 사용자별 관심종목(워치리스트) ---------------------------------
 

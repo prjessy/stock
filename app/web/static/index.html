@@ -474,6 +474,7 @@
       <button class="tab-btn" data-tab="dashboard" role="tab" aria-selected="false">📈 차트</button>
       <button class="tab-btn" data-tab="portfolio" role="tab" aria-selected="false">💼 포트폴리오</button>
       <button class="tab-btn" data-tab="journal" role="tab" aria-selected="false">📔 매매일지</button>
+      <button class="tab-btn" data-tab="watchlist" role="tab" aria-selected="false">📋 종목관리</button>
       <button class="tab-btn" data-tab="briefing" role="tab" aria-selected="false">🇺🇸 미국증시</button>
       <button class="tab-btn" data-tab="marketing" role="tab" aria-selected="false">📰 뉴스 요약</button>
       <button class="tab-btn" data-tab="deudeumi" role="tab" aria-selected="false">🐜 더듬이</button>
@@ -753,6 +754,26 @@
       </div>
     </div><!-- /panel-journal -->
 
+    <!-- ===== 탭: 📋 종목관리 (로그인·승인 사용자 누구나) ===== -->
+    <div class="tab-panel" id="panel-watchlist" role="tabpanel">
+      <section class="panel">
+        <div class="chart-head">
+          <h2 style="font-size:15px;margin:0;">📋 종목 관리 <span style="color:var(--muted);font-weight:500;font-size:12px;margin-left:6px;">대시보드·차트에 표시할 내 관심종목</span></h2>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:12px 0 6px;">
+          <span style="position:relative;display:inline-block;">
+            <input id="wlCode" type="text" maxlength="30" placeholder="종목명(삼성전자)·코드·미국 티커" autocomplete="off"
+              style="width:230px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:5px 8px;font-size:14px;">
+            <div id="wlSug" class="sym-sug"></div>
+          </span>
+          <button class="refresh-btn" onclick="addWatchlist(this)" style="border-color:var(--up);color:var(--up);">＋ 추가</button>
+          <span id="wlMsg" style="font-size:12.5px;color:var(--muted);"></span>
+        </div>
+        <div id="wlList" style="font-size:13px;margin-top:8px;"></div>
+        <div class="sub" style="margin-top:12px;">국내는 <b>종목명(예: 삼성전자)</b>만 쳐도 자동완성에서 골라 추가됩니다. 코드(6자리)·미국 티커(AAPL, ^SOX, NQ=F)도 가능. <b>내 계정에만</b> 저장되며 ✕로 삭제할 수 있습니다.</div>
+      </section>
+    </div><!-- /panel-watchlist -->
+
     <!-- ===== 탭 2: 브리핑 ===== -->
     <div class="tab-panel" id="panel-deudeumi" role="tabpanel">
       <section class="panel" style="margin-bottom:16px;">
@@ -901,7 +922,7 @@
           <button class="refresh-btn" onclick="placeOrder('buy')" style="border-color:var(--up);color:var(--up);">▲ 매수 1주</button>
           <button class="refresh-btn" onclick="placeOrder('sell')" style="border-color:var(--down);color:var(--down);">▼ 매도 1주</button>
         </div>
-        <div class="sub" style="margin-top:12px;">⚠️ <b>실제 주문</b>입니다. 위에서 종목을 고르고 지정가를 확인하세요. 종목이 없으면 ⚙️설정 → 📋종목 관리에서 추가. VPS <code>.env</code>에 계좌번호(KIS_CANO)·주문권한 필요.</div>
+        <div class="sub" style="margin-top:12px;">⚠️ <b>실제 주문</b>입니다. 위에서 종목을 고르고 지정가를 확인하세요. 종목이 없으면 📋 종목관리 탭에서 추가. VPS <code>.env</code>에 계좌번호(KIS_CANO)·주문권한 필요.</div>
       </section>
 
       <section class="panel">
@@ -1048,19 +1069,10 @@
         </div>
         <div class="modal-note">사용자별 <b>매매일지</b>는 구글 로그인이 필요합니다. <b>미사용</b>=로그인 끔 · <b>매매일지만</b>=일지 탭만 로그인 · <b>전체 메뉴</b>=사이트 전체 로그인. 변경엔 비밀번호가 필요(아무나 못 잠금). <span style="color:var(--muted)">키(GOOGLE_CLIENT_ID/SECRET)는 VPS .env 에만 — 미설정 시 로그인 버튼이 안 보입니다.</span></div>
         <div class="modal-row" style="display:block;">
-          <div class="modal-k" style="margin-bottom:6px;">📋 종목 관리 (대시보드 추가/삭제)</div>
-          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">
-            <span style="position:relative;display:inline-block;">
-              <input id="wlCode" type="text" maxlength="30" placeholder="종목명(삼성전자)·코드·미국 티커" autocomplete="off"
-                style="width:230px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:4px 6px;font-size:14px;">
-              <div id="wlSug" class="sym-sug"></div>
-            </span>
-            <button class="refresh-btn" onclick="addWatchlist(this)" style="border-color:var(--up);color:var(--up);">＋ 추가</button>
-            <span id="wlMsg" style="font-size:12.5px;color:var(--muted);"></span>
-          </div>
-          <div id="wlList" style="font-size:13px;"></div>
+          <div class="modal-k" style="margin-bottom:6px;">👥 사용자 승인 관리 <span style="font-weight:500;font-size:11.5px;color:var(--muted);">구글·카톡 가입자 중 승인한 사람만 이용 가능</span></div>
+          <div id="userAdminList" style="font-size:13px;">불러오는 중…</div>
         </div>
-        <div class="modal-note">국내는 <b>종목명(예: 삼성전자)</b>만 쳐도 자동완성에서 골라 추가됩니다. 코드(6자리)·미국 티커(AAPL, ^SOX, NQ=F)도 가능. <b>구글 로그인 시 내 계정에만</b> 저장되며 ✕로 삭제 가능. 로그인 전엔 기본 종목만 보입니다.</div>
+        <div class="modal-note">구글·카카오 로그인은 누구나 시도할 수 있지만 <b>여기서 ✅승인한 사용자만</b> 매매일지·종목관리를 쓸 수 있습니다. <b>차단</b>하면 즉시 로그아웃되고 승인 대기 상태로 돌아가며, <b>삭제</b>는 그 사용자의 일지·종목까지 지웁니다(복구 불가). 종목 추가/삭제는 상단 <b>📋 종목관리</b> 탭으로 이동했습니다.</div>
         <div class="modal-row" style="display:block;">
           <div class="modal-k" style="margin-bottom:8px;">📡 서버 알림 종류 (복수 선택 · 폰 꺼도 수신)</div>
           <label class="alarm-opt"><input type="checkbox" class="at-input" value="pct"> 증감(±%) 도달 <span class="opt-tag">실시간</span></label>
@@ -1121,11 +1133,18 @@
     <footer>
       매매 판단 보조 도구 · 시세는 참고용이며, 최종 투자 판단과 책임은 본인에게 있습니다.
       <div style="margin-top:8px;font-size:11.5px;color:var(--muted);">
-        <b style="color:var(--text);">jessystock v1.2.0</b> · 2026-06-24
+        <b style="color:var(--text);">jessystock v1.3.0</b> · 2026-08-02
       </div>
       <details style="margin:8px auto 0;max-width:640px;text-align:left;font-size:12px;">
         <summary style="cursor:pointer;color:var(--accent);font-size:12.5px;">📋 릴리즈 노트</summary>
         <div style="margin-top:10px;color:var(--muted);line-height:1.65;">
+          <b style="color:var(--text);">v1.3.0 · 2026-08-02</b>
+          <ul style="margin:6px 0 10px;padding-left:18px;">
+            <li>🔐 <b>로그인 승인제</b> — 구글·카톡으로 가입해도 <b>관리자 승인 후</b>에만 매매일지·종목관리 사용(승인 대기 화면 표시). 기존 가입자도 재승인 필요.</li>
+            <li>👥 <b>사용자 승인 관리</b> — ⚙️설정에서 승인/차단/삭제(차단 시 즉시 로그아웃).</li>
+            <li>📋 <b>종목관리 탭 신설</b> — 종목 추가/삭제를 설정에서 분리, 로그인(승인) 사용자 누구나 사용.</li>
+            <li>⚙️ <b>설정 잠금</b> — 설정은 소유자 전용 + 비밀번호(서버 검증) 뒤로.</li>
+          </ul>
           <b style="color:var(--text);">v1.2.0 · 2026-06-24</b>
           <ul style="margin:6px 0 0;padding-left:18px;">
             <li>🤖 <b>AI 백엔드 분리</b> — 앱 분석=Claude, 텔레그램 봇(Hermes)=로컬 LLM(qwen). <code>.env LLM_PROVIDER</code> 토글.</li>
@@ -1191,7 +1210,7 @@
       const root = document.getElementById("cards");
       root.innerHTML = "";
       if (!quotes.length) {   // 신규 사용자는 빈 목록에서 시작 — 종목 추가 안내
-        root.innerHTML = '<div class="empty-state" style="grid-column:1/-1;">아직 관심종목이 없습니다. ⚙️ 설정 → 📋 종목 관리에서 종목을 추가하세요.</div>';
+        root.innerHTML = '<div class="empty-state" style="grid-column:1/-1;">아직 관심종목이 없습니다. 📋 종목관리 탭에서 종목을 추가하세요.</div>';
         return;
       }
       if (!selected && quotes.length) selected = quotes[0].symbol; // 기본 = 첫 종목(삼성전자)
@@ -2126,7 +2145,9 @@
     // ===== 대시보드 메인 「＋ 종목 추가」 바 (로그인 시 노출) =====
     function renderWatchlistBar() {
       const bar = document.getElementById("wlBar"); if (!bar) return;
-      if (authState && authState.authenticated) {
+      if (authState && authState.authenticated && authState.approved === false && !authState.is_owner) {
+        bar.innerHTML = `<span style="font-size:12.5px;color:var(--muted);">⏳ 관리자 승인 대기 중 — 승인되면 내 관심종목을 추가/관리할 수 있어요.</span>`;
+      } else if (authState && authState.authenticated) {
         const inp = "background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:5px 8px;font-size:14px;";
         bar.innerHTML = `<span style="font-size:13px;font-weight:700;">＋ 내 종목 추가</span>
           <span style="position:relative;display:inline-block;">
@@ -2135,7 +2156,7 @@
           </span>
           <button class="refresh-btn" onclick="addWatchlistMain(this)" style="border-color:var(--up);color:var(--up);">추가</button>
           <span id="wlMsgMain" style="font-size:12.5px;color:var(--muted);"></span>
-          <span style="font-size:11.5px;color:var(--muted);margin-left:auto;">삭제는 ⚙️설정 → 종목 관리</span>`;
+          <span style="font-size:11.5px;color:var(--muted);margin-left:auto;">삭제는 📋 종목관리 탭</span>`;
         const i = document.getElementById("wlCodeMain");
         if (i) i.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addWatchlistMain(); } });
         attachSymbolSuggest("wlCodeMain", "wlSugMain", () => addWatchlistMain());
@@ -2801,7 +2822,23 @@
       finally { if (btn) { btn.disabled = false; btn.textContent = "🧠 AI 판단 받기"; } }
     }
 
-    function openSettings() {
+    // 🔒 설정은 소유자 전용 + 비밀번호(TRADE_PASSWORD, 서버 검증) — 아무나 설정 못 열게.
+    // 로그인 자체가 구성 안 된 로컬(개인 실행)에서는 비번 없이 연다.
+    let settingsUnlocked = false;
+    async function openSettings() {
+      const needPw = !!(authState && (authState.configured || authState.kakao_configured));
+      if (needPw && !settingsUnlocked) {
+        const pw = (prompt("⚙️ 설정 비밀번호를 입력하세요") || "").trim();
+        if (!pw) return;
+        try {
+          const r = await (await fetch("/api/verify-password", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: pw }),
+          })).json();
+          if (!r.ok) { alert(r.error || "비밀번호가 올바르지 않습니다"); return; }
+          settingsUnlocked = true;   // 이 페이지가 열려 있는 동안만 유지
+        } catch (e) { alert("비밀번호 확인 실패 — 잠시 후 다시 시도하세요"); return; }
+      }
       renderAlertThreshold();
       syncIvInputs();
       syncRtbInputs();
@@ -2811,9 +2848,51 @@
       loadBotLink();
       loadKakaoStatus();
       loadTokenUsage();
-      loadWatchlist();
       loadAuthModeSetting();
+      loadUserAdmin();
       document.getElementById("settingsOverlay").classList.add("open");
+    }
+
+    // ===== 👥 사용자 승인 관리 (설정 · 소유자 전용) =====
+    async function loadUserAdmin() {
+      const el = document.getElementById("userAdminList");
+      if (!el) return;
+      try {
+        const r = await (await fetch("/api/admin/users")).json();
+        if (!r.ok) { el.innerHTML = `<span style="color:var(--muted)">${r.error || "소유자만 볼 수 있습니다"}</span>`; return; }
+        if (!r.users || !r.users.length) { el.textContent = "가입한 사용자가 없습니다."; return; }
+        const fmtD = (s) => (s ? String(s).slice(0, 10) : "-");
+        el.innerHTML = r.users.map((u) => {
+          const pic = u.picture ? `<img src="${u.picture}" alt="" referrerpolicy="no-referrer" style="width:22px;height:22px;border-radius:50%;vertical-align:middle;">` : "👤";
+          const state = u.is_owner
+            ? `<span style="color:var(--gold);font-weight:700;font-size:11px;">👑 소유자</span>`
+            : u.approved
+              ? `<span style="color:var(--up);font-weight:700;font-size:11px;">✅ 승인됨</span>`
+              : `<span style="color:var(--down);font-weight:700;font-size:11px;">⏳ 대기</span>`;
+          const btns = u.is_owner ? "" : `
+            ${u.approved
+              ? `<button class="refresh-btn" style="margin-left:0;font-size:11px;padding:2px 8px;" onclick="userAdminAct(${u.id},'revoke',this)">🚫 차단</button>`
+              : `<button class="refresh-btn" style="margin-left:0;font-size:11px;padding:2px 8px;border-color:var(--up);color:var(--up);" onclick="userAdminAct(${u.id},'approve',this)">✅ 승인</button>`}
+            <button class="refresh-btn" style="font-size:11px;padding:2px 8px;border-color:var(--down);color:var(--down);" onclick="userAdminAct(${u.id},'delete',this)">🗑 삭제</button>`;
+          return `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 0;border-bottom:1px solid var(--border);">
+            ${pic}
+            <span style="min-width:0;"><b>${u.name || "(이름 없음)"}</b> <span style="color:var(--muted);font-size:11.5px;">${u.email || ""} · ${u.provider} · 가입 ${fmtD(u.created_at)}</span></span>
+            <span style="margin-left:auto;display:flex;gap:6px;align-items:center;">${state}${btns}</span>
+          </div>`;
+        }).join("");
+      } catch (e) { el.textContent = "목록을 불러오지 못했습니다."; }
+    }
+    async function userAdminAct(uid, action, btn) {
+      if (action === "delete" && !confirm("이 사용자의 매매일지·관심종목까지 모두 삭제됩니다. 계속할까요?")) return;
+      if (btn) btn.disabled = true;
+      try {
+        const r = await (await fetch("/api/admin/users", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: uid, action }),
+        })).json();
+        if (!r.ok) alert(r.error || "처리 실패");
+      } catch (e) { alert("요청 실패"); }
+      finally { if (btn) btn.disabled = false; loadUserAdmin(); }
     }
     // 🔐 인증 모드 설정 — 현재 모드를 라디오에 반영
     async function loadAuthModeSetting() {
@@ -3325,19 +3404,26 @@
       renderJournalGate();
       renderWatchlistBar();
     }
-    // 탭 가시성 3단계: 비로그인=정보탭 / 로그인=+매매일지 / 소유자=+포트폴리오·자동매매·알람.
+    // 탭 가시성 3단계: 비로그인=정보탭 / 로그인·승인=+매매일지·종목관리 / 소유자=+포트폴리오·자동매매·알람.
+    // 승인제: 로그인해도 소유자가 승인하기 전(approved=false)엔 비로그인과 동일하게 취급.
     function applyAuthMode() {
       const ANON = ["summary", "dashboard", "briefing", "marketing", "fintech", "deudeumi"];
-      const LOGIN_EXTRA = ["journal", "alarm"];  // 알람=로그인 사용자도(브라우저 알림). 서버 푸시(카톡)는 소유자만
+      const LOGIN_EXTRA = ["journal", "watchlist", "alarm"];  // 알람=로그인 사용자도(브라우저 알림). 서버 푸시(카톡)는 소유자만
       const OWNER_EXTRA = ["portfolio", "autotrade"];  // 내 실계좌 → 소유자만
-      const authed = !!(authState && authState.authenticated);
       const owner = !!(authState && authState.is_owner);
+      const authed = !!(authState && authState.authenticated && (authState.approved !== false || owner));
       const allowed = new Set(ANON);
       if (authState.mode !== "off" && authed) LOGIN_EXTRA.forEach((t) => allowed.add(t));
       if (authed && owner) OWNER_EXTRA.forEach((t) => allowed.add(t));
       document.querySelectorAll(".tab-btn[data-tab]").forEach((b) => {
         b.style.display = allowed.has(b.dataset.tab) ? "" : "none";
       });
+      // ⚙️ 설정 버튼: 소유자 전용(공개 사이트). 로그인 기능이 아예 구성 안 된 로컬 실행에서는 표시.
+      const gear = document.getElementById("gearBtn");
+      if (gear) {
+        const local = !(authState.configured || authState.kakao_configured);
+        gear.style.display = (owner || local) ? "" : "none";
+      }
       // 현재 활성 탭이 숨겨졌으면(로그아웃 등) 보이는 기본 탭으로 이동.
       const active = document.querySelector(".tab-btn.active");
       if (active && !allowed.has(active.dataset.tab)) {
@@ -3352,7 +3438,9 @@
       if (authState.authenticated && authState.user) {
         const u = authState.user;
         const pic = u.picture ? `<img src="${u.picture}" alt="" referrerpolicy="no-referrer">` : "";
-        box.innerHTML = `${pic}<span class="who" title="${u.email || ""}">${u.name || u.email || "사용자"}</span><button class="btn-link" onclick="logout()">로그아웃</button>`;
+        const pending = (authState.approved === false && !authState.is_owner)
+          ? `<span style="color:var(--down);font-size:11px;font-weight:700;border:1px solid var(--down);border-radius:999px;padding:1px 7px;">⏳ 승인 대기</span>` : "";
+        box.innerHTML = `${pic}<span class="who" title="${u.email || ""}">${u.name || u.email || "사용자"}</span>${pending}<button class="btn-link" onclick="logout()">로그아웃</button>`;
       } else if (authState.configured || authState.kakao_configured) {
         // 비로그인: 헤더 「로그인」 버튼 → 대문(구글/카카오 선택). 둘러보기 후에도 재진입 가능.
         box.innerHTML = `<button class="btn-google" onclick="showGate()"><span class="g">G</span> 로그인</button>`;
@@ -3385,6 +3473,29 @@
     function applyLoginGate() {
       let gate = document.getElementById("siteGate");
       const anyLogin = !!(authState.configured || authState.kakao_configured);
+      // ⏳ 승인 대기: 로그인은 됐지만 소유자 승인 전 — 대기 안내 대문(둘러보기는 가능).
+      const isPending = anyLogin && authState.authenticated
+                        && authState.approved === false && !authState.is_owner;
+      const pendingHard = isPending && authState.mode === "full";  // full 모드는 둘러보기도 불가
+      if (isPending && (pendingHard || !sessionStorage.getItem("gateSeen"))) {
+        if (!gate) {
+          gate = document.createElement("div");
+          gate.id = "siteGate";
+          gate.style.cssText = "position:fixed;inset:0;box-sizing:border-box;overflow-y:auto;-webkit-overflow-scrolling:touch;z-index:9999;background:radial-gradient(circle at 50% 28%, #17223f 0%, #0b0f1a 72%);";
+          document.body.appendChild(gate);
+        }
+        const who = (authState.user && (authState.user.name || authState.user.email)) || "회원";
+        gate.innerHTML = `
+          <div style="min-height:100%;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:32px 20px;">
+            <div style="font-size:52px;">⏳</div>
+            <h1 style="margin:16px 0 4px;font-size:22px;letter-spacing:-0.5px;color:var(--text);">승인 대기 중</h1>
+            <div class="sub" style="max-width:320px;line-height:1.6;"><b>${who}</b>님, 가입이 접수되었습니다.<br>관리자가 승인하면 매매일지·종목관리를 쓸 수 있어요.<br>승인 후 다시 접속해 주세요.</div>
+            ${pendingHard ? "" : `<button onclick="dismissGate()" style="margin-top:18px;background:none;border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13.5px;padding:9px 18px;cursor:pointer;">둘러보기 (공개 화면만) →</button>`}
+            <button onclick="logout()" style="margin-top:12px;background:none;border:none;color:var(--muted);font-size:12.5px;cursor:pointer;text-decoration:underline;">로그아웃</button>
+          </div>`;
+        gate.style.display = "block";
+        return;
+      }
       const isFull = authState.mode === "full" && anyLogin && !authState.authenticated;
       const isSoft = (authState.mode !== "full" && authState.mode !== "off") && anyLogin
                      && !authState.authenticated && !sessionStorage.getItem("gateSeen");
@@ -3404,7 +3515,7 @@
             ${authState.configured ? `<a class="btn-google" style="font-size:15px;padding:11px 22px;margin-top:16px;" href="/api/auth/google/login"><span class="g">G</span> 구글로 로그인</a>` : ""}
             ${authState.kakao_configured ? `<a class="btn-kakao" style="font-size:15px;padding:11px 22px;margin-top:10px;" href="/api/auth/kakao/login"><span class="k">K</span> 카카오로 로그인</a>` : ""}
             ${isFull ? "" : `<button onclick="dismissGate()" style="margin-top:14px;background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;text-decoration:underline;">로그인 없이 둘러보기 →</button>`}
-            <div class="sub" style="margin-top:14px;font-size:11.5px;opacity:.7;">로그인하면 내 종목·매매일지가 기기 간 동기화됩니다.</div>
+            <div class="sub" style="margin-top:14px;font-size:11.5px;opacity:.7;">로그인하면 내 종목·매매일지가 기기 간 동기화됩니다.<br>신규 가입은 관리자 승인 후 이용할 수 있습니다.</div>
           </div>`;
         gate.style.display = "block";
       } else if (gate) {
@@ -3417,12 +3528,18 @@
       const gate = document.getElementById("journalGate");
       const appEl = document.getElementById("journalApp");
       if (!gate || !appEl) return;
-      if (authState.authenticated) {
+      const approved = authState.authenticated && (authState.approved !== false || authState.is_owner);
+      if (approved) {
         gate.style.display = "none"; appEl.style.display = "block";
       } else {
         appEl.style.display = "none"; gate.style.display = "block";
         const note = document.getElementById("journalGateNote");
-        if (note) note.textContent = authState.configured ? "" : "⚠️ 관리자가 아직 구글 로그인 키(GOOGLE_CLIENT_ID/SECRET)를 설정하지 않았습니다.";
+        if (authState.authenticated) {
+          // 로그인은 됐지만 승인 대기 — 로그인 버튼 대신 대기 안내.
+          if (note) note.innerHTML = "<b>⏳ 관리자 승인 대기 중입니다.</b> 승인되면 매매일지를 쓸 수 있어요.";
+        } else if (note) {
+          note.textContent = authState.configured ? "" : "⚠️ 관리자가 아직 구글 로그인 키(GOOGLE_CLIENT_ID/SECRET)를 설정하지 않았습니다.";
+        }
       }
     }
     const JRN_SIDE_CLS = { "매수": "side-buy", "매도": "side-sell", "배당": "" };
@@ -3437,7 +3554,7 @@
 
     async function loadJournal() {
       renderJournalGate();
-      if (!authState.authenticated) return;
+      if (!authState.authenticated || (authState.approved === false && !authState.is_owner)) return;
       // 종목 자동완성: 관심종목 이름→코드
       const dl = document.getElementById("journalSymList");
       if (dl) dl.innerHTML = Object.values(quotesById).map((q) => `<option value="${q.name || q.symbol}">${q.symbol}</option>`).join("");
@@ -4364,6 +4481,8 @@
         loadPortfolio(true);
       } else if (name === "journal") {
         loadJournal();
+      } else if (name === "watchlist") {
+        loadWatchlist();
       } else if (name === "deudeumi") {
         loadEodReport();
         loadWeekly();

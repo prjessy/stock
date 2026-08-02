@@ -695,7 +695,7 @@ def symbol_search_api(q: str = "") -> JSONResponse:
 def get_watchlist_api(request: Request) -> JSONResponse:
     """현재 사용자 관심종목(국내+미국). 로그인 시 removable=True(자기 종목이라 삭제 가능).
     비로그인은 .env 기본종목을 읽기전용으로 보여준다. 500 금지."""
-    user = _current_user(request)
+    user = _feature_user(request)
     rows = _user_watchlist(request)
     items = []
     for r in rows:
@@ -710,10 +710,10 @@ def get_watchlist_api(request: Request) -> JSONResponse:
 @app.post("/api/watchlist")
 async def set_watchlist_api(request: Request) -> JSONResponse:
     """관심종목 추가/삭제(런타임). action: add|remove, symbol: 국내 6자리 또는 미국 티커.
-    로그인 필요(사용자별 DB 저장). 500 금지."""
-    user = _current_user(request)
+    로그인+소유자 승인 필요(사용자별 DB 저장). 500 금지."""
+    user = _feature_user(request)
     if not user:
-        return JSONResponse({"ok": False, "error": "로그인이 필요합니다"})
+        return JSONResponse({"ok": False, "error": "로그인·승인이 필요합니다"})
     try:
         data = await request.json()
     except Exception:
@@ -1041,7 +1041,11 @@ def _owner_user() -> dict | None:
         row = repo.conn.execute(
             "SELECT id, email, name, picture FROM users ORDER BY id LIMIT 1"
         ).fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        d = dict(row)
+        d["approved"] = True  # 소유자는 정의상 항상 승인 상태
+        return d
     except Exception:
         return None
     finally:
@@ -1076,14 +1080,33 @@ def _is_owner(request: Request) -> bool:
     return bool(owner and owner.get("id") == u.get("id"))
 
 
+def _feature_user(request: Request) -> dict | None:
+    """로그인 승인제 게이트 — 로그인했고 '소유자 승인'까지 끝난 사용자만 돌려준다.
+
+    구글/카톡 로그인 자체는 누구나 할 수 있으므로, 매매일지·워치리스트 등 기능성
+    엔드포인트는 반드시 이 함수를 써야 한다(미승인=비로그인과 동일 취급).
+    소유자(첫 가입자)는 항상 통과.
+    """
+    u = _current_user(request)
+    if not u:
+        return None
+    if u.get("approved"):
+        return u
+    owner = _owner_user()
+    if owner and owner.get("id") == u.get("id"):
+        return u
+    return None
+
+
 def _user_watchlist(request: Request) -> list[dict]:
     """요청자의 관심종목 [{symbol, market}].
 
     로그인 사용자: 자기 DB 워치리스트. 소유자(첫 가입자)만 비어 있을 때 .env 기본종목으로
     1회 시드 — 다른 사용자는 빈 목록에서 시작한다(.env는 소유자 개인 설정이라 남에게 보이면 안 됨).
-    비로그인 방문자: .env 기본종목(KR→US)을 읽기전용으로 보여준다.
+    비로그인 방문자: .env 기본종목(KR→US)을 읽기전용으로 보여준다. 미승인 사용자도
+    비로그인과 동일하게 기본종목만 본다(_feature_user).
     """
-    user = _current_user(request)
+    user = _feature_user(request)
     if user:
         repo = Repository()
         try:
@@ -1110,9 +1133,11 @@ def auth_me(request: Request) -> JSONResponse:
     if user:
         owner = _owner_user()
         is_owner = bool(owner and owner.get("id") == user.get("id"))
+        approved = bool(user.get("approved")) or is_owner  # 승인제: 대기 사용자는 False
         return JSONResponse({**base, "authenticated": True, "is_owner": is_owner,
+                             "approved": approved,
                              "user": {"name": user["name"], "email": user["email"], "picture": user["picture"]}})
-    return JSONResponse({**base, "authenticated": False, "is_owner": False})
+    return JSONResponse({**base, "authenticated": False, "is_owner": False, "approved": False})
 
 
 @app.get("/api/auth-config")
@@ -1177,6 +1202,8 @@ def auth_google_callback(request: Request, code: str = "", state: str = "", erro
     repo = Repository()
     try:
         uid = repo.upsert_user(info["sub"], info["email"], info["name"], info["picture"])
+        row = repo.conn.execute("SELECT approved FROM users WHERE id=?", (uid,)).fetchone()
+        approved = bool(row and row["approved"])
         sid = _secrets.token_urlsafe(32)
         expires = (_dt.now(_tz.utc) + _td(days=_SESSION_DAYS)).isoformat()
         repo.create_session(sid, uid, expires)
@@ -1185,16 +1212,7 @@ def auth_google_callback(request: Request, code: str = "", state: str = "", erro
     # iOS Safari/ITP 는 교차 사이트 콜백의 '307 리다이렉트'에 실린 Set-Cookie 를 종종
     # 버린다('계속 로그인' 증상). 그래서 RedirectResponse 대신 먼저 1st-party 200 HTML
     # 문서에 쿠키를 확실히 심은 뒤, 그 문서에서 클라이언트측으로 / 로 이동시킨다(영속성↑).
-    # SameSite=None(+Secure): 콜백이 교차 사이트 흐름이라 쿠키 세팅을 보장하려면 None 필요.
-    html = (
-        "<!doctype html><meta charset='utf-8'><title>로그인 완료</title>"
-        "<body style='font-family:sans-serif;background:#0e0e12;color:#eee;text-align:center;padding-top:40px'>"
-        "<p>✅ 로그인 완료 — 이동 중…</p>"
-        "<script>setTimeout(function(){location.replace('/?login=ok');},150);</script>"
-        "<noscript><a href='/?login=ok' style='color:#6cf'>여기를 눌러 계속</a></noscript>"
-        "</body>"
-    )
-    resp = HTMLResponse(html)
+    resp = HTMLResponse(_login_success_html(approved))
     _set_sid_cookie(resp, sid)
     resp.delete_cookie("oauth_state")
     return resp
@@ -1210,13 +1228,18 @@ def _set_sid_cookie(resp, sid: str) -> None:
                     httponly=True, samesite="lax", secure=True, path="/")
 
 
-def _login_success_html() -> str:
+def _login_success_html(approved: bool = True) -> str:
+    """콜백 후 1st-party 쿠키를 심는 200 HTML. 미승인 사용자는 '승인 대기' 안내로 이동."""
+    if approved:
+        msg, dest = "✅ 로그인 완료 — 이동 중…", "/?login=ok"
+    else:
+        msg, dest = "⏳ 가입 완료 — 관리자 승인 후 이용할 수 있습니다. 이동 중…", "/?login=pending"
     return (
         "<!doctype html><meta charset='utf-8'><title>로그인 완료</title>"
         "<body style='font-family:sans-serif;background:#0e0e12;color:#eee;text-align:center;padding-top:40px'>"
-        "<p>✅ 로그인 완료 — 이동 중…</p>"
-        "<script>setTimeout(function(){location.replace('/?login=ok');},150);</script>"
-        "<noscript><a href='/?login=ok' style='color:#6cf'>여기를 눌러 계속</a></noscript></body>"
+        f"<p>{msg}</p>"
+        f"<script>setTimeout(function(){{location.replace('{dest}');}},600);</script>"
+        f"<noscript><a href='{dest}' style='color:#6cf'>여기를 눌러 계속</a></noscript></body>"
     )
 
 
@@ -1250,12 +1273,14 @@ def auth_kakao_callback(request: Request, code: str = "", state: str = "", error
     repo = Repository()
     try:
         uid = repo.upsert_user(info["sub"], info["email"], info["name"], info["picture"])
+        row = repo.conn.execute("SELECT approved FROM users WHERE id=?", (uid,)).fetchone()
+        approved = bool(row and row["approved"])
         sid = _secrets.token_urlsafe(32)
         expires = (_dt.now(_tz.utc) + _td(days=_SESSION_DAYS)).isoformat()
         repo.create_session(sid, uid, expires)
     finally:
         repo.close()
-    resp = HTMLResponse(_login_success_html())
+    resp = HTMLResponse(_login_success_html(approved))
     _set_sid_cookie(resp, sid)
     resp.delete_cookie("oauth_state")
     return resp
@@ -1274,6 +1299,68 @@ def auth_logout(request: Request) -> JSONResponse:
     resp = JSONResponse({"ok": True})
     resp.delete_cookie("sid")
     return resp
+
+
+# ===== 👥 사용자 승인 관리 (소유자 전용) =====
+# 구글/카톡 로그인은 누구나 시도할 수 있으므로, 소유자가 여기서 승인한 계정만
+# 매매일지·워치리스트 등 기능을 쓸 수 있다(_feature_user 게이트).
+
+@app.get("/api/admin/users")
+def admin_users_list(request: Request) -> JSONResponse:
+    """전체 사용자 + 승인 상태(설정 화면용). 소유자만 403 없이 통과."""
+    if not _is_owner(request):
+        return JSONResponse({"ok": False, "error": "권한 없음(소유자 전용)"}, status_code=403)
+    owner = _owner_user() or {}
+    repo = Repository()
+    try:
+        users = repo.list_users()
+    finally:
+        repo.close()
+    items = []
+    for u in users:
+        provider = "카카오" if str(u.get("google_sub") or "").startswith("kakao:") else "구글"
+        items.append({"id": u["id"], "email": u.get("email"), "name": u.get("name"),
+                      "picture": u.get("picture"), "provider": provider,
+                      "created_at": u.get("created_at"), "last_login": u.get("last_login"),
+                      "approved": bool(u.get("approved")),
+                      "is_owner": u["id"] == owner.get("id")})
+    return JSONResponse({"ok": True, "users": items})
+
+
+@app.post("/api/admin/users")
+async def admin_users_act(request: Request) -> JSONResponse:
+    """사용자 승인/차단/삭제. body: {user_id, action: approve|revoke|delete}. 소유자 전용.
+
+    소유자 본인은 어떤 조작도 불가(스스로 잠그는 사고 방지). 차단·삭제 시 해당
+    사용자의 세션을 전부 끊어 즉시 로그아웃된다.
+    """
+    if not _is_owner(request):
+        return JSONResponse({"ok": False, "error": "권한 없음(소유자 전용)"}, status_code=403)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    try:
+        uid = int(body.get("user_id"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "user_id 필요"})
+    action = str(body.get("action") or "")
+    owner = _owner_user() or {}
+    if uid == owner.get("id"):
+        return JSONResponse({"ok": False, "error": "소유자 계정은 변경할 수 없습니다"})
+    repo = Repository()
+    try:
+        if action == "approve":
+            ok = repo.set_user_approved(uid, True)
+        elif action == "revoke":
+            ok = repo.set_user_approved(uid, False)
+        elif action == "delete":
+            ok = repo.delete_user(uid)
+        else:
+            return JSONResponse({"ok": False, "error": "action=approve|revoke|delete 필요"})
+    finally:
+        repo.close()
+    return JSONResponse({"ok": ok, "user_id": uid, "action": action})
 
 
 def _journal_fields(body: dict) -> dict:
@@ -1350,8 +1437,8 @@ def _journal_validate(fields: dict) -> str | None:
 
 @app.get("/api/journal")
 def journal_list(request: Request) -> JSONResponse:
-    """내 매매일지 목록. 비로그인은 401(절대 남의 일지 노출 안 함)."""
-    user = _current_user(request)
+    """내 매매일지 목록. 비로그인·미승인은 401(절대 남의 일지 노출 안 함)."""
+    user = _feature_user(request)
     if not user:
         return JSONResponse({"ok": False, "error": "login_required"}, status_code=401)
     repo = Repository()
@@ -1363,8 +1450,8 @@ def journal_list(request: Request) -> JSONResponse:
 
 @app.post("/api/journal")
 async def journal_create(request: Request) -> JSONResponse:
-    """매매일지 추가(본인). 비로그인 401."""
-    user = _current_user(request)
+    """매매일지 추가(본인). 비로그인·미승인 401."""
+    user = _feature_user(request)
     if not user:
         return JSONResponse({"ok": False, "error": "login_required"}, status_code=401)
     try:
@@ -1388,8 +1475,8 @@ async def journal_create(request: Request) -> JSONResponse:
 
 @app.put("/api/journal/{entry_id}")
 async def journal_update(entry_id: int, request: Request) -> JSONResponse:
-    """매매일지 수정 — 본인 소유만(user_id 일치 강제)."""
-    user = _current_user(request)
+    """매매일지 수정 — 본인 소유만(user_id 일치 강제). 비로그인·미승인 401."""
+    user = _feature_user(request)
     if not user:
         return JSONResponse({"ok": False, "error": "login_required"}, status_code=401)
     try:
@@ -1413,8 +1500,8 @@ async def journal_update(entry_id: int, request: Request) -> JSONResponse:
 
 @app.delete("/api/journal/{entry_id}")
 def journal_delete(entry_id: int, request: Request) -> JSONResponse:
-    """매매일지 삭제 — 본인 소유만."""
-    user = _current_user(request)
+    """매매일지 삭제 — 본인 소유만. 비로그인·미승인 401."""
+    user = _feature_user(request)
     if not user:
         return JSONResponse({"ok": False, "error": "login_required"}, status_code=401)
     repo = Repository()
@@ -1515,7 +1602,7 @@ async def journal_photo_upload(request: Request) -> JSONResponse:
     원본을 data/uploads/<user_id>/ 에 저장하고, LLM 비전으로 거래 내역을 추출해 돌려준다.
     OCR 이 실패해도 사진 저장은 유지(entries=[] + 실패 사유) — 조용한 null 반환 금지.
     """
-    user = _current_user(request)
+    user = _feature_user(request)
     if not user:
         return JSONResponse({"ok": False, "error": "login_required"}, status_code=401)
     try:
@@ -1565,7 +1652,7 @@ async def journal_photo_upload(request: Request) -> JSONResponse:
 @app.get("/api/journal/photo/{fname}")
 def journal_photo_get(fname: str, request: Request):
     """내 매매일지 사진 원본 보기 — 본인 폴더만(경로 문자를 화이트리스트로 정리)."""
-    user = _current_user(request)
+    user = _feature_user(request)
     if not user:
         return JSONResponse({"ok": False, "error": "login_required"}, status_code=401)
     clean = _PHOTO_NAME_RE.sub("", os.path.basename(fname))[:128]

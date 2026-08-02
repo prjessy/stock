@@ -58,6 +58,8 @@ CREATE TABLE IF NOT EXISTS briefings (
 """
 
 # 구글 로그인 사용자. google_sub(구글 고유 ID)로 식별, 이메일/이름/사진은 표시용.
+# approved: 로그인 승인제 — 0=대기(가입만 됨, 기능 사용 불가) / 1=소유자가 승인.
+# 소유자(첫 가입자)는 항상 1 (init_db 마이그레이션 + upsert_user 가 보장).
 CREATE_USERS = """
 CREATE TABLE IF NOT EXISTS users (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,7 +68,8 @@ CREATE TABLE IF NOT EXISTS users (
     name        TEXT,
     picture     TEXT,
     created_at  TEXT    NOT NULL,
-    last_login  TEXT
+    last_login  TEXT,
+    approved    INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -133,6 +136,12 @@ JOURNAL_ADD_COLUMNS = [
     ("amount", "ALTER TABLE journal ADD COLUMN amount REAL"),
     ("realized_pnl", "ALTER TABLE journal ADD COLUMN realized_pnl REAL"),
     ("photo", "ALTER TABLE journal ADD COLUMN photo TEXT"),  # 첨부 사진 파일명(uploads/<uid>/ 아래)
+]
+
+# 구버전 users 테이블(approved 없음) 마이그레이션용. 기존 사용자는 전부 0(대기)으로 시작하고,
+# 소유자(첫 가입자)만 db.py 가 즉시 1로 올린다 — 이미 들어와 있던 미지의 계정도 재승인 대상.
+USERS_ADD_COLUMNS = [
+    ("approved", "ALTER TABLE users ADD COLUMN approved INTEGER NOT NULL DEFAULT 0"),
 ]
 
 # init_db() 가 순서대로 실행할 DDL 목록.
